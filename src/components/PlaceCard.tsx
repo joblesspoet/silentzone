@@ -1,100 +1,129 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { theme } from '../theme';
 import { MaterialIcon } from './MaterialIcon';
 import { ToggleSwitch } from './ToggleSwitch';
 
 interface PlaceCardProps {
+  id: string;
   name: string;
   icon: string;
   radius: string;
   distance: string;
   isActive: boolean;
   onToggle: (value: boolean) => void;
+  onDelete: () => void;
   onPress: () => void;
   isCurrentLocation?: boolean;
   disabled?: boolean;
 }
 
 export const PlaceCard: React.FC<PlaceCardProps> = ({
+  id,
   name,
   icon,
   radius,
   distance,
   isActive,
   onToggle,
+  onDelete,
   onPress,
   isCurrentLocation = false,
   disabled = false,
 }) => {
+  const renderRightActions = (
+    progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [-100, 0],
+      outputRange: [1, 0],
+      extrapolate: 'clamp',
+    });
+
+    return (
+      <TouchableOpacity onPress={onDelete} style={styles.deleteButtonContainer}>
+        <Animated.View style={[styles.deleteButton, { transform: [{ scale }] }]}>
+          <MaterialIcon name="delete-outline" size={24} color={theme.colors.white} />
+          <Text style={styles.deleteText}>Delete</Text>
+        </Animated.View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
-    <TouchableOpacity 
-      onPress={onPress}
-      activeOpacity={0.7}
-      style={[
-        styles.container,
-        isActive && styles.activeBorder,
-        disabled && styles.disabled,
-      ]}
-    >
-      <View style={styles.content}>
-        <View style={[
-          styles.iconContainer, 
-          isActive ? styles.activeIcon : styles.inactiveIcon,
-          disabled && styles.disabledIcon
-        ]}>
-          <MaterialIcon 
-            name={icon} 
-            size={24} 
-            color={isActive ? theme.colors.white : (disabled ? theme.colors.text.disabled : theme.colors.primary)} 
-          />
-        </View>
-        
-        <View style={styles.details}>
-          <Text style={styles.name} numberOfLines={1}>{name}</Text>
-          <View style={styles.infoRow}>
+    <Swipeable renderRightActions={renderRightActions} containerStyle={styles.swipeContainer}>
+      <TouchableOpacity 
+        onPress={onPress}
+        activeOpacity={0.9}
+        style={[
+          styles.container,
+          isActive && styles.activeBorder,
+          disabled && styles.disabled,
+        ]}
+      >
+        <View style={styles.content}>
+          <View style={[
+            styles.iconContainer, 
+            isActive ? styles.activeIcon : styles.inactiveIcon,
+            disabled && styles.disabledIcon
+          ]}>
             <MaterialIcon 
-              name={isCurrentLocation ? "my_location" : "location_on"} 
-              size={14} 
-              color={isCurrentLocation ? theme.colors.success : theme.colors.text.secondary.dark} 
+              name={icon} 
+              size={24} 
+              color={isActive ? theme.colors.white : (disabled ? theme.colors.text.disabled : theme.colors.primary)} 
             />
-            <Text style={[
-              styles.infoText,
-              isCurrentLocation && { color: theme.colors.success, fontWeight: 'bold' }
-            ]}>
-              {isCurrentLocation ? "Currently inside" : `${radius} radius • ${distance}`}
-            </Text>
+          </View>
+          
+          <View style={styles.details}>
+            <Text style={styles.name} numberOfLines={1}>{name}</Text>
+            <View style={styles.infoRow}>
+              <MaterialIcon 
+                name={isCurrentLocation ? "my_location" : "location_on"} 
+                size={14} 
+                color={isCurrentLocation ? theme.colors.success : theme.colors.text.secondary.dark} 
+              />
+              <Text style={[
+                styles.infoText,
+                isCurrentLocation && { color: theme.colors.success, fontWeight: 'bold' }
+              ]}>
+                {isCurrentLocation ? "Currently inside" : `${radius} radius • ${distance}`}
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
-      
-      <View style={styles.toggleContainer}>
-        <ToggleSwitch 
-          value={isActive} 
-          onValueChange={onToggle}
-          disabled={disabled}
-        />
-      </View>
-    </TouchableOpacity>
+        
+        <View style={styles.toggleContainer}>
+          <ToggleSwitch 
+            value={isActive} 
+            onValueChange={onToggle}
+            disabled={disabled}
+          />
+        </View>
+      </TouchableOpacity>
+    </Swipeable>
   );
 };
 
 const styles = StyleSheet.create({
+  swipeContainer: {
+    marginBottom: theme.spacing.md,
+    borderRadius: theme.layout.borderRadius.lg,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.error, // Background for delete action
+  },
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: theme.colors.surface.light,
-    borderRadius: theme.layout.borderRadius.lg,
     padding: theme.spacing.lg,
-    marginBottom: theme.spacing.md,
-    borderWidth: 1,
-    borderColor: theme.colors.border.light,
-    ...theme.layout.shadows.soft,
+    // Removed marginBottom since it's handled by swipeContainer
+    // Borders are handled by parent container clips usually, but preserving logic
   },
   activeBorder: {
-    borderColor: theme.colors.primary, // Or ring-primary/20
-    backgroundColor: theme.colors.surface.light,
+    // Optional: Visual indication of active state if needed beyond icon color
   },
   disabled: {
     opacity: 0.8,
@@ -144,5 +173,22 @@ const styles = StyleSheet.create({
   },
   toggleContainer: {
     // shrink-0 in logic
+  },
+  deleteButtonContainer: {
+    width: 100,
+    backgroundColor: theme.colors.error,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteButton: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteText: {
+    color: theme.colors.white,
+    fontFamily: theme.typography.primary,
+    fontSize: theme.typography.sizes.xs,
+    fontWeight: theme.typography.weights.medium,
+    marginTop: 4,
   },
 });

@@ -17,10 +17,13 @@ end
 target 'SilentZone' do
   config = use_native_modules!
 
-  permissions_path = '../node_modules/react-native-permissions/ios'
-  pod 'Permission-LocationWhenInUse', :path => "#{permissions_path}/LocationWhenInUse"
-  pod 'Permission-LocationAlways', :path => "#{permissions_path}/LocationAlways"
-  pod 'Permission-Notifications', :path => "#{permissions_path}/Notifications"
+  # Verify if setup.rb exists and load it, or just require it relative to project
+  require_relative '../node_modules/react-native-permissions/scripts/setup'
+  setup_permissions([
+    'LocationWhenInUse',
+    'LocationAlways',
+    'Notifications',
+  ])
 
   use_react_native!(
     :path => config[:reactNativePath],

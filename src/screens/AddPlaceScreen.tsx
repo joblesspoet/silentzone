@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
+import MapView, { Marker, Circle, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
 import { theme } from '../theme';
 import { MaterialIcon } from '../components/MaterialIcon';
 import { CustomInput } from '../components/CustomInput';
 import { ToggleSwitch } from '../components/ToggleSwitch';
+import { useRealm } from '../database/RealmProvider';
+import { PlaceService } from '../database/services/PlaceService'; // Fixed import path
+import { PermissionsManager } from '../permissions/PermissionsManager';
+import { RESULTS } from 'react-native-permissions';
 
 interface Props {
   navigation: any;
@@ -13,7 +17,7 @@ interface Props {
 
 const { width, height } = Dimensions.get('window');
 
-// Default location (e.g., somewhere neutral or current location placeholder)
+// Default location (San Francisco)
 const DEFAULT_REGION = {
   latitude: 37.78825,
   longitude: -122.4324,
@@ -22,10 +26,84 @@ const DEFAULT_REGION = {
 };
 
 export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
+  const realm = useRealm();
+  const mapRef = useRef<MapView>(null);
+  
   const [region, setRegion] = useState(DEFAULT_REGION);
   const [placeName, setPlaceName] = useState('');
   const [radius, setRadius] = useState(150);
   const [isSilencingEnabled, setIsSilencingEnabled] = useState(true);
+  
+  const [hasLocationPermission, setHasLocationPermission] = useState(false);
+  const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
+
+  useEffect(() => {
+    checkPermission();
+  }, []);
+
+  const checkPermission = async () => {
+    const status = await PermissionsManager.getLocationStatus();
+    if (status === RESULTS.GRANTED) {
+      setHasLocationPermission(true);
+    }
+  };
+
+  const handleRequestPermission = async () => {
+    const status = await PermissionsManager.requestLocationWhenInUse();
+    if (status === RESULTS.GRANTED) {
+      setHasLocationPermission(true);
+    } else {
+      Alert.alert(
+        "Permission Required",
+        "Location permission is needed to find your current location.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => PermissionsManager.openSettings() }
+        ]
+      );
+    }
+  };
+
+  const handleGetCurrentLocation = async () => {
+    if (!hasLocationPermission) {
+      await handleRequestPermission();
+      return;
+    }
+
+    if (userLocation) {
+      const newRegion = {
+        ...region,
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+      };
+      setRegion(newRegion);
+      mapRef.current?.animateToRegion(newRegion, 1000);
+    } else {
+      Alert.alert("Location not available", "Waiting for location signal...");
+    }
+  };
+
+  const handleSave = () => {
+    if (!placeName.trim()) {
+      Alert.alert("Error", "Please enter a place name");
+      return;
+    }
+
+    try {
+      PlaceService.createPlace(realm, {
+        name: placeName.trim(),
+        latitude: region.latitude,
+        longitude: region.longitude,
+        radius: radius,
+      });
+
+      // Show success feedback? Or just go back
+      navigation.goBack();
+    } catch (error) {
+      console.error("Failed to save place:", error);
+      Alert.alert("Error", "Failed to save place. Please try again.");
+    }
+  };
 
   // Format radius text
   const getRadiusText = (r: number) => {
@@ -44,10 +122,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Add Place</Text>
         <TouchableOpacity 
-          onPress={() => {
-            // Save logic
-            navigation.goBack();
-          }}
+          onPress={handleSave}
           style={styles.saveButton}
         >
           <Text style={styles.saveText}>Save</Text>
@@ -57,10 +132,19 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
       {/* Map Section */}
       <View style={styles.mapContainer}>
         <MapView
+          ref={mapRef}
           provider={PROVIDER_GOOGLE} // Use Google Maps if available
           style={styles.map}
           initialRegion={DEFAULT_REGION}
+          region={region} // Control region state
           onRegionChangeComplete={setRegion}
+          showsUserLocation={hasLocationPermission}
+          onUserLocationChange={(e) => {
+             // Only update if coordinate exists
+             if (e.nativeEvent.coordinate) {
+               setUserLocation(e.nativeEvent.coordinate);
+             }
+          }}
         >
           {/* Visual Circle Overlay */}
           <Circle 
@@ -83,8 +167,15 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
 
         {/* Map Controls */}
         <View style={styles.mapControls}>
-          <TouchableOpacity style={styles.myLocationButton}>
-            <MaterialIcon name="my-location" size={24} color={theme.colors.text.secondary.dark} />
+          <TouchableOpacity 
+            style={styles.myLocationButton}
+            onPress={handleGetCurrentLocation}
+          >
+            <MaterialIcon 
+              name="my-location" 
+              size={24} 
+              color={hasLocationPermission ? theme.colors.primary : theme.colors.text.secondary.dark} 
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -140,7 +231,10 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                 </Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.updateButton}>
+            <TouchableOpacity 
+              style={styles.updateButton}
+              onPress={handleGetCurrentLocation}
+            >
               <MaterialIcon name="near-me" size={16} color={theme.colors.primary} />
               <Text style={styles.updateButtonText}>Update</Text>
             </TouchableOpacity>
