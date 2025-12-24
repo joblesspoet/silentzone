@@ -7,6 +7,8 @@ import { OnboardingAutoSilenceScreen } from '../screens/OnboardingAutoSilenceScr
 import { HomeScreen } from '../screens/HomeScreen';
 import { AddPlaceScreen } from '../screens/AddPlaceScreen';
 import { PlaceDetailScreen } from '../screens/PlaceDetailScreen';
+import { PermissionLocationScreen } from '../screens/PermissionLocationScreen';
+import { PermissionNotificationScreen } from '../screens/PermissionNotificationScreen';
 
 const Stack = createStackNavigator();
 
@@ -23,6 +25,8 @@ export const AppNavigator = () => {
       <Stack.Screen name="OnboardingWelcome" component={OnboardingWelcomeScreen} />
       <Stack.Screen name="OnboardingAddPlaces" component={OnboardingAddPlacesScreen} />
       <Stack.Screen name="OnboardingAutoSilence" component={OnboardingAutoSilenceScreen} />
+      <Stack.Screen name="PermissionLocation" component={PermissionLocationScreen} />
+      <Stack.Screen name="PermissionNotification" component={PermissionNotificationScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen 
         name="AddPlace" 

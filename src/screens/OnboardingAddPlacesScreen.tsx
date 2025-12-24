@@ -17,8 +17,7 @@ export const OnboardingAddPlacesScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
 
   const handleSkip = () => {
-    PreferencesService.setOnboardingComplete(realm);
-    navigation.replace('Home');
+    navigation.replace('OnboardingAutoSilence');
   };
 
   return (

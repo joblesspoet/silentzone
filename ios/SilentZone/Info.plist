@@ -35,6 +35,10 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Silent Zone needs access to your location to silence your phone when you enter your saved places.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Silent Zone needs background location access to automatically silence your phone even when the app is closed.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Silent Zone needs background location access to automatically silence your phone even when the app is closed.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

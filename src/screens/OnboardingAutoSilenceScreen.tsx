@@ -205,7 +205,7 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.text.primary.light,
     textAlign: 'center',
-    marginBottom: theme.spacing.small,
+    marginBottom: theme.spacing.sm,
   },
   subtitle: {
     fontFamily: theme.typography.primary,

@@ -17,8 +17,8 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
 
   const handleSkip = () => {
-    PreferencesService.setOnboardingComplete(realm);
-    navigation.replace('Home');
+    // Start the onboarding flow
+    navigation.replace('PermissionLocation');
   };
 
   return (

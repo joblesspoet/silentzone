@@ -17,6 +17,11 @@ end
 target 'SilentZone' do
   config = use_native_modules!
 
+  permissions_path = '../node_modules/react-native-permissions/ios'
+  pod 'Permission-LocationWhenInUse', :path => "#{permissions_path}/LocationWhenInUse"
+  pod 'Permission-LocationAlways', :path => "#{permissions_path}/LocationAlways"
+  pod 'Permission-Notifications', :path => "#{permissions_path}/Notifications"
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.
