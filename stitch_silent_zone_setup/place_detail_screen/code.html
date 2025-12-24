@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Place Detail Screen</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3b82f6","primary-dark": "#2563eb", 
+                        "secondary": "#10b981","background": "#f8fafc","surface": "#ffffff","text-main": "#0f172a","text-sub": "#64748b","border-color": "#e2e8f0"},
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "0.75rem", "xl": "1rem", "full": "9999px"},
+                    boxShadow: {
+                        "soft": "0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)",
+                        "card": "0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px 0 rgba(0, 0, 0, 0.03)"
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background font-display antialiased overflow-x-hidden text-text-main">
+<div class="relative flex h-full min-h-screen w-full max-w-md mx-auto flex-col bg-background group/design-root shadow-xl border-x border-slate-100">
+<header class="sticky top-0 z-20 flex items-center bg-background/80 p-4 pb-2 justify-between border-b border-border-color backdrop-blur-md">
+<button class="text-text-main flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-slate-200 transition-colors">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h2 class="text-text-main text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center truncate px-2">Downtown Mosque</h2>
+<button class="text-red-500 flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-red-50 transition-colors">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</header>
+<main class="flex-1 flex flex-col pb-28"> 
+<div class="p-4 w-full">
+<div class="flex flex-col gap-4 rounded-xl border border-border-color bg-surface p-5 shadow-card">
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-2">
+<h1 class="text-text-main text-2xl font-bold leading-tight">Downtown Mosque</h1>
+<div class="flex items-center gap-2">
+<span class="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs font-semibold text-secondary ring-1 ring-inset ring-green-600/20">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-secondary"></span>
+</span>
+                                    Currently Inside
+                                </span>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1">
+<label class="relative flex cursor-pointer items-center">
+<input checked="" class="sr-only peer" type="checkbox" value=""/>
+<div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+</label>
+<span class="text-[10px] font-medium text-text-sub uppercase tracking-wide">Active</span>
+</div>
+</div>
+</div>
+</div>
+<div class="px-4 pb-4">
+<div class="relative w-full aspect-[2/1] rounded-xl overflow-hidden border border-border-color bg-slate-100 group shadow-sm">
+<div class="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-105" data-alt="Dark themed map showing city streets with a blue radius overlay" data-location="Riyadh" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuDeWK3GjQh7nz-ZR1czhgeBwzMCm8b_N9dxbCS9862eHBE3KfHah4-cCItnimB33IwPzdUtR7kJhY3qBdFv-aKbnMvCymE-QfXEU4ThXC-OZP9QVuGjU9Z39jXhMlh_TYD5ujgDPLbM2KPkE8XWVgc5BeMs4CmSyfGjC57dpZGXmyKxIeLId12moegkzP7M_4QSwmlD6Xpag4V1lEdE9zDyMGXW_9Ag2yDh7zpydFnW_wfMHU2N6bFev1mJ3JrWb1aSOJM_yYLI3j2s");'>
+<div class="absolute inset-0 bg-blue-900/10 mix-blend-overlay"></div>
+</div>
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="relative flex items-center justify-center size-32 rounded-full border border-primary/40 bg-primary/10 backdrop-blur-[2px]">
+<div class="size-3 rounded-full bg-white border-2 border-primary shadow-[0_0_15px_rgba(59,130,246,0.5)] z-10"></div>
+<div class="absolute -bottom-7 bg-surface text-text-main text-[11px] font-semibold px-2 py-1 rounded shadow-md border border-slate-200">Radius: 50m</div>
+</div>
+</div>
+<button class="absolute bottom-3 right-3 p-2 bg-surface rounded-lg shadow-md border border-slate-100 text-text-sub hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl">open_in_full</span>
+</button>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-3 px-4 mb-6">
+<div class="flex flex-col gap-1 rounded-xl p-4 bg-surface border border-border-color shadow-sm hover:border-primary/30 transition-colors">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-lg">radar</span>
+<p class="text-text-sub text-xs font-semibold uppercase tracking-wider">Radius</p>
+</div>
+<p class="text-text-main text-xl font-bold">50m</p>
+</div>
+<div class="flex flex-col gap-1 rounded-xl p-4 bg-surface border border-border-color shadow-sm hover:border-primary/30 transition-colors">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-lg">pin_drop</span>
+<p class="text-text-sub text-xs font-semibold uppercase tracking-wider">Coordinates</p>
+</div>
+<p class="text-text-main text-xl font-bold truncate">24.71° N, 46.67° E</p>
+</div>
+<div class="flex flex-col gap-1 rounded-xl p-4 bg-surface border border-border-color shadow-sm hover:border-primary/30 transition-colors">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-lg">history</span>
+<p class="text-text-sub text-xs font-semibold uppercase tracking-wider">Last Visit</p>
+</div>
+<p class="text-text-main text-base font-bold">Today, 12:30 PM</p>
+</div>
+<div class="flex flex-col gap-1 rounded-xl p-4 bg-surface border border-border-color shadow-sm hover:border-primary/30 transition-colors">
+<div class="flex items-center gap-2 mb-1">
+<span class="material-symbols-outlined text-primary text-lg">bar_chart</span>
+<p class="text-text-sub text-xs font-semibold uppercase tracking-wider">Total Visits</p>
+</div>
+<p class="text-text-main text-xl font-bold">42</p>
+</div>
+</div>
+<div class="px-4">
+<div class="flex items-center justify-between mb-3 px-1">
+<h3 class="text-text-main text-lg font-bold">Recent Check-ins</h3>
+<button class="text-primary text-sm font-medium hover:text-primary-dark transition-colors">View All</button>
+</div>
+<div class="flex flex-col rounded-xl bg-surface border border-border-color overflow-hidden shadow-sm">
+<div class="flex items-center gap-4 p-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors cursor-default">
+<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-green-50 text-secondary border border-green-100">
+<span class="material-symbols-outlined text-xl">login</span>
+</div>
+<div class="flex flex-col flex-1">
+<p class="text-text-main text-sm font-semibold">Entered Zone</p>
+<p class="text-text-sub text-xs">Today</p>
+</div>
+<p class="text-text-main text-sm font-bold font-mono">12:30 PM</p>
+</div>
+<div class="flex items-center gap-4 p-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors cursor-default">
+<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+<span class="material-symbols-outlined text-xl">logout</span>
+</div>
+<div class="flex flex-col flex-1">
+<p class="text-text-main text-sm font-semibold">Left Zone</p>
+<p class="text-text-sub text-xs">Yesterday</p>
+</div>
+<p class="text-text-main text-sm font-bold font-mono">08:15 PM</p>
+</div>
+<div class="flex items-center gap-4 p-4 border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors cursor-default">
+<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-green-50 text-secondary border border-green-100">
+<span class="material-symbols-outlined text-xl">login</span>
+</div>
+<div class="flex flex-col flex-1">
+<p class="text-text-main text-sm font-semibold">Entered Zone</p>
+<p class="text-text-sub text-xs">Yesterday</p>
+</div>
+<p class="text-text-main text-sm font-bold font-mono">06:45 PM</p>
+</div>
+</div>
+</div>
+</main>
+<footer class="fixed bottom-0 w-full max-w-md bg-background/90 p-4 border-t border-border-color backdrop-blur-lg z-30">
+<button class="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3.5 text-base font-bold text-white shadow-lg shadow-blue-500/20 hover:bg-primary-dark active:scale-[0.98] transition-all">
+<span class="material-symbols-outlined text-[20px]">edit_location_alt</span>
+                Edit Location
+            </button>
+</footer>
+</div>
+
+</body></html>

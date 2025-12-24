@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Onboarding: Add Places</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3b82f6", // Updated to a slightly softer, peaceful blue (Blue-500)
+                        "primary-dark": "#2563eb",
+                        "accent-green": "#10b981", // Emerald-500 for peaceful green
+                        "surface": "#ffffff",
+                        "surface-highlight": "#f0f9ff", // Very light blue for map bg
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "2xl": "1rem",
+                        "3xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                    boxShadow: {
+                        'soft': '0 4px 20px -2px rgba(59, 130, 246, 0.1), 0 2px 10px -2px rgba(59, 130, 246, 0.05)',
+                        'glow': '0 0 15px rgba(59, 130, 246, 0.3)',
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+          min-height: max(800px, 100dvh);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface font-display antialiased overflow-hidden text-slate-800">
+<div class="relative flex h-screen w-full flex-col overflow-hidden max-w-md mx-auto bg-white shadow-2xl ring-1 ring-slate-100">
+<div class="w-full h-12 bg-transparent shrink-0"></div>
+<div class="flex items-center justify-end px-6 py-2 shrink-0 z-10">
+<button class="text-slate-400 text-sm font-semibold tracking-wide hover:text-primary transition-colors">
+                Skip
+            </button>
+</div>
+<div class="flex-1 flex flex-col items-center justify-center w-full px-6 relative">
+<div class="relative w-full aspect-[4/5] max-h-[420px] mb-8 rounded-3xl overflow-hidden bg-surface-highlight shadow-inner border border-blue-50">
+<div class="absolute inset-0 bg-cover bg-center opacity-30 mix-blend-multiply saturate-0" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCQCuN5J9sAiZh2InbxTIhWif7s4UNAjCGI0MDBGhIEqWQMdogqhMxRpeTs0Grmnh1s46y8fp6lcOlD4CvhJEBWWu-lf1LSus65Ui8ru5jYyWStcfsAhmscNwO-PXt7zqE2_NHHKV5lqZFQjwYBzPrL6Pv107kQuhsU83u-VgadiyOqjgLNAlJQ_ZXme1ybFI3sKt_m11rslh9bht87vhbwSGll2x6feufaBMiVdsEGP3aeNezLNtq6YnOTPDdZRg1Dshk64QtKvXA0');">
+</div>
+<div class="absolute inset-0 z-0">
+<div class="absolute top-[25%] left-[20%] flex items-center justify-center group cursor-pointer">
+<div class="absolute w-24 h-24 bg-blue-400/10 rounded-full blur-xl animate-pulse"></div>
+<div class="absolute w-14 h-14 bg-blue-100/60 rounded-full border border-blue-200"></div>
+<div class="relative z-10 bg-white text-primary p-2.5 rounded-full shadow-soft shadow-blue-500/20 transform group-hover:-translate-y-1 transition-transform duration-300 border border-blue-100">
+<span class="material-symbols-outlined text-[22px]">mosque</span>
+</div>
+</div>
+<div class="absolute top-[45%] right-[20%] flex items-center justify-center group cursor-pointer">
+<div class="absolute w-32 h-32 bg-blue-500/10 rounded-full blur-xl"></div>
+<div class="absolute w-20 h-20 bg-blue-50/80 rounded-full border border-blue-200 animate-[ping_3s_ease-in-out_infinite]"></div>
+<div class="absolute w-20 h-20 bg-blue-50/50 rounded-full border border-blue-200"></div>
+<div class="relative z-10 bg-primary text-white p-3 rounded-full shadow-glow shadow-primary/40 transform group-hover:scale-110 transition-transform duration-300">
+<span class="material-symbols-outlined text-[24px]">business_center</span>
+</div>
+</div>
+<div class="absolute bottom-[20%] left-[30%] flex items-center justify-center group cursor-pointer">
+<div class="absolute w-20 h-20 bg-blue-400/10 rounded-full blur-xl"></div>
+<div class="absolute w-12 h-12 bg-blue-100/60 rounded-full border border-blue-200"></div>
+<div class="relative z-10 bg-white text-primary p-2.5 rounded-full shadow-soft shadow-blue-500/20 transform group-hover:-translate-y-1 transition-transform duration-300 border border-blue-100">
+<span class="material-symbols-outlined text-[22px]">school</span>
+</div>
+</div>
+</div>
+<div class="absolute bottom-5 left-5 right-5 bg-white/95 backdrop-blur-md p-3.5 rounded-2xl shadow-soft border border-slate-100 flex items-center gap-3.5">
+<div class="w-10 h-10 rounded-full bg-green-50 flex items-center justify-center text-accent-green shrink-0">
+<span class="material-symbols-outlined text-xl">notifications_off</span>
+</div>
+<div>
+<p class="text-sm font-bold text-slate-800">Phone Silenced</p>
+<p class="text-[11px] text-slate-500 font-medium">Entering silent zone radius</p>
+</div>
+<div class="ml-auto w-2 h-2 rounded-full bg-accent-green animate-pulse"></div>
+</div>
+</div>
+<div class="flex flex-col gap-3 items-center text-center max-w-xs mx-auto mb-6">
+<h1 class="text-slate-900 tracking-tight text-3xl font-extrabold leading-tight">
+                    Add Your<br/>Important Places
+                </h1>
+<p class="text-slate-500 text-[15px] font-medium leading-relaxed px-2">
+                    Mosque, office, school — add up to 3 locations where silence matters.
+                </p>
+</div>
+</div>
+<div class="w-full shrink-0 flex flex-col items-center gap-8 px-6 pb-10 pt-2">
+<div class="flex items-center justify-center gap-2.5">
+<div class="h-2 w-2 rounded-full bg-slate-200 transition-colors"></div>
+<div class="h-2 w-8 rounded-full bg-primary shadow-sm shadow-blue-200"></div>
+<div class="h-2 w-2 rounded-full bg-slate-200 transition-colors"></div>
+</div>
+<button class="w-full bg-primary hover:bg-primary-dark active:scale-[0.98] transition-all text-white font-bold text-lg py-4 rounded-2xl shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 group">
+                Next
+                <span class="material-symbols-outlined text-xl group-hover:translate-x-1 transition-transform">arrow_forward</span>
+</button>
+</div>
+</div>
+
+</body></html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Silent Zone Splash Screen</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Theme Configuration -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#1152d4",
+                        "background-light": "#f6f6f8",
+                        "background-dark": "#101622",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        /* Custom animation for the logo pulse */
+        @keyframes subtle-pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.9; }
+        }
+        .animate-subtle-pulse {
+            animation: subtle-pulse 3s ease-in-out infinite;
+        }
+        
+        /* Material Symbols Utilities */
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 48;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="font-display antialiased text-slate-900 bg-background-light dark:bg-background-dark overflow-hidden selection:bg-primary selection:text-white">
+<!-- Main Container -->
+<div class="relative flex h-screen w-full flex-col items-center justify-between overflow-hidden">
+<!-- Background Gradient -->
+<div class="absolute inset-0 z-0 bg-gradient-to-b from-blue-50/80 via-white to-teal-50/50 dark:from-slate-900 dark:via-background-dark dark:to-slate-900" data-alt="Soft gradient background transitioning from light blue to pale teal"></div>
+<!-- Decorative Background Elements (Abstract Circles) -->
+<div class="absolute -top-24 -right-24 h-96 w-96 rounded-full bg-primary/5 blur-3xl dark:bg-primary/10" data-alt="Abstract blurry blue circle in top right corner"></div>
+<div class="absolute top-1/2 -left-24 h-64 w-64 rounded-full bg-teal-200/20 blur-3xl dark:bg-teal-900/10" data-alt="Abstract blurry teal circle on the left side"></div>
+<!-- Spacer for vertical centering logic -->
+<div class="flex-1"></div>
+<!-- Central Content Area -->
+<div class="relative z-10 flex flex-col items-center px-6 text-center animate-in fade-in slide-in-from-bottom-4 duration-1000">
+<!-- Logo Composition -->
+<div class="relative mb-8 flex items-center justify-center">
+<!-- Outer Glow/Shadow -->
+<div class="absolute h-32 w-32 rounded-full bg-primary/10 blur-xl animate-subtle-pulse"></div>
+<!-- Main Pin Icon -->
+<div class="relative flex items-center justify-center">
+<span class="material-symbols-outlined text-[120px] text-primary drop-shadow-xl" style="font-variation-settings: 'FILL' 1;">
+                        location_on
+                    </span>
+<!-- Muted Speaker Overlay -->
+<!-- Positioned specifically to sit inside the pin head -->
+<span class="material-symbols-outlined absolute top-[28px] text-[40px] text-white" style="font-variation-settings: 'FILL' 1;">
+                        no_sound
+                    </span>
+</div>
+</div>
+<!-- App Title -->
+<h1 class="mb-3 text-4xl font-extrabold tracking-tight text-[#0d121b] dark:text-white sm:text-5xl">
+                Silent Zone
+            </h1>
+<!-- Tagline -->
+<p class="max-w-xs text-lg font-normal leading-relaxed text-slate-500 dark:text-slate-400">
+                Auto-silence your phone at important places
+            </p>
+<!-- Loading Indicator (Optional/Subtle) -->
+<div class="mt-12 flex items-center justify-center gap-1.5 opacity-60">
+<div class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]"></div>
+<div class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]"></div>
+<div class="h-1.5 w-1.5 rounded-full bg-primary animate-bounce"></div>
+</div>
+</div>
+<!-- Spacer for vertical centering logic -->
+<div class="flex-1"></div>
+<!-- Footer / Version -->
+<div class="relative z-10 pb-8 text-center">
+<p class="text-sm font-medium text-slate-400 dark:text-slate-600">v1.0</p>
+</div>
+</div>
+</body></html>

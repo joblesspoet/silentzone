@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Silent Zone - Welcome</title>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<!-- Tailwind Config -->
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#137fec",
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101922",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "2xl": "1rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<!-- Google Fonts: Inter & Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        /* Custom styles just for things Tailwind might miss or for specific aesthetic touches */
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-white transition-colors duration-300">
+<div class="relative flex h-full min-h-screen w-full flex-col group/design-root overflow-hidden max-w-md mx-auto shadow-2xl bg-background-light dark:bg-background-dark">
+<!-- Top Bar with Skip -->
+<!-- Added extra top padding for status bar simulation on mobile -->
+<div class="flex items-center justify-end p-6 pt-12 z-10">
+<button class="flex items-center justify-center rounded-full hover:bg-primary/10 transition-colors px-3 py-1">
+<span class="text-primary text-base font-bold leading-normal tracking-[0.015em]">Skip</span>
+</button>
+</div>
+<!-- Main Content Area -->
+<div class="flex-1 flex flex-col justify-center items-center w-full px-6 pb-4">
+<!-- Illustration Area -->
+<!-- Using a composed illustration approach with background image and overlaid icons for a modern feel -->
+<div class="relative w-full aspect-[4/5] max-h-[50vh] mb-6 flex items-center justify-center">
+<!-- Decorative background blob -->
+<div class="absolute inset-0 bg-gradient-to-tr from-blue-100 to-green-50 dark:from-blue-900/20 dark:to-green-900/10 rounded-full blur-3xl opacity-60 scale-90"></div>
+<!-- Main Illustration Image -->
+<div class="relative w-full h-full bg-center bg-no-repeat bg-contain z-10 drop-shadow-xl" data-alt="Stylized illustration of a smartphone displaying a map with location pins and a muted speaker icon in blue and green colors" style='background-image: url("https://lh3.googleusercontent.com/aida-public/AB6AXuBLoUFCyPJJb6RljhzckGUZPloj6FFMQNVG8CCTA1VMbFIM91zfl2PzR_h2JjWLVt999Doqub2nDmHSEyA_8693EGSqf9C5s0JEOOGjHBXXVjoxQqnsNzqZM6akRZl4qHDnM8JUJDmjAMdnckrSJLkmPN4lIXF3oLx2AI3ae2C5HdgJF4rxg4T_MrHTCdnGL6VcNM7QrQDop_2tgE_akWHjA9biq9Y9colC_oCwyn9Qryo4qQiB2I12FgyS8BoRYlqZ9VpsdCyOjhKM");'>
+</div>
+<!-- Floating Material Icons for extra decoration/context -->
+<div class="absolute top-1/4 right-8 bg-white dark:bg-slate-800 p-2 rounded-full shadow-lg border border-slate-100 dark:border-slate-700 animate-bounce" style="animation-duration: 3s;">
+<span class="material-symbols-outlined text-red-500 text-2xl">no_sound</span>
+</div>
+<div class="absolute bottom-1/4 left-8 bg-white dark:bg-slate-800 p-2 rounded-full shadow-lg border border-slate-100 dark:border-slate-700 animate-bounce" style="animation-duration: 4s;">
+<span class="material-symbols-outlined text-primary text-2xl">location_on</span>
+</div>
+</div>
+<!-- Text Content -->
+<div class="flex flex-col items-center w-full space-y-3 z-10">
+<h1 class="text-slate-900 dark:text-white tracking-tight text-[32px] font-extrabold leading-tight text-center">
+                    Welcome to <span class="text-primary">Silent Zone</span>
+</h1>
+<p class="text-slate-500 dark:text-slate-400 text-lg font-normal leading-relaxed text-center max-w-[280px]">
+                    Never forget to silence your phone again.
+                </p>
+</div>
+</div>
+<!-- Bottom Actions Footer -->
+<div class="flex flex-col items-center w-full px-6 pb-12 pt-4 bg-background-light dark:bg-background-dark z-20">
+<!-- Page Indicators -->
+<div class="flex flex-row items-center justify-center gap-3 py-6">
+<!-- Active Dot -->
+<div class="h-2.5 w-8 rounded-full bg-primary transition-all duration-300"></div>
+<!-- Inactive Dots -->
+<div class="h-2.5 w-2.5 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+<div class="h-2.5 w-2.5 rounded-full bg-slate-200 dark:bg-slate-700"></div>
+</div>
+<!-- Primary Action Button -->
+<button class="w-full bg-primary hover:bg-blue-600 active:bg-blue-700 text-white text-lg font-bold py-4 rounded-xl shadow-lg shadow-blue-500/25 transition-all transform active:scale-[0.98] flex items-center justify-center gap-2">
+<span>Get Started</span>
+<span class="material-symbols-outlined text-xl">arrow_forward</span>
+</button>
+</div>
+<!-- Safe Area Spacer for Bottom Home Indicator -->
+<div class="h-2 w-full bg-transparent"></div>
+</div>
+</body></html>
