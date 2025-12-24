@@ -1,102 +1,59 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import MapView, { Marker, Circle, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
-import Geolocation from '@react-native-community/geolocation';
 import { theme } from '../theme';
 import { MaterialIcon } from '../components/MaterialIcon';
 import { CustomInput } from '../components/CustomInput';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
-import { PermissionsManager } from '../permissions/PermissionsManager';
-import { RESULTS } from 'react-native-permissions';
 
 interface Props {
   navigation: any;
+  route: any;
 }
 
 const { width, height } = Dimensions.get('window');
 
-// Default location (San Francisco)
-const DEFAULT_REGION = {
-  latitude: 37.78825,
-  longitude: -122.4324,
-  latitudeDelta: 0.01,
-  longitudeDelta: 0.01,
-};
-
-export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
+export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
+  const { placeId } = route.params;
   const realm = useRealm();
   const mapRef = useRef<MapView>(null);
   
-  const [region, setRegion] = useState(DEFAULT_REGION);
+  const [region, setRegion] = useState<Region>({
+    latitude: 37.78825,
+    longitude: -122.4324,
+    latitudeDelta: 0.01,
+    longitudeDelta: 0.01,
+  });
+  
   const [placeName, setPlaceName] = useState('');
   const [radius, setRadius] = useState(150);
-  const [isSilencingEnabled, setIsSilencingEnabled] = useState(true);
-  
-  const [hasLocationPermission, setHasLocationPermission] = useState(false);
-  const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
-  const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [isEnabled, setIsEnabled] = useState(true);
+  const [loading, setLoading] = useState(true);
 
+  // Load existing data
   useEffect(() => {
-    checkPermission();
-  }, []);
-
-  const checkPermission = async () => {
-    const status = await PermissionsManager.getLocationStatus();
-    if (status === RESULTS.GRANTED) {
-      setHasLocationPermission(true);
-    }
-  };
-
-  const handleRequestPermission = async () => {
-    const status = await PermissionsManager.requestLocationWhenInUse();
-    if (status === RESULTS.GRANTED) {
-      setHasLocationPermission(true);
+    const place = PlaceService.getPlaceById(realm, placeId);
+    if (place) {
+        setPlaceName(place.name);
+        setRadius(place.radius);
+        setIsEnabled(place.isEnabled);
+        
+        const initialRegion = {
+            latitude: place.latitude,
+            longitude: place.longitude,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+        };
+        setRegion(initialRegion);
     } else {
-      Alert.alert(
-        "Permission Required",
-        "Location permission is needed to find your current location.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: () => PermissionsManager.openSettings() }
-        ]
-      );
+        Alert.alert("Error", "Place not found");
+        navigation.goBack();
     }
-  };
-
-  const handleGetCurrentLocation = async () => {
-    if (!hasLocationPermission) {
-      await handleRequestPermission();
-      return;
-    }
-
-    try {
-        Geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude, accuracy } = position.coords;
-                setAccuracy(accuracy);
-                setUserLocation({ latitude, longitude });
-                
-                const newRegion = {
-                    ...region,
-                    latitude,
-                    longitude,
-                };
-                setRegion(newRegion);
-                mapRef.current?.animateToRegion(newRegion, 1000);
-            },
-            (error) => {
-                Alert.alert("Error", "Could not fetch location.");
-                console.log(error);
-            },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-        );
-    } catch (err) {
-        console.warn(err);
-    }
-  };
+    setLoading(false);
+  }, [placeId]);
 
   const handleSave = () => {
     if (!placeName.trim()) {
@@ -109,33 +66,51 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         return;
     }
 
-    if (!PlaceService.canAddMorePlaces(realm)) {
-        Alert.alert(
-            "Limit Reached", 
-            "Free plan allows only 3 places. Upgrade to Premium for 10 places."
-        );
-        return;
-    }
-
     try {
-      PlaceService.createPlace(realm, {
+      const success = PlaceService.updatePlace(realm, placeId, {
         name: placeName.trim(),
         latitude: region.latitude,
         longitude: region.longitude,
         radius: radius,
+        isEnabled: isEnabled,
       });
 
-      navigation.goBack();
+      if (success) {
+          navigation.goBack();
+      } else {
+          Alert.alert("Error", "Failed to update place.");
+      }
     } catch (error) {
-      console.error("Failed to save place:", error);
-      Alert.alert("Error", "Failed to save place. Please try again.");
+      console.error("Failed to update place:", error);
+      Alert.alert("Error", "Failed to update place.");
     }
+  };
+
+  const handleDelete = () => {
+      Alert.alert(
+        "Delete Place?",
+        "This action cannot be undone.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { 
+            text: "Delete", 
+            style: "destructive",
+            onPress: () => {
+              PlaceService.deletePlace(realm, placeId);
+              // Navigate back twice (to Home) or manipulate stack
+              navigation.pop(2); 
+            }
+          }
+        ]
+      );
   };
 
   // Format radius text
   const getRadiusText = (r: number) => {
     return r >= 1000 ? `${(r / 1000).toFixed(1)}km` : `${Math.round(r)}m`;
   };
+
+  if (loading) return <View style={styles.container} />;
 
   return (
     <View style={styles.container}>
@@ -147,7 +122,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         >
           <MaterialIcon name="close" size={24} color={theme.colors.text.primary.light} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add Place</Text>
+        <Text style={styles.headerTitle}>Edit Place</Text>
         <TouchableOpacity 
           onPress={handleSave}
           style={styles.saveButton}
@@ -160,53 +135,27 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
       <View style={styles.mapContainer}>
         <MapView
           ref={mapRef}
-          provider={PROVIDER_GOOGLE} // Use Google Maps if available
+          provider={PROVIDER_GOOGLE}
           style={styles.map}
-          initialRegion={DEFAULT_REGION}
-          region={region} // Control region state
-          // We use onRegionChangeComplete to track the center
+          initialRegion={region}
+          region={region}
           onRegionChangeComplete={setRegion}
-          showsUserLocation={hasLocationPermission}
         >
-          {/* Circle moves with region */}
           <Circle 
             center={region}
             radius={radius}
-            fillColor={theme.colors.primary + '33'} // 20% opacity
+            fillColor={theme.colors.primary + '33'}
             strokeColor={theme.colors.primary}
             strokeWidth={2}
           />
         </MapView>
         
-        {/* Map Overlay Gradient */}
         <View style={styles.mapOverlayGradient} />
         
-        {/* Fixed Center Pin (Draggable Map interaction) */}
+        {/* Center Pin */}
         <View style={styles.centerPinContainer}>
            <View style={styles.pinShadow} />
            <MaterialIcon name="location-pin" size={48} color={theme.colors.error} />
-        </View>
-
-        {/* GPS Warning Overlay */}
-        {accuracy && accuracy > 30 && (
-             <View style={styles.gpsWarning}>
-                 <MaterialIcon name="warning" size={16} color={theme.colors.white} />
-                 <Text style={styles.gpsWarningText}>Low GPS Accuracy: ±{Math.round(accuracy)}m</Text>
-             </View>
-        )}
-
-        {/* Map Controls */}
-        <View style={styles.mapControls}>
-          <TouchableOpacity 
-            style={styles.myLocationButton}
-            onPress={handleGetCurrentLocation}
-          >
-            <MaterialIcon 
-              name="my-location" 
-              size={24} 
-              color={hasLocationPermission ? theme.colors.primary : theme.colors.text.secondary.dark} 
-            />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -216,15 +165,13 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
           
           <CustomInput
             label="Place Name"
-            placeholder="e.g., Downtown Mosque"
+            placeholder="Place Name"
             value={placeName}
             onChangeText={setPlaceName}
             leftIcon="edit-location"
             maxLength={100}
           />
-          <Text style={styles.charCount}>{placeName.length}/100</Text>
 
-          {/* Radius Slider */}
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionLabel}>SILENCE RADIUS</Text>
@@ -252,44 +199,35 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
             </View>
           </View>
 
-          {/* Location Details */}
-          <View style={styles.card}>
+          {/* Coordinates Readout */}
+           <View style={styles.card}>
             <View>
-              <Text style={styles.cardLabel}>Current Coordinates</Text>
+              <Text style={styles.cardLabel}>Location Coordinates</Text>
               <View style={styles.coordinatesRow}>
                 <MaterialIcon name="public" size={18} color={theme.colors.text.secondary.dark} />
                 <Text style={styles.coordinatesText}>
                   {region.latitude.toFixed(6)}, {region.longitude.toFixed(6)}
                 </Text>
               </View>
-               {accuracy && (
-                  <Text style={styles.accuracyText}>Accuracy: ±{Math.round(accuracy)}m</Text>
-               )}
+              <Text style={styles.hintText}>Drag map to adjust location</Text>
             </View>
-            <TouchableOpacity 
-              style={styles.updateButton}
-              onPress={() => {
-                   // Just use the map region coordinates as "Current Location" if User wants to snap
-                   // But "Use Current Location" usually means fetch GPS
-                   handleGetCurrentLocation();
-              }}
-            >
-              <MaterialIcon name="near-me" size={16} color={theme.colors.primary} />
-              <Text style={styles.updateButtonText}>Locate Me</Text>
-            </TouchableOpacity>
           </View>
 
-          {/* Toggle Switch */}
           <View style={styles.card}>
             <View>
-              <Text style={styles.cardTitle}>Start Monitoring</Text>
-              <Text style={styles.cardSubtitle}>Active immediately upon save</Text>
+              <Text style={styles.cardTitle}>Monitoring Status</Text>
+              <Text style={styles.cardSubtitle}>Enable or pause silencing</Text>
             </View>
             <ToggleSwitch
-              value={isSilencingEnabled}
-              onValueChange={setIsSilencingEnabled}
+              value={isEnabled}
+              onValueChange={setIsEnabled}
             />
           </View>
+          
+          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+              <MaterialIcon name="delete" size={20} color={theme.colors.error} />
+              <Text style={styles.deleteText}>Delete Place</Text>
+          </TouchableOpacity>
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -308,7 +246,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: theme.spacing.lg,
-    paddingTop: 50, // Safe area
+    paddingTop: 50,
     paddingBottom: theme.spacing.md,
     backgroundColor: theme.colors.background.light,
     zIndex: 10,
@@ -333,7 +271,7 @@ const styles = StyleSheet.create({
   },
   mapContainer: {
     width: '100%',
-    height: height * 0.4, // 40% height
+    height: height * 0.4,
     position: 'relative',
   },
   map: {
@@ -345,15 +283,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 60,
-    // Linear gradient simulation if library issues, else use library
-    // For simplicity using transparent view or could import LinearGradient
   },
   centerPinContainer: {
     position: 'absolute',
     top: '50%',
     left: '50%',
-    marginLeft: -24, // Half of size 48
-    marginTop: -48, // Full height to putting tip at center
+    marginLeft: -24,
+    marginTop: -48,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -365,20 +301,6 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: 'rgba(0,0,0,0.3)',
     marginBottom: 10,
-  },
-  mapControls: {
-    position: 'absolute',
-    bottom: 24,
-    right: 16,
-  },
-  myLocationButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: theme.colors.surface.light,
-    alignItems: 'center',
-    justifyContent: 'center',
-    ...theme.layout.shadows.medium,
   },
   formContainer: {
     flex: 1,
@@ -409,7 +331,7 @@ const styles = StyleSheet.create({
     opacity: 0.8,
   },
   radiusBadge: {
-    backgroundColor: theme.colors.primary + '1A', // 10%
+    backgroundColor: theme.colors.primary + '1A',
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: 4,
     borderRadius: theme.layout.borderRadius.sm,
@@ -458,23 +380,15 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   coordinatesText: {
-    fontFamily: 'Courier', // Monospace feel
+    fontFamily: 'Courier',
     fontSize: theme.typography.sizes.sm,
     color: theme.colors.text.primary.light,
   },
-  updateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: theme.colors.primary + '1A',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: theme.layout.borderRadius.md,
-  },
-  updateButtonText: {
-    fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.bold,
-    color: theme.colors.primary,
+  hintText: {
+    marginTop: 4,
+    fontSize: 10,
+    color: theme.colors.text.secondary.light,
+    fontStyle: 'italic',
   },
   cardTitle: {
     fontSize: theme.typography.sizes.md,
@@ -485,38 +399,20 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.xs,
     color: theme.colors.text.secondary.light,
   },
-  gpsWarning: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    backgroundColor: theme.colors.warning,
-    borderRadius: theme.layout.borderRadius.md,
-    padding: theme.spacing.sm,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    zIndex: 20,
-    ...theme.layout.shadows.small, // Fixed shadows issue
+  deleteButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 16,
+      marginTop: 8,
+      borderWidth: 1,
+      borderColor: theme.colors.error + '33',
+      borderRadius: theme.layout.borderRadius.md,
+      backgroundColor: theme.colors.error + '11',
+      gap: 8,
   },
-  gpsWarningText: {
-    color: theme.colors.white,
-    fontSize: theme.typography.sizes.xs,
-    fontWeight: theme.typography.weights.bold,
-  },
-  charCount: {
-    textAlign: 'right',
-    fontSize: 10,
-    color: theme.colors.text.secondary.light,
-    marginTop: -16,
-    marginBottom: 8,
-    marginRight: 4,
-  },
-  accuracyText: {
-    fontSize: 10,
-    color: theme.colors.text.secondary.light,
-    marginTop: 2,
-    fontStyle: 'italic',
+  deleteText: {
+      color: theme.colors.error,
+      fontWeight: 'bold',
   },
 });
