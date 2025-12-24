@@ -4,11 +4,13 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'react-native';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { theme } from './src/theme';
+import { RealmProvider } from './src/database/RealmProvider';
 
 const App = () => {
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.light} />
+    <RealmProvider>
       <NavigationContainer theme={{
         ...DefaultTheme,
         dark: false,
@@ -24,6 +26,7 @@ const App = () => {
       }}>
         <AppNavigator />
       </NavigationContainer>
+    </RealmProvider>
     </SafeAreaProvider>
   );
 };

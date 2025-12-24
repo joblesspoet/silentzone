@@ -1,7 +1,10 @@
+import { useRealm } from '../database/RealmProvider';
+import { PreferencesService } from '../database/services/PreferencesService';
+
 import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, Dimensions, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Image } from 'react-native';
+import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
-import { MaterialIcon } from '../components/MaterialIcon';
 import { CustomButton } from '../components/CustomButton';
 
 interface Props {
@@ -11,13 +14,18 @@ interface Props {
 const { width, height } = Dimensions.get('window');
 
 export const OnboardingAutoSilenceScreen: React.FC<Props> = ({ navigation }) => {
+  const realm = useRealm();
+
+  const handleFinish = () => {
+    PreferencesService.setOnboardingComplete(realm);
+    navigation.replace('Home');
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity 
-          onPress={() => {
-            navigation.replace('Home');
-          }}
+          onPress={handleFinish} // Skip also finishes
           style={styles.skipButton}
         >
           <Text style={styles.skipText}>Skip</Text>
@@ -67,9 +75,7 @@ export const OnboardingAutoSilenceScreen: React.FC<Props> = ({ navigation }) => 
 
         <CustomButton
           title="Let's Begin"
-          onPress={() => {
-            navigation.replace('Home');
-          }}
+          onPress={handleFinish}
           fullWidth
           rightIcon="arrow-forward"
           style={styles.button}

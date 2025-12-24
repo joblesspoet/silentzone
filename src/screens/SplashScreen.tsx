@@ -1,31 +1,33 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import { View, Text, StyleSheet } from 'react-native';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
   withRepeat, 
+  withSequence, 
   withTiming, 
-  withSequence,
-  Easing
+  Easing 
 } from 'react-native-reanimated';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
+import LinearGradient from 'react-native-linear-gradient';
+import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
-import { MaterialIcon } from '../components/MaterialIcon';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import { useRealm } from '../database/RealmProvider';
+import { PreferencesService } from '../database/services/PreferencesService';
+type SplashScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Splash'>;
 
-// Note: Navigation prop type would be nicer but keeping it simple for now
-interface SplashScreenProps {
-  navigation: any;
-}
-
-const { width } = Dimensions.get('window');
-
-export const SplashScreen: React.FC<SplashScreenProps> = ({ navigation }) => {
+export const SplashScreen = () => {
+  const navigation = useNavigation<SplashScreenNavigationProp>();
+  const realm = useRealm();
+  
+  // Animation Values
   const pulseScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(1);
   const loadingDot1 = useSharedValue(0);
   const loadingDot2 = useSharedValue(0);
   const loadingDot3 = useSharedValue(0);
-
   useEffect(() => {
     // Logo Pulse Animation
     pulseScale.value = withRepeat(
@@ -77,14 +79,21 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({ navigation }) => {
       );
     }, 300);
 
-    // Navigation simulation
-    const timer = setTimeout(() => {
-        // Navigate to Onboarding
+    const checkOnboarding = async () => {
+      // Minimum splash time of 2 seconds
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const prefs = PreferencesService.getPreferences(realm);
+      
+      if (prefs.onboardingCompleted) {
+        navigation.replace('Home');
+      } else {
         navigation.replace('OnboardingWelcome');
-    }, 3000);
-    
-    return () => clearTimeout(timer);
-  }, []);
+      }
+    };
+
+    checkOnboarding();
+  }, [realm]);
 
   const animatedLogoStyle = useAnimatedStyle(() => ({
     transform: [{ scale: pulseScale.value }],
