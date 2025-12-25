@@ -1,16 +1,21 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { StatusBar } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StatusBar } from 'react-native';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { theme } from './src/theme';
-import { RealmProvider } from './src/database/RealmProvider';
+import { RealmProvider, useRealm } from './src/database/RealmProvider';
+import { locationService } from './src/services/LocationService';
 
-const App = () => {
-  return (
-    <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.light} />
-    <RealmProvider>
+const AppContent = () => {
+    const realm = useRealm();
+
+    useEffect(() => {
+        // Initialize Background Location Service
+        locationService.initialize(realm);
+    }, [realm]);
+
+    return (
       <NavigationContainer theme={{
         ...DefaultTheme,
         dark: false,
@@ -26,7 +31,16 @@ const App = () => {
       }}>
         <AppNavigator />
       </NavigationContainer>
-    </RealmProvider>
+    );
+};
+
+function App(): React.JSX.Element {
+  return (
+    <SafeAreaProvider>
+      <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.light} />
+      <RealmProvider>
+        <AppContent />
+      </RealmProvider>
     </SafeAreaProvider>
   );
 };
