@@ -76,8 +76,13 @@ class LocationService {
       // 1. Handle "Force CheckOut" if the current place was disabled
       const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
       if (currentCheckIn && !enabledIds.has(currentCheckIn.placeId as string)) {
+          console.log(`[LocationService] Force check-out: ${currentCheckIn.placeId} is no longer enabled.`);
           const place = PlaceService.getPlaceById(this.realm, currentCheckIn.placeId as string);
-          await CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
+          
+          // CRITICAL: Restore sound before closing log
+          await this.restoreRingerMode(currentCheckIn.id as string);
+          
+          CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
           await this.showNotification(
               'Silent Zone Disabled',
               `Tracking disabled for ${place?.name || 'current place'}. Status restored.`,
@@ -161,6 +166,22 @@ class LocationService {
           const enabledPlaces = PlaceService.getEnabledPlaces(this.realm!);
           const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm!);
 
+          // 1. Explicitly check if we are still inside the CURRENT place (fixes "stuck" status)
+          if (currentCheckIn) {
+             const place = PlaceService.getPlaceById(this.realm!, currentCheckIn.placeId as string);
+             if (place) {
+               const dist = this.calculateDistance(latitude, longitude, place.latitude as number, place.longitude as number);
+               const threshold = (place.radius as number) * 1.1; // 10% buffer
+               if (dist > threshold) {
+                 console.log(`[LocationService] Explicit EXIT detected for ${place.name} (dist: ${Math.round(dist)}m)`);
+                 await this.handleGeofenceExit(place.id as string);
+               }
+             } else {
+               // Place was deleted or invalid? Clean up.
+               await this.handleGeofenceExit(currentCheckIn.placeId as string);
+             }
+          }
+
           for (const place of enabledPlaces) {
             const distance = this.calculateDistance(
               latitude,
@@ -237,12 +258,24 @@ class LocationService {
         // Check out of any other place first
         const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
         if (currentCheckIn && currentCheckIn.placeId !== placeId) {
-            await this.restoreRingerMode(currentCheckIn.id as string);
+            console.log(`[LocationService] Moving from ${currentCheckIn.placeId} to ${placeId}`);
+            // Transfer saved volumes from previous check-in log to preserve the "Original" pre-silence level
+            const originalRinger = (currentCheckIn as any).savedVolumeLevel;
+            const originalMedia = (currentCheckIn as any).savedMediaVolume;
+            
+            // Close old check-in WITHOUT restoring sound
             CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
-        }
-
-        if (!currentCheckIn || currentCheckIn.placeId !== placeId) {
-            // Save current ringer mode before silencing
+            
+            // Start new check-in with the original levels
+            CheckInService.logCheckIn(this.realm, placeId, originalRinger, originalMedia);
+            
+            await this.showNotification(
+                'Silent Zone Updated',
+                `Moved to ${place.name}. Remaining silent.`,
+                'check-in-transition'
+            );
+        } else if (!currentCheckIn) {
+            // Fresh entry into a silent zone
             await this.saveAndSilencePhone(placeId);
             
             await this.showNotification(

@@ -250,7 +250,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                   radius={`${place.radius}m`} 
                   distance={distanceText}
                   isActive={place.isEnabled}
-                  isCurrentLocation={isInside} 
+                  isCurrentLocation={isInside && place.isEnabled} 
                   onToggle={() => handleToggle(place.id)}
                   onDelete={() => handleDelete(place.id, place.name)}
                   onPress={() => {

@@ -3,6 +3,20 @@ import { generateUUID } from '../../utils/uuid';
 
 export const CheckInService = {
   logCheckIn: (realm: Realm, placeId: string, volumeLevel?: number, mediaVolume?: number) => {
+    // 1. Force close any existing active check-ins to prevent "Sticky" status
+    const activeCheckIns = realm.objects('CheckInLog').filtered('checkOutTime == null');
+    if (activeCheckIns.length > 0) {
+      realm.write(() => {
+        const now = new Date();
+        activeCheckIns.forEach((log: any) => {
+          log.checkOutTime = now;
+          const checkInTime = log.checkInTime as Date;
+          const durationMs = now.getTime() - checkInTime.getTime();
+          log.durationMinutes = Math.round(durationMs / 60000);
+        });
+      });
+    }
+
     let log;
     realm.write(() => {
       log = realm.create('CheckInLog', {
@@ -55,5 +69,22 @@ export const CheckInService = {
     return realm.objects('CheckInLog')
       .filtered('placeId == $0', placeId)
       .sorted('checkInTime', true);
+  },
+
+  closeAllCheckIns: (realm: Realm) => {
+    const activeCheckIns = realm.objects('CheckInLog').filtered('checkOutTime == null');
+    if (activeCheckIns.length > 0) {
+      realm.write(() => {
+        const now = new Date();
+        activeCheckIns.forEach((log: any) => {
+          log.checkOutTime = now;
+          const checkInTime = log.checkInTime as Date;
+          const durationMs = now.getTime() - checkInTime.getTime();
+          log.durationMinutes = Math.round(durationMs / 60000);
+        });
+      });
+      return true;
+    }
+    return false;
   }
 };
