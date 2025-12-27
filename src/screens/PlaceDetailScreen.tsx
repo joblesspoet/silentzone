@@ -27,17 +27,24 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   useEffect(() => {
     loadPlaceData();
 
-    // Listener for updates (e.g. from Edit screen)
+    // 1. Listener for updates (e.g. from Edit screen)
     const placeObj = PlaceService.getPlaceById(realm, placeId);
     if (placeObj) {
         placeObj.addListener(() => {
-             // Refresh local state when realm object changes
              loadPlaceData();
         });
     }
 
+    // 2. Listener for check-in status (to show/hide edit buttons in real-time)
+    const checkInLogs = realm.objects('CheckInLog');
+    const checkInListener = () => {
+        loadPlaceData();
+    };
+    checkInLogs.addListener(checkInListener);
+
     return () => {
         if (placeObj) placeObj.removeAllListeners();
+        checkInLogs.removeListener(checkInListener);
     };
   }, [placeId]);
 
@@ -57,9 +64,8 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     const history = CheckInService.getCheckInsForPlace(realm, placeId);
     setCheckIns([...history]);
 
-    // Check if active
-    const currentCheckIn = CheckInService.getCurrentCheckIn(realm);
-    setIsCurrentlyActive(currentCheckIn?.placeId === placeId);
+    // isInside is now a reactive property on the place object itself!
+    setIsCurrentlyActive(!!p.isInside);
     
     setLoading(false);
   };
@@ -107,9 +113,15 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
            <MaterialIcon name="arrow-back-ios" size={20} color={theme.colors.text.primary.light} />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{place.name}</Text>
-        <TouchableOpacity onPress={handleDelete} style={styles.iconBtn}>
-           <MaterialIcon name="delete-outline" size={24} color={theme.colors.error} />
-        </TouchableOpacity>
+        <View style={styles.iconBtn}>
+          {!isCurrentlyActive ? (
+            <TouchableOpacity onPress={handleDelete}>
+              <MaterialIcon name="delete-outline" size={24} color={theme.colors.error} />
+            </TouchableOpacity>
+          ) : (
+            <MaterialIcon name="lock" size={20} color={theme.colors.text.disabled} />
+          )}
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -185,24 +197,15 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         </View>
 
         {/* Action Button */}
-        <TouchableOpacity 
-            style={[styles.editButton, isCurrentlyActive && styles.editButtonDisabled]}
-            onPress={() => {
-                if (isCurrentlyActive) {
-                    Alert.alert(
-                        "Place is Active",
-                        "You cannot edit a place while you are currently inside it. Please leave the area or disable tracking first."
-                    );
-                    return;
-                }
-                navigation.navigate('EditPlace', { placeId: place.id });
-            }}
-        >
-            <Text style={styles.editButtonText}>
-                {isCurrentlyActive ? "Cannot Edit While Inside" : "Edit Place Config"}
-            </Text>
-            <MaterialIcon name={isCurrentlyActive ? "lock" : "edit"} size={16} color={theme.colors.white} />
-        </TouchableOpacity>
+        {!isCurrentlyActive && (
+          <TouchableOpacity 
+              style={styles.editButton}
+              onPress={() => navigation.navigate('EditPlace', { placeId: place.id })}
+          >
+              <Text style={styles.editButtonText}>Edit Place Config</Text>
+              <MaterialIcon name="edit" size={16} color={theme.colors.white} />
+          </TouchableOpacity>
+        )}
 
         {/* History Section */}
         <View style={styles.historySection}>

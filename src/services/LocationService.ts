@@ -15,6 +15,7 @@ class LocationService {
   private readonly DEBOUNCE_TIME = 10000; // 10 seconds
   private geofenceCheckInterval: ReturnType<typeof setInterval> | null = null;
   private savedRingerMode: number | null = null; // Store original ringer mode
+  private lastEnabledIds: string = ''; // For change detection
 
   // Initialize service
   async initialize(realmInstance: Realm) {
@@ -40,14 +41,18 @@ class LocationService {
     this.setupReactiveSync();
 
     // 5. Start monitoring geofences
-    this.startGeofenceMonitoring();
+    if (this.isPreferenceTrackingEnabled()) {
+        this.startGeofenceMonitoring();
+    }
 
     this.isReady = true;
     console.log('[LocationService] Initialized and monitoring');
   }
 
-  private async requestDndPermission() {
-    // Redundant now, removed
+  private isPreferenceTrackingEnabled(): boolean {
+    if (!this.realm) return false;
+    const prefs = this.realm.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
+    return prefs ? prefs.trackingEnabled : true;
   }
 
   private async requestLocationPermissions() {
@@ -57,63 +62,86 @@ class LocationService {
   private setupReactiveSync() {
     if (!this.realm) return;
 
+    // 1. Listen for Places
     const places = this.realm.objects('Place');
     places.addListener((collection, changes) => {
+        // Broad check for structural changes OR modifications
         if (changes.insertions.length > 0 || changes.deletions.length > 0 || changes.newModifications.length > 0) {
-            console.log('[LocationService] Places modified, resyncing geofences...');
             this.syncGeofences();
         }
     });
+
+    // 2. Listen for Preferences (Global Pause/Resume)
+    const prefs = this.realm.objectForPrimaryKey('Preferences', 'USER_PREFS');
+    if (prefs) {
+        prefs.addListener(() => {
+            console.log('[LocationService] Preferences changed, syncing...');
+            this.syncGeofences();
+        });
+    }
   }
 
   async syncGeofences() {
     if (!this.realm) return;
 
     try {
-      const enabledPlaces = PlaceService.getEnabledPlaces(this.realm);
-      const enabledIds = new Set(enabledPlaces.map(p => p.id));
+      const trackingEnabled = this.isPreferenceTrackingEnabled();
+      const enabledPlaces = trackingEnabled ? PlaceService.getEnabledPlaces(this.realm) : [];
+      const enabledIdsArray = enabledPlaces.map(p => p.id as string);
+      const enabledIdsString = enabledIdsArray.sort().join(',');
+      const enabledIdsSet = new Set(enabledIdsArray);
       
-      // 1. Handle "Force CheckOut" if the current place was disabled
-      const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
-      if (currentCheckIn && !enabledIds.has(currentCheckIn.placeId as string)) {
-          console.log(`[LocationService] Force check-out: ${currentCheckIn.placeId} is no longer enabled.`);
-          const place = PlaceService.getPlaceById(this.realm, currentCheckIn.placeId as string);
-          
-          // CRITICAL: Restore sound before closing log
-          await this.restoreRingerMode(currentCheckIn.id as string);
-          
-          CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
-          await this.showNotification(
-              'Silent Zone Disabled',
-              `Tracking disabled for ${place?.name || 'current place'}. Status restored.`,
-              'check-out-force'
-          );
+      // 1. Check for redundant syncs (prevent loops from isInside toggle)
+      if (enabledIdsString === this.lastEnabledIds) {
+          // If the list of enabled places hasn't changed, 
+          // we should still handle Force CheckOut in case singular places were toggled
+          // but if nothing actually structural changed, we can exit early.
+          this.handleManualDisableCleanup(enabledIdsSet);
+          return;
       }
+      this.lastEnabledIds = enabledIdsString;
+      console.log('[LocationService] Syncing geofences...');
 
-      // 2. Clear and re-add geofences
+      // 2. Handle "Force CheckOut" for any active zones that were just disabled/deleted/paused
+      await this.handleManualDisableCleanup(enabledIdsSet);
+
+      // 3. Clear and re-add geofences
       await Geofencing.removeAllGeofence();
 
-      if (enabledPlaces.length === 0) {
-          console.log('[LocationService] No enabled places. Stopping tracking.');
+      if (enabledPlaces.length === 0 || !trackingEnabled) {
+          console.log('[LocationService] Tracking stopped (pause or no places).');
           this.stopGeofenceMonitoring();
           return;
       }
 
-      // 3. Add Geofences
+      // 4. Add Geofences
       for (const place of enabledPlaces) {
          await Geofencing.addGeofence({
             id: place.id as string,
             latitude: place.latitude as number,
             longitude: place.longitude as number,
-            radius: Math.max(100, (place.radius as number) + 20), // Minimum 100m for reliability
+            radius: Math.max(100, (place.radius as number) + 20),
          });
       }
       
-      console.log(`[LocationService] Synced ${enabledPlaces.length} geofences`);
+      console.log(`[LocationService] Monitoring ${enabledPlaces.length} geofences`);
+      this.startGeofenceMonitoring();
 
     } catch (error) {
       console.error('[LocationService] Sync failed:', error);
     }
+  }
+
+  private async handleManualDisableCleanup(enabledIdsSet: Set<string>) {
+      if (!this.realm) return;
+      const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+      for (const log of activeLogs) {
+          if (!enabledIdsSet.has(log.placeId as string)) {
+              console.log(`[LocationService] Manual disable detected for: ${log.placeId}`);
+              // Use force=true to bypass debounce
+              await this.handleGeofenceExit(log.placeId as string, true);
+          }
+      }
   }
 
   private startGeofenceMonitoring() {
@@ -182,32 +210,33 @@ class LocationService {
              }
           }
 
-          for (const place of enabledPlaces) {
+          const activePlaces = enabledPlaces.filter(place => {
             const distance = this.calculateDistance(
               latitude,
               longitude,
               place.latitude as number,
               place.longitude as number
             );
+            return distance <= (place.radius as number) * 1.1;
+          });
 
-            const placeId = place.id as string;
-            // Add a small buffer (10%) to the radius to prevent flapping
-            const threshold = (place.radius as number) * 1.1;
-            const isInside = distance <= threshold;
-
-            if (isInside) {
-              // User is inside this geofence
-              if (!currentCheckIn || currentCheckIn.placeId !== placeId) {
-                console.log(`[LocationService] ENTER detected for ${place.name} (dist: ${Math.round(distance)}m)`);
-                await this.handleGeofenceEntry(placeId);
-              }
-            } else {
-              // User is outside this geofence
-              if (currentCheckIn && currentCheckIn.placeId === placeId) {
-                console.log(`[LocationService] EXIT detected for ${place.name} (dist: ${Math.round(distance)}m)`);
-                await this.handleGeofenceExit(placeId);
-              }
+          // 1. Handle New Entries
+          for (const place of activePlaces) {
+            if (!CheckInService.isPlaceActive(this.realm!, place.id as string)) {
+               console.log(`[LocationService] ENTER detected for ${place.name}`);
+               await this.handleGeofenceEntry(place.id as string);
             }
+          }
+
+          // 2. Handle Exits (Places currently active in DB but no longer in range)
+          const currentActiveLogs = CheckInService.getActiveCheckIns(this.realm!);
+          const activePlaceIds = new Set(activePlaces.map(p => p.id));
+
+          for (const log of currentActiveLogs) {
+             if (!activePlaceIds.has(log.placeId as string)) {
+                console.log(`[LocationService] EXIT detected for placeId: ${log.placeId}`);
+                await this.handleGeofenceExit(log.placeId as string);
+             }
           }
         },
         (error) => {
@@ -255,27 +284,26 @@ class LocationService {
 
     const place = PlaceService.getPlaceById(this.realm, placeId);
     if (place && place.isEnabled) {
-        // Check out of any other place first
-        const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
-        if (currentCheckIn && currentCheckIn.placeId !== placeId) {
-            console.log(`[LocationService] Moving from ${currentCheckIn.placeId} to ${placeId}`);
-            // Transfer saved volumes from previous check-in log to preserve the "Original" pre-silence level
-            const originalRinger = (currentCheckIn as any).savedVolumeLevel;
-            const originalMedia = (currentCheckIn as any).savedMediaVolume;
-            
-            // Close old check-in WITHOUT restoring sound
-            CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
-            
-            // Start new check-in with the original levels
-            CheckInService.logCheckIn(this.realm, placeId, originalRinger, originalMedia);
+        const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+        
+        if (activeLogs.length > 0) {
+            // Already in another zone. Just log this one without silencing again.
+            // We want to preserve the "Original Volume" from the very first zone.
+            const firstLog = activeLogs[0] as any;
+            CheckInService.logCheckIn(
+                this.realm, 
+                placeId, 
+                firstLog.savedVolumeLevel, 
+                firstLog.savedMediaVolume
+            );
             
             await this.showNotification(
                 'Silent Zone Updated',
-                `Moved to ${place.name}. Remaining silent.`,
-                'check-in-transition'
+                `Also inside ${place.name}. Remaining silent.`,
+                'check-in-multi'
             );
-        } else if (!currentCheckIn) {
-            // Fresh entry into a silent zone
+        } else {
+            // Fresh entry into the FIRST silent zone
             await this.saveAndSilencePhone(placeId);
             
             await this.showNotification(
@@ -287,12 +315,12 @@ class LocationService {
     }
   }
 
-  private async handleGeofenceExit(placeId: string) {
+  private async handleGeofenceExit(placeId: string, force: boolean = false) {
     const now = Date.now();
     const lastTime = this.lastTriggerTime[placeId] || 0;
     
-    // Debounce check
-    if (now - lastTime < this.DEBOUNCE_TIME) {
+    // Debounce check - skip if forced (e.g. manual disable)
+    if (!force && now - lastTime < this.DEBOUNCE_TIME) {
         console.log(`[LocationService] Debouncing EXIT for ${placeId}`);
         return;
     }
@@ -301,17 +329,29 @@ class LocationService {
     if (!this.realm) return;
 
     const place = PlaceService.getPlaceById(this.realm, placeId);
-    const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
-    
-    if (currentCheckIn && currentCheckIn.placeId === placeId) {
-        // Restore ringer mode before checking out
-        await this.restoreRingerMode(currentCheckIn.id as string);
+    if (!CheckInService.isPlaceActive(this.realm, placeId)) return;
+
+    const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+    const thisLog = activeLogs.find(l => l.placeId === placeId);
+
+    if (activeLogs.length === 1 && thisLog) {
+        // This is the LAST active zone. Restore sound.
+        await this.restoreRingerMode(thisLog.id as string);
+        CheckInService.logCheckOut(this.realm, thisLog.id as string);
         
-        CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
         await this.showNotification(
             'Silent Zone Deactivated',
             `Exited ${place?.name || 'Silent Zone'}. Sound restored.`,
             'check-out'
+        );
+    } else if (thisLog) {
+        // Still in other zones. Don't restore sound yet.
+        CheckInService.logCheckOut(this.realm, thisLog.id as string);
+        
+        await this.showNotification(
+            'Silent Zone Partial Exit',
+            `Exited ${place?.name || 'area'}. Still in other active zones.`,
+            'check-out-partial'
         );
     }
   }

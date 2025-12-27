@@ -8,6 +8,7 @@ import { CustomInput } from '../components/CustomInput';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
+import { CheckInService } from '../database/services/CheckInService';
 
 interface Props {
   navigation: any;
@@ -66,6 +67,25 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
     }
     setLoading(false);
   }, [placeId]);
+
+  // Safety check: Don't allow editing if place is active
+  useEffect(() => {
+    const checkActive = () => {
+      const place = PlaceService.getPlaceById(realm, placeId) as any;
+      if (place?.isInside) {
+        Alert.alert(
+          "Place is Active",
+          "You cannot edit a place while you are currently inside it. Returning to details.",
+          [{ text: "OK", onPress: () => navigation.goBack() }]
+        );
+      }
+    };
+
+    checkActive();
+    // Also check every 10 seconds in case they enter while screen is open
+    const interval = setInterval(checkActive, 10000);
+    return () => clearInterval(interval);
+  }, [placeId, realm]);
 
   const handleSave = () => {
     if (!placeName.trim()) {

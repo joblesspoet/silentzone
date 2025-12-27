@@ -16,6 +16,7 @@ export const PlaceSchema: Realm.ObjectSchema = {
     updatedAt: 'date',
     lastCheckInAt: 'date?',
     totalCheckIns: { type: 'int', default: 0 },
+    isInside: { type: 'bool', default: false },
   },
 };
 
@@ -47,4 +48,4 @@ export const PreferencesSchema: Realm.ObjectSchema = {
 };
 
 export const schema = [PlaceSchema, CheckInLogSchema, PreferencesSchema];
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;

@@ -10,6 +10,7 @@ import { PlaceCard } from '../components/PlaceCard';
 import { getDistance, formatDistance } from '../utils/geo';
 import { PermissionsManager } from '../permissions/PermissionsManager';
 import { RESULTS } from 'react-native-permissions';
+import { PreferencesService } from '../database/services/PreferencesService';
 
 interface Props {
   navigation: any;
@@ -18,7 +19,7 @@ interface Props {
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
   const [places, setPlaces] = useState<any[]>([]);
-  const [isPaused, setIsPaused] = useState(false);
+  const [trackingEnabled, setTrackingEnabled] = useState(true);
   const [activeCount, setActiveCount] = useState(0);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
@@ -26,39 +27,51 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   // Fetch places and set up listener
   useEffect(() => {
     const placesResult = PlaceService.getAllPlaces(realm);
+    const prefs = PreferencesService.getPreferences(realm) as any;
     
-    const updateState = (collection: any) => {
-      setPlaces([...collection]);
-      setActiveCount(collection.filter((p: any) => p.isEnabled).length);
-    };
-
-    // Initial load
-    const initialPlaces = placesResult;
-    setPlaces([...initialPlaces]);
-    const initialActive = initialPlaces.filter((p: any) => p.isEnabled).length;
+    // Set initial states
+    setPlaces([...placesResult]);
+    const initialActive = placesResult.filter((p: any) => p.isEnabled).length;
     setActiveCount(initialActive);
     
-    // If no active places on load, set to paused
+    if (prefs) {
+      setTrackingEnabled(prefs.trackingEnabled);
+    }
+    
+    // Auto-pause if no active places on load
     if (initialActive === 0 && isInitialLoad) {
-      setIsPaused(true);
+      PreferencesService.updatePreferences(realm, { trackingEnabled: false });
       setIsInitialLoad(false);
     }
 
-    // Listener for real-time updates
-    const listener = (collection: any) => {
+    // Listener for places
+    const placesListener = (collection: any) => {
       setPlaces([...collection]);
       const currentActive = collection.filter((p: any) => p.isEnabled).length;
       setActiveCount(currentActive);
       
-      // If active places drop to 0, force pause
+      // If active places drop to 0, force pause tracking
       if (currentActive === 0) {
-        setIsPaused(true);
+        PreferencesService.updatePreferences(realm, { trackingEnabled: false });
       }
     };
-    placesResult.addListener(listener);
+
+    // Listener for preferences
+    const prefsListener = (p: any) => {
+      setTrackingEnabled(!!p.trackingEnabled);
+    };
+
+    placesResult.addListener(placesListener);
+    
+    if (prefs && typeof prefs.addListener === 'function') {
+      prefs.addListener(prefsListener);
+    }
 
     return () => {
-      placesResult.removeListener(listener);
+      placesResult.removeListener(placesListener);
+      if (prefs && typeof prefs.removeListener === 'function') {
+        prefs.removeListener(prefsListener);
+      }
     };
   }, [realm, isInitialLoad]);
 
@@ -104,7 +117,15 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   }, []);
 
   const handleToggle = (id: string) => {
+    const place = places.find(p => p.id === id);
+    const currentlyEnabled = place?.isEnabled;
+    
     PlaceService.togglePlaceEnabled(realm, id);
+    
+    // Auto-resume logic: If we are turning a place ON and tracking is currently OFF
+    if (!currentlyEnabled && !trackingEnabled) {
+      PreferencesService.updatePreferences(realm, { trackingEnabled: true });
+    }
   };
 
   const handleDelete = (id: string, name: string) => {
@@ -186,12 +207,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
           <TouchableOpacity 
             style={[
               styles.pauseButton, 
-              isPaused && styles.pauseButtonActive,
+              !trackingEnabled && styles.pauseButtonActive,
               activeCount === 0 && styles.pauseButtonDisabled
             ]}
             onPress={() => {
               if (activeCount > 0) {
-                setIsPaused(!isPaused);
+                PreferencesService.toggleTracking(realm);
               } else {
                 Alert.alert(
                   "No Active Places", 
@@ -202,7 +223,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
             disabled={activeCount === 0}
           >
             <MaterialIcon 
-              name={isPaused ? "play-circle-outline" : "pause-circle-outline"} 
+              name={!trackingEnabled ? "play-circle-outline" : "pause-circle-outline"} 
               size={18} 
               color={activeCount === 0 ? theme.colors.text.disabled : theme.colors.primary} 
             />
@@ -210,7 +231,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
               styles.pauseButtonText,
               activeCount === 0 && styles.pauseButtonTextDisabled
             ]}>
-              {isPaused ? "RESUME TRACKING" : "PAUSE TRACKING"}
+              {!trackingEnabled ? "RESUME TRACKING" : "PAUSE TRACKING"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -222,7 +243,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
           <StatusCard 
             activeCount={activeCount} 
             totalCount={places.length} 
-            isOperational={!isPaused} 
+            isOperational={trackingEnabled} 
           />
         </View>
 
@@ -256,7 +277,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                   onPress={() => {
                     navigation.navigate('PlaceDetail', { placeId: place.id });
                   }}
-                  disabled={isPaused}
+                  isPaused={!trackingEnabled}
                 />
               );
             })

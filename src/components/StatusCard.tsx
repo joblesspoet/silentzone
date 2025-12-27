@@ -29,15 +29,15 @@ export const StatusCard: React.FC<StatusCardProps> = ({
       <View style={styles.content}>
         <View style={styles.statusRow}>
           <View style={styles.indicatorContainer}>
-            <View style={[styles.indicatorDot, isOperational ? { backgroundColor: theme.colors.success } : { backgroundColor: theme.colors.error }]} />
-            <View style={[styles.indicatorPing, isOperational ? { backgroundColor: theme.colors.success } : { backgroundColor: theme.colors.error }]} />
+            <View style={[styles.indicatorDot, isOperational ? { backgroundColor: theme.colors.success } : { backgroundColor: theme.colors.warning }]} />
+            {!isOperational && <View style={[styles.indicatorPing, { backgroundColor: theme.colors.warning }]} />}
           </View>
-          <Text style={styles.statusText}>
+          <Text style={[styles.statusText, !isOperational && { color: theme.colors.warning }]}>
             {isOperational ? 'SYSTEM OPERATIONAL' : 'SYSTEM PAUSED'}
           </Text>
         </View>
         
-        <Text style={styles.mainText}>Monitoring Active</Text>
+        <Text style={styles.mainText}>{isOperational ? 'Monitoring Active' : 'Monitoring Paused'}</Text>
         <Text style={styles.subText}>Active Places: {activeCount} of {totalCount}</Text>
       </View>
       

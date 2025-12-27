@@ -17,6 +17,7 @@ interface PlaceCardProps {
   onPress: () => void;
   isCurrentLocation?: boolean;
   disabled?: boolean;
+  isPaused?: boolean;
 }
 
 export const PlaceCard: React.FC<PlaceCardProps> = ({
@@ -31,6 +32,7 @@ export const PlaceCard: React.FC<PlaceCardProps> = ({
   onPress,
   isCurrentLocation = false,
   disabled = false,
+  isPaused = false,
 }) => {
   const renderRightActions = (
     progress: Animated.AnimatedInterpolation<number>,
@@ -52,6 +54,8 @@ export const PlaceCard: React.FC<PlaceCardProps> = ({
     );
   };
 
+  const showActive = isActive && !isPaused;
+
   return (
     <Swipeable renderRightActions={renderRightActions} containerStyle={styles.swipeContainer}>
       <TouchableOpacity 
@@ -59,20 +63,20 @@ export const PlaceCard: React.FC<PlaceCardProps> = ({
         activeOpacity={0.9}
         style={[
           styles.container,
-          isActive && styles.activeBorder,
+          showActive && styles.activeBorder,
           disabled && styles.disabled,
         ]}
       >
         <View style={styles.content}>
           <View style={[
             styles.iconContainer, 
-            isActive ? styles.activeIcon : styles.inactiveIcon,
-            disabled && styles.disabledIcon
+            showActive ? styles.activeIcon : styles.inactiveIcon,
+            (disabled || (isPaused && isActive)) && styles.disabledIcon
           ]}>
             <MaterialIcon 
               name={icon} 
               size={24} 
-              color={isActive ? theme.colors.white : (disabled ? theme.colors.text.disabled : theme.colors.primary)} 
+              color={showActive ? theme.colors.white : (disabled || (isPaused && isActive) ? theme.colors.text.disabled : theme.colors.primary)} 
             />
           </View>
           
@@ -80,15 +84,15 @@ export const PlaceCard: React.FC<PlaceCardProps> = ({
             <Text style={styles.name} numberOfLines={1}>{name}</Text>
             <View style={styles.infoRow}>
               <MaterialIcon 
-                name={isCurrentLocation ? "my_location" : "location_on"} 
+                name={(isCurrentLocation && !isPaused) ? "my_location" : "location_on"} 
                 size={14} 
-                color={isCurrentLocation ? theme.colors.success : theme.colors.text.secondary.dark} 
+                color={(isCurrentLocation && !isPaused) ? theme.colors.success : theme.colors.text.secondary.dark} 
               />
               <Text style={[
                 styles.infoText,
-                isCurrentLocation && { color: theme.colors.success, fontWeight: 'bold' }
+                (isCurrentLocation && !isPaused) && { color: theme.colors.success, fontWeight: 'bold' }
               ]}>
-                {isCurrentLocation ? "Currently inside" : `${radius} radius • ${distance}`}
+                {(isCurrentLocation && !isPaused) ? "Currently inside" : `${radius} radius • ${distance}`}
               </Text>
             </View>
           </View>
