@@ -9,6 +9,7 @@ import { CustomInput } from '../components/CustomInput';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
+import { PreferencesService } from '../database/services/PreferencesService';
 import { PermissionsManager } from '../permissions/PermissionsManager';
 import { usePermissions } from '../permissions/PermissionsContext';
 import { RESULTS } from 'react-native-permissions';
@@ -172,7 +173,14 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         radius: radius,
         category: selectedCategory.id,
         icon: selectedCategory.icon,
+        isEnabled: isSilencingEnabled,
       });
+
+      // Auto-resume logic: If adding an ENABLED place while global tracking is PAUSED
+      const prefs = PreferencesService.getPreferences(realm);
+      if (isSilencingEnabled && prefs && !(prefs as any).trackingEnabled) {
+          PreferencesService.updatePreferences(realm, { trackingEnabled: true });
+      }
 
       navigation.goBack();
     } catch (error) {

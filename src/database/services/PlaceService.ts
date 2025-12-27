@@ -8,6 +8,7 @@ export interface PlaceData {
   radius?: number;
   category?: string;
   icon?: string;
+  isEnabled?: boolean;
 }
 
 export const PlaceService = {
@@ -36,7 +37,7 @@ export const PlaceService = {
         icon: data.icon || 'place',
         createdAt: new Date(),
         updatedAt: new Date(),
-        isEnabled: true,
+        isEnabled: data.isEnabled !== undefined ? data.isEnabled : true,
         totalCheckIns: 0,
       });
     });

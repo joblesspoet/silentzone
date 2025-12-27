@@ -288,9 +288,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       </ScrollView>
 
       {/* FAB */}
-      {places.length > 0 && (
+      {places.length > 0 && canAddPlace && (
         <TouchableOpacity 
-          style={[styles.fab, !canAddPlace && styles.fabDisabled]}
+          style={styles.fab}
           onPress={() => {
             if (canAddPlace) {
               navigation.navigate('AddPlace');
