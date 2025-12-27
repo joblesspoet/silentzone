@@ -20,6 +20,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [places, setPlaces] = useState<any[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const [activeCount, setActiveCount] = useState(0);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
 
   // Fetch places and set up listener
@@ -32,16 +33,34 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     };
 
     // Initial load
-    updateState(placesResult);
+    const initialPlaces = placesResult;
+    setPlaces([...initialPlaces]);
+    const initialActive = initialPlaces.filter((p: any) => p.isEnabled).length;
+    setActiveCount(initialActive);
+    
+    // If no active places on load, set to paused
+    if (initialActive === 0 && isInitialLoad) {
+      setIsPaused(true);
+      setIsInitialLoad(false);
+    }
 
     // Listener for real-time updates
-    const listener = (collection: any) => updateState(collection);
+    const listener = (collection: any) => {
+      setPlaces([...collection]);
+      const currentActive = collection.filter((p: any) => p.isEnabled).length;
+      setActiveCount(currentActive);
+      
+      // If active places drop to 0, force pause
+      if (currentActive === 0) {
+        setIsPaused(true);
+      }
+    };
     placesResult.addListener(listener);
 
     return () => {
       placesResult.removeListener(listener);
     };
-  }, [realm]);
+  }, [realm, isInitialLoad]);
 
   // Location tracking
   useEffect(() => {
@@ -165,15 +184,32 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.headerTop}>
           <Text style={styles.dateText}>{currentDate}</Text>
           <TouchableOpacity 
-            style={[styles.pauseButton, isPaused && styles.pauseButtonActive]}
-            onPress={() => setIsPaused(!isPaused)}
+            style={[
+              styles.pauseButton, 
+              isPaused && styles.pauseButtonActive,
+              activeCount === 0 && styles.pauseButtonDisabled
+            ]}
+            onPress={() => {
+              if (activeCount > 0) {
+                setIsPaused(!isPaused);
+              } else {
+                Alert.alert(
+                  "No Active Places", 
+                  "Please enable at least one place to start tracking."
+                );
+              }
+            }}
+            disabled={activeCount === 0}
           >
             <MaterialIcon 
               name={isPaused ? "play-circle-outline" : "pause-circle-outline"} 
               size={18} 
-              color={theme.colors.primary} 
+              color={activeCount === 0 ? theme.colors.text.disabled : theme.colors.primary} 
             />
-            <Text style={styles.pauseButtonText}>
+            <Text style={[
+              styles.pauseButtonText,
+              activeCount === 0 && styles.pauseButtonTextDisabled
+            ]}>
               {isPaused ? "RESUME TRACKING" : "PAUSE TRACKING"}
             </Text>
           </TouchableOpacity>
@@ -210,7 +246,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                   key={place.id}
                   id={place.id}
                   name={place.name}
-                  icon="place"
+                  icon={place.icon || 'place'}
                   radius={`${place.radius}m`} 
                   distance={distanceText}
                   isActive={place.isEnabled}
@@ -292,6 +328,13 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     marginLeft: 4,
     letterSpacing: 0.5,
+  },
+  pauseButtonDisabled: {
+    backgroundColor: theme.colors.border.light,
+    opacity: 0.6,
+  },
+  pauseButtonTextDisabled: {
+    color: theme.colors.text.disabled,
   },
   appTitle: {
     fontFamily: theme.typography.primary,

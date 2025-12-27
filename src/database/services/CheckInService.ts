@@ -2,7 +2,7 @@ import Realm from 'realm';
 import { generateUUID } from '../../utils/uuid';
 
 export const CheckInService = {
-  logCheckIn: (realm: Realm, placeId: string, volumeLevel?: number) => {
+  logCheckIn: (realm: Realm, placeId: string, volumeLevel?: number, mediaVolume?: number) => {
     let log;
     realm.write(() => {
       log = realm.create('CheckInLog', {
@@ -10,11 +10,12 @@ export const CheckInService = {
         placeId,
         checkInTime: new Date(),
         savedVolumeLevel: volumeLevel,
+        savedMediaVolume: mediaVolume,
         wasAutomatic: true,
       });
       
       // Update place stats
-      const place = realm.objectForPrimaryKey('Place', placeId);
+      const place = realm.objectForPrimaryKey('Place', placeId) as any;
       if (place) {
         place.lastCheckInAt = new Date();
         place.totalCheckIns += 1;

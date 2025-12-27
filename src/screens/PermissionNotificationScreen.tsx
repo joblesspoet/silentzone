@@ -14,11 +14,11 @@ export const PermissionNotificationScreen: React.FC<Props> = ({ navigation }) =>
 
   const handleGrant = async () => {
     await requestNotificationFlow();
-    navigation.replace('OnboardingAddPlaces');
+    navigation.replace('PermissionDnd');
   };
 
   const handleSkip = () => {
-    navigation.replace('OnboardingAddPlaces');
+    navigation.replace('PermissionDnd');
   };
 
   return (
@@ -57,7 +57,7 @@ export const PermissionNotificationScreen: React.FC<Props> = ({ navigation }) =>
         <CustomButton 
           title="Not Now" 
           onPress={handleSkip} 
-          variant="text" 
+          variant="ghost" 
           fullWidth
         />
       </View>
@@ -92,7 +92,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontFamily: theme.typography.primary,
-    fontSize: theme.typography.sizes.h2,
+    fontSize: theme.typography.sizes.xxl,
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.text.primary.light,
     textAlign: 'center',

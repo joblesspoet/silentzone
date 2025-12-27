@@ -1,64 +1,57 @@
-import BackgroundGeolocation, {
-  GeofenceEvent,
-} from 'react-native-background-geolocation';
+import Geofencing from '@rn-org/react-native-geofencing';
 import notifee, { AndroidImportance } from '@notifee/react-native';
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
 import { CheckInService } from '../database/services/CheckInService';
-import { Platform } from 'react-native';
+import { Platform, PermissionsAndroid } from 'react-native';
+import Geolocation from '@react-native-community/geolocation';
+import RingerMode, { RINGER_MODE } from '../modules/RingerMode';
+import { PermissionsManager } from '../permissions/PermissionsManager';
 
 class LocationService {
   private realm: Realm | null = null;
   private isReady = false;
   private lastTriggerTime: { [key: string]: number } = {};
   private readonly DEBOUNCE_TIME = 10000; // 10 seconds
+  private geofenceCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private savedRingerMode: number | null = null; // Store original ringer mode
 
   // Initialize service
   async initialize(realmInstance: Realm) {
     if (this.isReady) return;
     this.realm = realmInstance;
 
-    // 1. Request Notification Permissions
+    // 1. Request Location Permissions
+    await this.requestLocationPermissions();
+
+    // 2. Request Notification Permissions
     await notifee.requestPermission();
 
-    // 2. Configure BackgroundGeolocation
-    await BackgroundGeolocation.ready({
-      // Geolocation Config
-      desiredAccuracy: BackgroundGeolocation.DESIRED_ACCURACY_HIGH,
-      distanceFilter: 10,
-      
-      // Activity Recognition
-      stopTimeout: 5,
-      debug: false, // Set to false for production feel
-      logLevel: BackgroundGeolocation.LOG_LEVEL_VERBOSE,
-      stopOnTerminate: false,
-      startOnBoot: true,
-      
-      // Geofence Config
-      geofenceProximityRadius: 1000,
-      geofenceInitialTriggerEntry: true,
+    // 3. Request DND Permission (required to change ringer mode)
+    // We already handle this in the onboarding, but good to have as backup
+    const hasPermission = await RingerMode.checkDndPermission();
+    if (!hasPermission) {
+        console.log('[LocationService] DND permission not granted, requesting...');
+        await RingerMode.requestDndPermission();
+    }
 
-      // Android specific
-      foregroundService: true,
-      notification: {
-          title: "Silent Zone Active",
-          text: "Monitoring your silent places",
-          priority: BackgroundGeolocation.NOTIFICATION_PRIORITY_DEFAULT
-      }
-    });
-
-    // 3. Set listeners
-    BackgroundGeolocation.onGeofence(this.handleGeofenceEvent.bind(this));
-
-    // 4. Start monitoring
-    await BackgroundGeolocation.startGeofences();
-    
-    // 5. Sync and listen for database changes
+    // 4. Sync and listen for database changes
     this.syncGeofences();
     this.setupReactiveSync();
 
+    // 5. Start monitoring geofences
+    this.startGeofenceMonitoring();
+
     this.isReady = true;
     console.log('[LocationService] Initialized and monitoring');
+  }
+
+  private async requestDndPermission() {
+    // Redundant now, removed
+  }
+
+  private async requestLocationPermissions() {
+    await PermissionsManager.requestLocationAlways();
   }
 
   private setupReactiveSync() {
@@ -78,82 +71,292 @@ class LocationService {
 
     try {
       const enabledPlaces = PlaceService.getEnabledPlaces(this.realm);
+      const enabledIds = new Set(enabledPlaces.map(p => p.id));
       
-      // Clear and re-add for consistency
-      await BackgroundGeolocation.removeGeofences();
+      // 1. Handle "Force CheckOut" if the current place was disabled
+      const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
+      if (currentCheckIn && !enabledIds.has(currentCheckIn.placeId as string)) {
+          const place = PlaceService.getPlaceById(this.realm, currentCheckIn.placeId as string);
+          await CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
+          await this.showNotification(
+              'Silent Zone Disabled',
+              `Tracking disabled for ${place?.name || 'current place'}. Status restored.`,
+              'check-out-force'
+          );
+      }
 
+      // 2. Clear and re-add geofences
+      await Geofencing.removeAllGeofence();
+
+      if (enabledPlaces.length === 0) {
+          console.log('[LocationService] No enabled places. Stopping tracking.');
+          this.stopGeofenceMonitoring();
+          return;
+      }
+
+      // 3. Add Geofences
       for (const place of enabledPlaces) {
-         await BackgroundGeolocation.addGeofence({
-            identifier: place.id as string,
-            radius: (place.radius as number) + 20,
+         await Geofencing.addGeofence({
+            id: place.id as string,
             latitude: place.latitude as number,
             longitude: place.longitude as number,
-            notifyOnEntry: true,
-            notifyOnExit: true,
-            notifyOnDwell: false,
+            radius: Math.max(100, (place.radius as number) + 20), // Minimum 100m for reliability
          });
       }
       
       console.log(`[LocationService] Synced ${enabledPlaces.length} geofences`);
+
     } catch (error) {
       console.error('[LocationService] Sync failed:', error);
     }
   }
 
-  // Handle Entry/Exit
-  private async handleGeofenceEvent(event: GeofenceEvent) {
-    const now = Date.now();
-    const placeId = event.identifier;
-    const action = event.action;
+  private startGeofenceMonitoring() {
+    // Check geofences every 30 seconds
+    if (this.geofenceCheckInterval) {
+      clearInterval(this.geofenceCheckInterval);
+    }
 
-    // 1. Debounce check
+    this.geofenceCheckInterval = setInterval(() => {
+      this.checkGeofences();
+    }, 15000); // 15 seconds
+
+    // Also check immediately
+    this.checkGeofences();
+  }
+
+  private stopGeofenceMonitoring() {
+    if (this.geofenceCheckInterval) {
+      clearInterval(this.geofenceCheckInterval);
+      this.geofenceCheckInterval = null;
+    }
+  }
+
+  private async checkGeofences() {
+    // Safety Check: Verify permissions and GPS status
+    const hasPermissions = await PermissionsManager.hasScanningPermissions();
+    const gpsEnabled = await PermissionsManager.isGpsEnabled();
+
+    if (!hasPermissions || !gpsEnabled) {
+        console.warn(`[LocationService] Missing requirements: permissions=${hasPermissions}, gps=${gpsEnabled}. Skipping check.`);
+        return;
+    }
+
+    if (!this.realm) return;
+
+    try {
+      // Get current location
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          const { latitude, longitude, accuracy } = position.coords;
+
+          // Relaxed accuracy check (100m instead of 50m) for indoor reliability
+          if (accuracy > 100) {
+            console.log(`[LocationService] Ignoring very low accuracy: ${accuracy}m`);
+            return;
+          }
+
+          console.log(`[LocationService] Check: lat=${latitude.toFixed(4)}, lon=${longitude.toFixed(4)}, acc=${accuracy.toFixed(1)}m`);
+
+          const enabledPlaces = PlaceService.getEnabledPlaces(this.realm!);
+          const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm!);
+
+          for (const place of enabledPlaces) {
+            const distance = this.calculateDistance(
+              latitude,
+              longitude,
+              place.latitude as number,
+              place.longitude as number
+            );
+
+            const placeId = place.id as string;
+            // Add a small buffer (10%) to the radius to prevent flapping
+            const threshold = (place.radius as number) * 1.1;
+            const isInside = distance <= threshold;
+
+            if (isInside) {
+              // User is inside this geofence
+              if (!currentCheckIn || currentCheckIn.placeId !== placeId) {
+                console.log(`[LocationService] ENTER detected for ${place.name} (dist: ${Math.round(distance)}m)`);
+                await this.handleGeofenceEntry(placeId);
+              }
+            } else {
+              // User is outside this geofence
+              if (currentCheckIn && currentCheckIn.placeId === placeId) {
+                console.log(`[LocationService] EXIT detected for ${place.name} (dist: ${Math.round(distance)}m)`);
+                await this.handleGeofenceExit(placeId);
+              }
+            }
+          }
+        },
+        (error) => {
+          console.error('[LocationService] Location error:', error);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 10000,
+        }
+      );
+    } catch (error) {
+      console.error('[LocationService] Geofence check failed:', error);
+    }
+  }
+
+  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    // Haversine formula
+    const R = 6371e3; // Earth's radius in meters
+    const φ1 = (lat1 * Math.PI) / 180;
+    const φ2 = (lat2 * Math.PI) / 180;
+    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // Distance in meters
+  }
+
+  private async handleGeofenceEntry(placeId: string) {
+    const now = Date.now();
     const lastTime = this.lastTriggerTime[placeId] || 0;
+    
+    // Debounce check
     if (now - lastTime < this.DEBOUNCE_TIME) {
-        console.log(`[LocationService] Debouncing ${action} for ${placeId}`);
+        console.log(`[LocationService] Debouncing ENTER for ${placeId}`);
         return;
     }
     this.lastTriggerTime[placeId] = now;
 
     if (!this.realm) return;
 
-    // 2. Fetch current location to verify accuracy
-    // Geofence events give the location, but we want to ensure < 30m
-    const location = event.location;
-    if (location.coords.accuracy > 30) {
-        console.log(`[LocationService] Ignoring event due to low accuracy: ${location.coords.accuracy}m`);
-        return;
-    }
-
-    if (action === 'ENTER') {
-        const place = PlaceService.getPlaceById(this.realm, placeId);
-        if (place && place.isEnabled) {
-            // Check out of any other place first
-            const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
-            if (currentCheckIn && currentCheckIn.placeId !== placeId) {
-                CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
-            }
-
-            if (!currentCheckIn || currentCheckIn.placeId !== placeId) {
-                CheckInService.logCheckIn(this.realm, placeId, 50); // Volume logic in Step 10
-                await this.showNotification(
-                    'Silent Zone Active',
-                    `Now in ${place.name}. Phone is being silenced.`,
-                    'check-in'
-                );
-            }
-        }
-    } else if (action === 'EXIT') {
-        const place = PlaceService.getPlaceById(this.realm, placeId);
+    const place = PlaceService.getPlaceById(this.realm, placeId);
+    if (place && place.isEnabled) {
+        // Check out of any other place first
         const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
-        
-        if (currentCheckIn && currentCheckIn.placeId === placeId) {
+        if (currentCheckIn && currentCheckIn.placeId !== placeId) {
+            await this.restoreRingerMode(currentCheckIn.id as string);
             CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
+        }
+
+        if (!currentCheckIn || currentCheckIn.placeId !== placeId) {
+            // Save current ringer mode before silencing
+            await this.saveAndSilencePhone(placeId);
+            
             await this.showNotification(
-                'Silent Zone Deactivated',
-                `Exited ${place?.name || 'Silent Zone'}. Status restored.`,
-                'check-out'
+                'Silent Zone Active',
+                `Now in ${place.name}. Phone is being silenced.`,
+                'check-in'
             );
         }
+    }
+  }
+
+  private async handleGeofenceExit(placeId: string) {
+    const now = Date.now();
+    const lastTime = this.lastTriggerTime[placeId] || 0;
+    
+    // Debounce check
+    if (now - lastTime < this.DEBOUNCE_TIME) {
+        console.log(`[LocationService] Debouncing EXIT for ${placeId}`);
+        return;
+    }
+    this.lastTriggerTime[placeId] = now;
+
+    if (!this.realm) return;
+
+    const place = PlaceService.getPlaceById(this.realm, placeId);
+    const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm);
+    
+    if (currentCheckIn && currentCheckIn.placeId === placeId) {
+        // Restore ringer mode before checking out
+        await this.restoreRingerMode(currentCheckIn.id as string);
+        
+        CheckInService.logCheckOut(this.realm, currentCheckIn.id as string);
+        await this.showNotification(
+            'Silent Zone Deactivated',
+            `Exited ${place?.name || 'Silent Zone'}. Sound restored.`,
+            'check-out'
+        );
+    }
+  }
+
+  // Save current ringer mode and silence the phone
+  private async saveAndSilencePhone(placeId: string) {
+    try {
+      if (Platform.OS === 'android') {
+        // Check DND permission first
+        const hasPermission = await RingerMode.checkDndPermission();
+        
+        if (!hasPermission) {
+          console.warn('[LocationService] No DND permission, cannot silence phone');
+          await this.showNotification(
+            'Permission Required',
+            'Grant "Do Not Disturb" access in settings to enable automatic silencing',
+            'dnd-required'
+          );
+          // Still log check-in
+          CheckInService.logCheckIn(this.realm!, placeId);
+          return;
+        }
+
+        // Get current ringer mode and media volume
+        const currentMode = await RingerMode.getRingerMode();
+        const currentMediaVolume = await RingerMode.getStreamVolume(RingerMode.STREAM_TYPES.MUSIC);
+        console.log(`[LocationService] Current mode: ${currentMode}, Media volume: ${currentMediaVolume}`);
+        
+        // Save them to the check-in log
+        CheckInService.logCheckIn(this.realm!, placeId, currentMode, currentMediaVolume);
+        
+        // Set phone to silent and media to 0
+        try {
+          await RingerMode.setRingerMode(RINGER_MODE.silent);
+          await RingerMode.setStreamVolume(RingerMode.STREAM_TYPES.MUSIC, 0);
+          console.log('[LocationService] Phone silenced and media muted successfully');
+        } catch (error: any) {
+          if (error.code === 'NO_PERMISSION') {
+            console.warn('[LocationService] DND permission was revoked');
+            await RingerMode.requestDndPermission();
+          } else {
+            console.error('[LocationService] Failed to silence phone:', error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('[LocationService] Failed to silence phone:', error);
+      // Still log check-in even if silencing fails
+      CheckInService.logCheckIn(this.realm!, placeId);
+    }
+  }
+
+  // Restore the saved ringer mode
+  private async restoreRingerMode(checkInLogId: string) {
+    try {
+      if (Platform.OS === 'android') {
+        const log = this.realm!.objectForPrimaryKey('CheckInLog', checkInLogId);
+        if (log) {
+          const savedMode = (log as any).savedVolumeLevel;
+          const savedMediaVolume = (log as any).savedMediaVolume;
+
+          if (savedMode !== null && savedMode !== undefined) {
+             console.log('[LocationService] Restoring ringer mode to:', savedMode);
+             await RingerMode.setRingerMode(savedMode as any);
+          } else {
+             await RingerMode.setRingerMode(RINGER_MODE.normal);
+          }
+
+          if (savedMediaVolume !== null && savedMediaVolume !== undefined) {
+             console.log('[LocationService] Restoring media volume to:', savedMediaVolume);
+             await RingerMode.setStreamVolume(RingerMode.STREAM_TYPES.MUSIC, savedMediaVolume);
+          }
+          
+          console.log('[LocationService] Sound and media volume restored');
+        }
+      }
+    } catch (error) {
+      console.error('[LocationService] Failed to restore ringer mode:', error);
     }
   }
 
@@ -172,7 +375,7 @@ class LocationService {
             body,
             android: {
                 channelId: 'silent-zone-alerts',
-                smallIcon: 'ic_launcher', // Ensure this exists or use default
+                smallIcon: 'ic_launcher',
                 pressAction: {
                     id: 'default',
                 },
@@ -188,6 +391,12 @@ class LocationService {
     } catch (error) {
         console.error('[LocationService] Notification failed:', error);
     }
+  }
+
+  // Cleanup method
+  destroy() {
+    this.stopGeofenceMonitoring();
+    this.isReady = false;
   }
 }
 

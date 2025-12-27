@@ -14,14 +14,8 @@ export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
   const { requestLocationFlow, locationStatus } = usePermissions();
 
   const handleGrant = async () => {
-    const success = await requestLocationFlow();
-    if (success) {
-      navigation.replace('PermissionNotification');
-    } else {
-      // Logic for denied: maybe show a "Are you sure?" or just proceed for now
-      // For MVP, we'll just proceed but maybe could show a toast
-      navigation.replace('PermissionNotification');
-    }
+    await requestLocationFlow();
+    navigation.replace('PermissionNotification');
   };
 
   const handleSkip = () => {
@@ -77,7 +71,7 @@ export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
         <CustomButton 
           title="Maybe Later" 
           onPress={handleSkip} 
-          variant="text" 
+          variant="ghost" 
           fullWidth
         />
       </View>
@@ -124,7 +118,7 @@ const styles = StyleSheet.create({
   
   title: {
     fontFamily: theme.typography.primary,
-    fontSize: theme.typography.sizes.h2,
+    fontSize: theme.typography.sizes.xxl,
     fontWeight: theme.typography.weights.bold,
     color: theme.colors.text.primary.light,
     textAlign: 'center',

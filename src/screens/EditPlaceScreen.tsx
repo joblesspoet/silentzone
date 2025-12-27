@@ -31,11 +31,19 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
   const [placeName, setPlaceName] = useState('');
   const [radius, setRadius] = useState(150);
   const [isEnabled, setIsEnabled] = useState(true);
+  const [selectedCategory, setSelectedCategory] = useState({ id: 'other', icon: 'place', label: 'Other' });
   const [loading, setLoading] = useState(true);
+
+  const CATEGORIES = [
+    { id: 'mosque', icon: 'mosque', label: 'Mosque' },
+    { id: 'office', icon: 'business-center', label: 'Office' },
+    { id: 'school', icon: 'school', label: 'School' },
+    { id: 'other', icon: 'place', label: 'Other' },
+  ];
 
   // Load existing data
   useEffect(() => {
-    const place = PlaceService.getPlaceById(realm, placeId);
+    const place = PlaceService.getPlaceById(realm, placeId) as any;
     if (place) {
         setPlaceName(place.name);
         setRadius(place.radius);
@@ -48,6 +56,10 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
             longitudeDelta: 0.01,
         };
         setRegion(initialRegion);
+
+        // Find and set current category
+        const cat = CATEGORIES.find(c => c.id === place.category) || CATEGORIES[3];
+        setSelectedCategory(cat);
     } else {
         Alert.alert("Error", "Place not found");
         navigation.goBack();
@@ -73,6 +85,8 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         longitude: region.longitude,
         radius: radius,
         isEnabled: isEnabled,
+        category: selectedCategory.id,
+        icon: selectedCategory.icon,
       });
 
       if (success) {
@@ -171,6 +185,35 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
             leftIcon="edit-location"
             maxLength={100}
           />
+
+          {/* Category Picker */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>CATEGORY</Text>
+            <View style={styles.categoryContainer}>
+              {CATEGORIES.map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.categoryItem,
+                    selectedCategory.id === cat.id && styles.categoryItemActive
+                  ]}
+                  onPress={() => setSelectedCategory(cat)}
+                >
+                  <MaterialIcon 
+                    name={cat.icon} 
+                    size={22} 
+                    color={selectedCategory.id === cat.id ? theme.colors.white : theme.colors.text.secondary.dark} 
+                  />
+                  <Text style={[
+                    styles.categoryLabel,
+                    selectedCategory.id === cat.id && styles.categoryLabelActive
+                  ]}>
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
@@ -313,6 +356,36 @@ const styles = StyleSheet.create({
   formContent: {
     padding: theme.spacing.xl,
     paddingTop: theme.spacing.xl,
+  },
+  categoryContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.layout.borderRadius.md,
+    backgroundColor: theme.colors.surface.light,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+    gap: theme.spacing.xs,
+  },
+  categoryItemActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  categoryLabel: {
+    fontFamily: theme.typography.primary,
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.text.secondary.dark,
+    fontWeight: theme.typography.weights.medium,
+  },
+  categoryLabelActive: {
+    color: theme.colors.white,
   },
   section: {
     marginBottom: theme.spacing.xl,

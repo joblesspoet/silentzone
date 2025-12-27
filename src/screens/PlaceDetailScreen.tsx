@@ -149,7 +149,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
              </MapView>
              {/* Center Marker Overlay */}
              <View style={styles.centerMarker}>
-                 <MaterialIcon name="location-on" size={32} color={theme.colors.primary} />
+                 <MaterialIcon name={place.icon || "location-on"} size={32} color={theme.colors.primary} />
              </View>
         </View>
 

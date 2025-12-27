@@ -10,6 +10,7 @@ import { ToggleSwitch } from '../components/ToggleSwitch';
 import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
 import { PermissionsManager } from '../permissions/PermissionsManager';
+import { usePermissions } from '../permissions/PermissionsContext';
 import { RESULTS } from 'react-native-permissions';
 
 interface Props {
@@ -28,6 +29,7 @@ const DEFAULT_REGION = {
 
 export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
+  const { locationStatus, backgroundLocationStatus, dndStatus, refreshPermissions } = usePermissions();
   const mapRef = useRef<MapView>(null);
   
   const [region, setRegion] = useState(DEFAULT_REGION);
@@ -38,6 +40,14 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
   const [hasLocationPermission, setHasLocationPermission] = useState(false);
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState({ id: 'mosque', icon: 'mosque', label: 'Mosque' });
+
+  const CATEGORIES = [
+    { id: 'mosque', icon: 'mosque', label: 'Mosque' },
+    { id: 'office', icon: 'business-center', label: 'Office' },
+    { id: 'school', icon: 'school', label: 'School' },
+    { id: 'other', icon: 'place', label: 'Other' },
+  ];
 
   useEffect(() => {
     checkPermission();
@@ -73,6 +83,17 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
     }
 
     try {
+        // Check if GPS is enabled first
+        const gpsEnabled = await PermissionsManager.isGpsEnabled();
+        if (!gpsEnabled) {
+          Alert.alert(
+            "GPS Disabled",
+            "Please enable location services (GPS) to find your current location.",
+            [{ text: "OK" }]
+          );
+          return;
+        }
+
         Geolocation.getCurrentPosition(
             (position) => {
                 const { latitude, longitude, accuracy } = position.coords;
@@ -98,7 +119,33 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
+    // Check all permissions first
+    const hasFullPermissions = await PermissionsManager.hasScanningPermissions();
+    
+    if (!hasFullPermissions) {
+      Alert.alert(
+        "Permissions Required",
+        "Silent Zone needs Location (Always), Notifications, and Do Not Disturb access to work correctly. Please grant these permissions in Settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => PermissionsManager.openSettings() }
+        ]
+      );
+      return;
+    }
+
+    // Also check if GPS is enabled
+    const gpsEnabled = await PermissionsManager.isGpsEnabled();
+    if (!gpsEnabled) {
+      Alert.alert(
+        "GPS Disabled",
+        "Please enable location services (GPS) to accurately save this place.",
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
     if (!placeName.trim()) {
       Alert.alert("Error", "Please enter a place name");
       return;
@@ -123,6 +170,8 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         latitude: region.latitude,
         longitude: region.longitude,
         radius: radius,
+        category: selectedCategory.id,
+        icon: selectedCategory.icon,
       });
 
       navigation.goBack();
@@ -216,13 +265,42 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
           
           <CustomInput
             label="Place Name"
-            placeholder="e.g., Downtown Mosque"
+            placeholder={`e.g., Downtown ${selectedCategory.label}`}
             value={placeName}
             onChangeText={setPlaceName}
             leftIcon="edit-location"
             maxLength={100}
           />
           <Text style={styles.charCount}>{placeName.length}/100</Text>
+
+          {/* Category Picker */}
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>CATEGORY</Text>
+            <View style={styles.categoryContainer}>
+              {CATEGORIES.map((cat) => (
+                <TouchableOpacity
+                  key={cat.id}
+                  style={[
+                    styles.categoryItem,
+                    selectedCategory.id === cat.id && styles.categoryItemActive
+                  ]}
+                  onPress={() => setSelectedCategory(cat)}
+                >
+                  <MaterialIcon 
+                    name={cat.icon} 
+                    size={22} 
+                    color={selectedCategory.id === cat.id ? theme.colors.white : theme.colors.text.secondary.dark} 
+                  />
+                  <Text style={[
+                    styles.categoryLabel,
+                    selectedCategory.id === cat.id && styles.categoryLabelActive
+                  ]}>
+                    {cat.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
           {/* Radius Slider */}
           <View style={styles.section}>
@@ -408,6 +486,44 @@ const styles = StyleSheet.create({
     color: theme.colors.text.primary.light,
     opacity: 0.8,
   },
+  charCount: {
+    fontFamily: theme.typography.primary,
+    fontSize: 12,
+    color: theme.colors.text.secondary.light,
+    textAlign: 'right',
+    marginTop: -theme.spacing.sm,
+    marginBottom: theme.spacing.md,
+  },
+  categoryContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.sm,
+  },
+  categoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.layout.borderRadius.md,
+    backgroundColor: theme.colors.surface.light,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+    gap: theme.spacing.xs,
+  },
+  categoryItemActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  categoryLabel: {
+    fontFamily: theme.typography.primary,
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.text.secondary.dark,
+    fontWeight: theme.typography.weights.medium,
+  },
+  categoryLabelActive: {
+    color: theme.colors.white,
+  },
   radiusBadge: {
     backgroundColor: theme.colors.primary + '1A', // 10%
     paddingHorizontal: theme.spacing.sm,
@@ -498,20 +614,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     zIndex: 20,
-    ...theme.layout.shadows.small, // Fixed shadows issue
+    ...theme.layout.shadows.soft, // Fixed shadows issue
   },
   gpsWarningText: {
     color: theme.colors.white,
     fontSize: theme.typography.sizes.xs,
     fontWeight: theme.typography.weights.bold,
-  },
-  charCount: {
-    textAlign: 'right',
-    fontSize: 10,
-    color: theme.colors.text.secondary.light,
-    marginTop: -16,
-    marginBottom: 8,
-    marginRight: 4,
   },
   accuracyText: {
     fontSize: 10,

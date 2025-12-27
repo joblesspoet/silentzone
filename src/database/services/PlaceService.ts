@@ -6,6 +6,8 @@ export interface PlaceData {
   latitude: number;
   longitude: number;
   radius?: number;
+  category?: string;
+  icon?: string;
 }
 
 export const PlaceService = {
@@ -30,6 +32,8 @@ export const PlaceService = {
         latitude: data.latitude,
         longitude: data.longitude,
         radius: data.radius || 50,
+        category: data.category || 'other',
+        icon: data.icon || 'place',
         createdAt: new Date(),
         updatedAt: new Date(),
         isEnabled: true,
@@ -47,6 +51,8 @@ export const PlaceService = {
         place.latitude = data.latitude !== undefined ? data.latitude : place.latitude;
         place.longitude = data.longitude !== undefined ? data.longitude : place.longitude;
         place.radius = data.radius !== undefined ? data.radius : place.radius;
+        place.category = data.category !== undefined ? data.category : place.category;
+        place.icon = data.icon !== undefined ? data.icon : place.icon;
         place.isEnabled = data.isEnabled !== undefined ? data.isEnabled : place.isEnabled;
         place.updatedAt = new Date();
       });

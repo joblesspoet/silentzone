@@ -17,8 +17,11 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
 
   const handleSkip = () => {
-    // Start the onboarding flow
-    navigation.replace('PermissionLocation');
+    PreferencesService.setOnboardingComplete(realm);
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Home' }],
+    });
   };
 
   return (
@@ -76,7 +79,7 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
         <CustomButton
           title="Get Started"
           onPress={() => {
-            navigation.navigate('OnboardingAddPlaces');
+            navigation.replace('OnboardingAddPlaces');
           }}
           fullWidth
           rightIcon="arrow-forward"

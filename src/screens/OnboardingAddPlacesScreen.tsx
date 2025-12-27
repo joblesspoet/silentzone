@@ -98,7 +98,7 @@ export const OnboardingAddPlacesScreen: React.FC<Props> = ({ navigation }) => {
         <CustomButton
           title="Next"
           onPress={() => {
-            navigation.navigate('OnboardingAutoSilence');
+            navigation.replace('OnboardingAutoSilence');
           }}
           fullWidth
           rightIcon="arrow-forward"

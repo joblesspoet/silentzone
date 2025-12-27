@@ -18,7 +18,10 @@ export const OnboardingAutoSilenceScreen: React.FC<Props> = ({ navigation }) => 
 
   const handleFinish = () => {
     PreferencesService.setOnboardingComplete(realm);
-    navigation.replace('Home');
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Home' }],
+    });
   };
 
   return (

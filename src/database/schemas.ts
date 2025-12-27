@@ -10,6 +10,8 @@ export const PlaceSchema: Realm.ObjectSchema = {
     longitude: 'double',
     radius: { type: 'int', default: 50 },
     isEnabled: { type: 'bool', default: true },
+    category: { type: 'string', default: 'other' },
+    icon: { type: 'string', default: 'place' },
     createdAt: 'date',
     updatedAt: 'date',
     lastCheckInAt: 'date?',
@@ -27,6 +29,7 @@ export const CheckInLogSchema: Realm.ObjectSchema = {
     checkOutTime: 'date?',
     durationMinutes: 'int?',
     savedVolumeLevel: 'int?',
+    savedMediaVolume: 'int?',
     wasAutomatic: { type: 'bool', default: true },
   },
 };
@@ -44,4 +47,4 @@ export const PreferencesSchema: Realm.ObjectSchema = {
 };
 
 export const schema = [PlaceSchema, CheckInLogSchema, PreferencesSchema];
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 3;

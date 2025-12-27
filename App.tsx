@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { theme } from './src/theme';
 import { RealmProvider, useRealm } from './src/database/RealmProvider';
+import { PermissionsProvider } from './src/permissions/PermissionsContext';
 import { locationService } from './src/services/LocationService';
 
 const AppContent = () => {
@@ -19,7 +20,7 @@ const AppContent = () => {
       <NavigationContainer theme={{
         ...DefaultTheme,
         dark: false,
-        colors: {
+        colors: { 
           ...DefaultTheme.colors,
           primary: theme.colors.primary,
           background: theme.colors.background.light,
@@ -39,7 +40,9 @@ function App(): React.JSX.Element {
     <SafeAreaProvider>
       <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.light} />
       <RealmProvider>
-        <AppContent />
+        <PermissionsProvider>
+          <AppContent />
+        </PermissionsProvider>
       </RealmProvider>
     </SafeAreaProvider>
   );

@@ -81,14 +81,14 @@ export const SplashScreen = () => {
 
     const checkOnboarding = async () => {
       // Minimum splash time of 2 seconds
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(() => resolve(undefined), 2000));
       
       const prefs = PreferencesService.getPreferences(realm);
       
-      if (prefs.onboardingCompleted) {
+      if (prefs && prefs.onboardingCompleted) {
         navigation.replace('Home');
       } else {
-        navigation.replace('OnboardingWelcome');
+        navigation.replace('PermissionLocation'); // Start with permissions as requested
       }
     };
 
