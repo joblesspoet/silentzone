@@ -7,6 +7,7 @@ import { OnboardingAutoSilenceScreen } from '../screens/OnboardingAutoSilenceScr
 import { HomeScreen } from '../screens/HomeScreen';
 import { AddPlaceScreen } from '../screens/AddPlaceScreen';
 import { PlaceDetailScreen } from '../screens/PlaceDetailScreen';
+import { EditPlaceScreen } from '../screens/EditPlaceScreen';
 import { PermissionLocationScreen } from '../screens/PermissionLocationScreen';
 import { PermissionNotificationScreen } from '../screens/PermissionNotificationScreen';
 import { PermissionDndScreen } from '../screens/PermissionDndScreen';
@@ -22,6 +23,7 @@ export type RootStackParamList = {
   Home: undefined;
   AddPlace: undefined;
   PlaceDetail: { placeId: string };
+  EditPlace: { placeId: string };
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -51,6 +53,7 @@ export const AppNavigator = () => {
         }}
       />
       <Stack.Screen name="PlaceDetail" component={PlaceDetailScreen} />
+      <Stack.Screen name="EditPlace" component={EditPlaceScreen} />
     </Stack.Navigator>
   );
 };

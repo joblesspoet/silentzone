@@ -21,6 +21,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [place, setPlace] = useState<any>(null);
   const [checkIns, setCheckIns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isCurrentlyActive, setIsCurrentlyActive] = useState(false);
 
   // Load Data
   useEffect(() => {
@@ -55,6 +56,10 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     // Fetch History
     const history = CheckInService.getCheckInsForPlace(realm, placeId);
     setCheckIns([...history]);
+
+    // Check if active
+    const currentCheckIn = CheckInService.getCurrentCheckIn(realm);
+    setIsCurrentlyActive(currentCheckIn?.placeId === placeId);
     
     setLoading(false);
   };
@@ -181,11 +186,22 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
 
         {/* Action Button */}
         <TouchableOpacity 
-            style={styles.editButton}
-            onPress={() => navigation.navigate('EditPlace', { placeId: place.id })}
+            style={[styles.editButton, isCurrentlyActive && styles.editButtonDisabled]}
+            onPress={() => {
+                if (isCurrentlyActive) {
+                    Alert.alert(
+                        "Place is Active",
+                        "You cannot edit a place while you are currently inside it. Please leave the area or disable tracking first."
+                    );
+                    return;
+                }
+                navigation.navigate('EditPlace', { placeId: place.id });
+            }}
         >
-            <Text style={styles.editButtonText}>Edit Place Config</Text>
-            <MaterialIcon name="edit" size={16} color={theme.colors.white} />
+            <Text style={styles.editButtonText}>
+                {isCurrentlyActive ? "Cannot Edit While Inside" : "Edit Place Config"}
+            </Text>
+            <MaterialIcon name={isCurrentlyActive ? "lock" : "edit"} size={16} color={theme.colors.white} />
         </TouchableOpacity>
 
         {/* History Section */}
@@ -369,6 +385,10 @@ const styles = StyleSheet.create({
   editButtonText: {
     color: theme.colors.white,
     fontWeight: theme.typography.weights.semibold,
+  },
+  editButtonDisabled: {
+    backgroundColor: theme.colors.text.disabled,
+    opacity: 0.8,
   },
   historySection: {
     paddingHorizontal: theme.spacing.lg,
