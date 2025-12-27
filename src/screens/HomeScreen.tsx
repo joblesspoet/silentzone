@@ -5,12 +5,15 @@ import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
 import { theme } from '../theme';
 import { MaterialIcon } from '../components/MaterialIcon';
-import { StatusCard } from '../components/StatusCard';
+import { RESULTS } from 'react-native-permissions';
 import { PlaceCard } from '../components/PlaceCard';
+import { StatusCard } from '../components/StatusCard';
+import { PermissionsGate } from '../components/PermissionsGate';
+import { ToggleSwitch } from '../components/ToggleSwitch';
 import { getDistance, formatDistance } from '../utils/geo';
 import { PermissionsManager } from '../permissions/PermissionsManager';
-import { RESULTS } from 'react-native-permissions';
 import { PreferencesService } from '../database/services/PreferencesService';
+import { usePermissions } from '../permissions/PermissionsContext';
 
 interface Props {
   navigation: any;
@@ -18,11 +21,20 @@ interface Props {
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
+  const { locationStatus, backgroundLocationStatus, dndStatus, notificationStatus } = usePermissions();
+
   const [places, setPlaces] = useState<any[]>([]);
   const [trackingEnabled, setTrackingEnabled] = useState(true);
   const [activeCount, setActiveCount] = useState(0);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
+
+  const hasFullPermissions = (
+    (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED) &&
+    (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED) &&
+    dndStatus === RESULTS.GRANTED &&
+    notificationStatus === RESULTS.GRANTED
+  );
 
   // Fetch places and set up listener
   useEffect(() => {
@@ -114,7 +126,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         Geolocation.clearWatch(watchId);
       }
     };
-  }, []);
+  }, [hasFullPermissions]);
 
   const handleToggle = (id: string) => {
     const place = places.find(p => p.id === id);
@@ -243,7 +255,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
           <StatusCard 
             activeCount={activeCount} 
             totalCount={places.length} 
-            isOperational={trackingEnabled} 
+            isOperational={trackingEnabled && hasFullPermissions} 
           />
         </View>
 
@@ -271,13 +283,13 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                   radius={`${place.radius}m`} 
                   distance={distanceText}
                   isActive={place.isEnabled}
-                  isCurrentLocation={isInside && place.isEnabled} 
+                  isCurrentLocation={isInside && place.isEnabled && trackingEnabled && hasFullPermissions} 
                   onToggle={() => handleToggle(place.id)}
                   onDelete={() => handleDelete(place.id, place.name)}
                   onPress={() => {
                     navigation.navigate('PlaceDetail', { placeId: place.id });
                   }}
-                  isPaused={!trackingEnabled}
+                  isPaused={!trackingEnabled || !hasFullPermissions}
                 />
               );
             })
@@ -288,7 +300,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       </ScrollView>
 
       {/* FAB */}
-      {places.length > 0 && canAddPlace && (
+      {places.length > 0 && canAddPlace && hasFullPermissions && (
         <TouchableOpacity 
           style={styles.fab}
           onPress={() => {
@@ -303,6 +315,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
           <MaterialIcon name="add" size={32} color={theme.colors.white} />
         </TouchableOpacity>
       )}
+
+      {/* Permissions Gate Overlay */}
+      {!hasFullPermissions && <PermissionsGate />}
     </View>
   );
 };

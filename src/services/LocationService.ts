@@ -27,6 +27,15 @@ class LocationService {
 
     // 2. Request Notification Permissions
     await notifee.requestPermission();
+    
+    // Create channel for service
+    if (Platform.OS === 'android') {
+        await notifee.createChannel({
+            id: 'silent-zone-service-channel',
+            name: 'Silent Zone Service',
+            importance: AndroidImportance.LOW, // Low priority for ongoing service
+        });
+    }
 
     // 3. Request DND Permission (required to change ringer mode)
     // We already handle this in the onboarding, but good to have as backup
@@ -40,13 +49,83 @@ class LocationService {
     this.syncGeofences();
     this.setupReactiveSync();
 
-    // 5. Start monitoring geofences
+    // 5. Start monitoring geofences with Foreground Service
     if (this.isPreferenceTrackingEnabled()) {
-        this.startGeofenceMonitoring();
+        await this.startForegroundService();
     }
 
     this.isReady = true;
-    console.log('[LocationService] Initialized and monitoring');
+    console.log('[LocationService] Initialized and monitoring (Foreground Service)');
+  }
+
+  private async startForegroundService() {
+    if (Platform.OS !== 'android') {
+        this.startGeofenceMonitoring(); // Fallback for iOS
+        return;
+    }
+
+    try {
+        await notifee.displayNotification({
+            id: 'silent-zone-service',
+            title: 'Silent Zone Active',
+            body: 'Monitoring your location for silent zones...',
+            android: {
+                channelId: 'silent-zone-service-channel',
+                asForegroundService: true,
+                color: '#3B82F6', // theme.colors.primary
+                ongoing: true,
+                pressAction: {
+                    id: 'default',
+                },
+            },
+        });
+
+        this.startGeofenceMonitoring();
+    } catch (error) {
+        console.error('[LocationService] Failed to start foreground service:', error);
+    }
+  }
+
+  private async stopForegroundService() {
+    if (Platform.OS === 'android') {
+        try {
+            await notifee.stopForegroundService();
+            await notifee.cancelNotification('silent-zone-service');
+            console.log('[LocationService] Foreground Service notification cleared');
+        } catch (e) {
+            console.error('[LocationService] Error stopping service:', e);
+        }
+    }
+    this.stopGeofenceMonitoring();
+  }
+
+  /**
+   * Emergency cleanup used by CrashHandler
+   * Attempts to restore sound and stop the service if the JS engine fails.
+   */
+  async cleanupOnCrash() {
+    console.log('[LocationService] Emergency cleanup triggered...');
+    try {
+        if (!this.realm) return; // Cannot restore if DB is inaccessible
+        
+        const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+        if (activeLogs.length > 0) {
+            console.log(`[LocationService] Restoring sound for ${activeLogs.length} active zones before exit.`);
+            for (const log of activeLogs) {
+                // We use a try-catch for each to ensure we try as many as possible
+                try {
+                    await this.restoreRingerMode(log.id as string);
+                    CheckInService.logCheckOut(this.realm, log.id as string);
+                } catch (e) {
+                    console.error('[LocationService] Failed to restore specific zone during crash:', e);
+                }
+            }
+        }
+    } catch (error) {
+        console.error('[LocationService] Emergency restore failed:', error);
+    } finally {
+        await this.stopForegroundService();
+    }
   }
 
   private isPreferenceTrackingEnabled(): boolean {
@@ -110,7 +189,7 @@ class LocationService {
 
       if (enabledPlaces.length === 0 || !trackingEnabled) {
           console.log('[LocationService] Tracking stopped (pause or no places).');
-          this.stopGeofenceMonitoring();
+          await this.stopForegroundService();
           return;
       }
 
@@ -125,7 +204,7 @@ class LocationService {
       }
       
       console.log(`[LocationService] Monitoring ${enabledPlaces.length} geofences`);
-      this.startGeofenceMonitoring();
+      await this.startForegroundService();
 
     } catch (error) {
       console.error('[LocationService] Sync failed:', error);
@@ -209,7 +288,7 @@ class LocationService {
                await this.handleGeofenceExit(currentCheckIn.placeId as string);
              }
           }
-
+          
           const activePlaces = enabledPlaces.filter(place => {
             const distance = this.calculateDistance(
               latitude,
@@ -220,7 +299,20 @@ class LocationService {
             return distance <= (place.radius as number) * 1.1;
           });
 
-          // 1. Handle New Entries
+          const activePlaceIds = new Set(activePlaces.map(p => p.id));
+
+          // 3. Global Restore Check: If we are NO LONGER in ANY zone, but have active logs
+          const currentActiveLogs = CheckInService.getActiveCheckIns(this.realm!);
+          
+          if (activePlaces.length === 0 && currentActiveLogs.length > 0) {
+              console.log(`[LocationService] No longer in any silent zone. Restoring sound for ${currentActiveLogs.length} logs.`);
+              for (const log of currentActiveLogs) {
+                  await this.handleGeofenceExit(log.placeId as string, true); // Force restore
+              }
+              return;
+          }
+
+          // 4. Handle Specific Entries
           for (const place of activePlaces) {
             if (!CheckInService.isPlaceActive(this.realm!, place.id as string)) {
                console.log(`[LocationService] ENTER detected for ${place.name}`);
@@ -228,10 +320,7 @@ class LocationService {
             }
           }
 
-          // 2. Handle Exits (Places currently active in DB but no longer in range)
-          const currentActiveLogs = CheckInService.getActiveCheckIns(this.realm!);
-          const activePlaceIds = new Set(activePlaces.map(p => p.id));
-
+          // 5. Handle Specific Exits
           for (const log of currentActiveLogs) {
              if (!activePlaceIds.has(log.placeId as string)) {
                 console.log(`[LocationService] EXIT detected for placeId: ${log.placeId}`);
@@ -240,12 +329,13 @@ class LocationService {
           }
         },
         (error) => {
-          console.error('[LocationService] Location error:', error);
+          console.error('[LocationService] Geofence check location error:', error);
+          // If location is failing, we might want to check if we're "stuck" silenced and offer a timeout recovery
         },
         {
           enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 10000,
+          timeout: 10000,
+          maximumAge: 5000, // Fresher location for better transition response
         }
       );
     } catch (error) {

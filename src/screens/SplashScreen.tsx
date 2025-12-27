@@ -88,7 +88,7 @@ export const SplashScreen = () => {
       if (prefs && prefs.onboardingCompleted) {
         navigation.replace('Home');
       } else {
-        navigation.replace('PermissionLocation'); // Start with permissions as requested
+        navigation.replace('OnboardingWelcome');
       }
     };
 
