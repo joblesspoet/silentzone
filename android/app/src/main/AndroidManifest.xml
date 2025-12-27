@@ -37,5 +37,12 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+
+      <!-- Android 14 Foreground Service Type Declaration -->
+      <service
+          android:name="app.notifee.core.ForegroundService"
+          android:foregroundServiceType="location"
+          android:exported="false" />
+
     </application>
 </manifest>

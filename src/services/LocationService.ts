@@ -1,5 +1,5 @@
 import Geofencing from '@rn-org/react-native-geofencing';
-import notifee, { AndroidImportance } from '@notifee/react-native';
+import notifee, { AndroidImportance, AndroidForegroundServiceType } from '@notifee/react-native';
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
 import { CheckInService } from '../database/services/CheckInService';
@@ -16,6 +16,8 @@ class LocationService {
   private geofenceCheckInterval: ReturnType<typeof setInterval> | null = null;
   private savedRingerMode: number | null = null; // Store original ringer mode
   private lastEnabledIds: string = ''; // For change detection
+  private isChecking = false;
+  private isSyncing = false;
 
   // Initialize service
   async initialize(realmInstance: Realm) {
@@ -74,6 +76,7 @@ class LocationService {
                 asForegroundService: true,
                 color: '#3B82F6', // theme.colors.primary
                 ongoing: true,
+                foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION],
                 pressAction: {
                     id: 'default',
                 },
@@ -161,8 +164,10 @@ class LocationService {
   }
 
   async syncGeofences() {
-    if (!this.realm) return;
+    if (!this.realm || this.realm.isClosed) return;
+    if (this.isSyncing) return;
 
+    this.isSyncing = true;
     try {
       const trackingEnabled = this.isPreferenceTrackingEnabled();
       const enabledPlaces = trackingEnabled ? PlaceService.getEnabledPlaces(this.realm) : [];
@@ -208,6 +213,8 @@ class LocationService {
 
     } catch (error) {
       console.error('[LocationService] Sync failed:', error);
+    } finally {
+      this.isSyncing = false;
     }
   }
 
@@ -254,78 +261,86 @@ class LocationService {
         return;
     }
 
-    if (!this.realm) return;
+    if (!this.realm || this.realm.isClosed) return;
+    if (this.isChecking) return;
 
+    this.isChecking = true;
     try {
       // Get current location
       Geolocation.getCurrentPosition(
         async (position) => {
-          const { latitude, longitude, accuracy } = position.coords;
+          try {
+            const { latitude, longitude, accuracy } = position.coords;
 
-          // Relaxed accuracy check (100m instead of 50m) for indoor reliability
-          if (accuracy > 100) {
-            console.log(`[LocationService] Ignoring very low accuracy: ${accuracy}m`);
-            return;
-          }
-
-          console.log(`[LocationService] Check: lat=${latitude.toFixed(4)}, lon=${longitude.toFixed(4)}, acc=${accuracy.toFixed(1)}m`);
-
-          const enabledPlaces = PlaceService.getEnabledPlaces(this.realm!);
-          const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm!);
-
-          // 1. Explicitly check if we are still inside the CURRENT place (fixes "stuck" status)
-          if (currentCheckIn) {
-             const place = PlaceService.getPlaceById(this.realm!, currentCheckIn.placeId as string);
-             if (place) {
-               const dist = this.calculateDistance(latitude, longitude, place.latitude as number, place.longitude as number);
-               const threshold = (place.radius as number) * 1.1; // 10% buffer
-               if (dist > threshold) {
-                 console.log(`[LocationService] Explicit EXIT detected for ${place.name} (dist: ${Math.round(dist)}m)`);
-                 await this.handleGeofenceExit(place.id as string);
-               }
-             } else {
-               // Place was deleted or invalid? Clean up.
-               await this.handleGeofenceExit(currentCheckIn.placeId as string);
-             }
-          }
-          
-          const activePlaces = enabledPlaces.filter(place => {
-            const distance = this.calculateDistance(
-              latitude,
-              longitude,
-              place.latitude as number,
-              place.longitude as number
-            );
-            return distance <= (place.radius as number) * 1.1;
-          });
-
-          const activePlaceIds = new Set(activePlaces.map(p => p.id));
-
-          // 3. Global Restore Check: If we are NO LONGER in ANY zone, but have active logs
-          const currentActiveLogs = CheckInService.getActiveCheckIns(this.realm!);
-          
-          if (activePlaces.length === 0 && currentActiveLogs.length > 0) {
-              console.log(`[LocationService] No longer in any silent zone. Restoring sound for ${currentActiveLogs.length} logs.`);
-              for (const log of currentActiveLogs) {
-                  await this.handleGeofenceExit(log.placeId as string, true); // Force restore
-              }
+            // Relaxed accuracy check (100m instead of 50m) for indoor reliability
+            if (accuracy > 100) {
+              console.log(`[LocationService] Ignoring very low accuracy: ${accuracy}m`);
               return;
-          }
-
-          // 4. Handle Specific Entries
-          for (const place of activePlaces) {
-            if (!CheckInService.isPlaceActive(this.realm!, place.id as string)) {
-               console.log(`[LocationService] ENTER detected for ${place.name}`);
-               await this.handleGeofenceEntry(place.id as string);
             }
-          }
 
-          // 5. Handle Specific Exits
-          for (const log of currentActiveLogs) {
-             if (!activePlaceIds.has(log.placeId as string)) {
-                console.log(`[LocationService] EXIT detected for placeId: ${log.placeId}`);
-                await this.handleGeofenceExit(log.placeId as string);
-             }
+            if (!this.realm || this.realm.isClosed) return;
+
+            console.log(`[LocationService] Check: lat=${latitude.toFixed(4)}, lon=${longitude.toFixed(4)}, acc=${accuracy.toFixed(1)}m`);
+
+            const enabledPlaces = PlaceService.getEnabledPlaces(this.realm!);
+            const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm!);
+
+            // 1. Explicitly check if we are still inside the CURRENT place (fixes "stuck" status)
+            if (currentCheckIn) {
+               const place = PlaceService.getPlaceById(this.realm!, currentCheckIn.placeId as string);
+               if (place) {
+                 const dist = this.calculateDistance(latitude, longitude, place.latitude as number, place.longitude as number);
+                 const threshold = (place.radius as number) * 1.1; // 10% buffer
+                 if (dist > threshold) {
+                   console.log(`[LocationService] Explicit EXIT detected for ${place.name} (dist: ${Math.round(dist)}m)`);
+                   await this.handleGeofenceExit(place.id as string);
+                 }
+               } else {
+                 // Place was deleted or invalid? Clean up.
+                 await this.handleGeofenceExit(currentCheckIn.placeId as string);
+               }
+            }
+            
+            const activePlaces = enabledPlaces.filter(place => {
+              const distance = this.calculateDistance(
+                latitude,
+                longitude,
+                place.latitude as number,
+                place.longitude as number
+              );
+              return distance <= (place.radius as number) * 1.1;
+            });
+
+            const activePlaceIds = new Set(activePlaces.map(p => p.id));
+
+            // 3. Global Restore Check: If we are NO LONGER in ANY zone, but have active logs
+            const currentActiveLogs = CheckInService.getActiveCheckIns(this.realm!);
+            
+            if (activePlaces.length === 0 && currentActiveLogs.length > 0) {
+                console.log(`[LocationService] No longer in any silent zone. Restoring sound for ${currentActiveLogs.length} logs.`);
+                for (const log of currentActiveLogs) {
+                    await this.handleGeofenceExit(log.placeId as string, true); // Force restore
+                }
+                return;
+            }
+
+            // 4. Handle Specific Entries
+            for (const place of activePlaces) {
+              if (!CheckInService.isPlaceActive(this.realm!, place.id as string)) {
+                 console.log(`[LocationService] ENTER detected for ${place.name}`);
+                 await this.handleGeofenceEntry(place.id as string);
+              }
+            }
+
+            // 5. Handle Specific Exits
+            for (const log of currentActiveLogs) {
+               if (!activePlaceIds.has(log.placeId as string)) {
+                  console.log(`[LocationService] EXIT detected for placeId: ${log.placeId}`);
+                  await this.handleGeofenceExit(log.placeId as string);
+               }
+            }
+          } catch (internalError) {
+            console.error('[LocationService] Crashed inside Geolocation success callback:', internalError);
           }
         },
         (error) => {
@@ -340,6 +355,8 @@ class LocationService {
       );
     } catch (error) {
       console.error('[LocationService] Geofence check failed:', error);
+    } finally {
+      this.isChecking = false;
     }
   }
 
