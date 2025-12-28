@@ -9,6 +9,12 @@ export interface PlaceData {
   category?: string;
   icon?: string;
   isEnabled?: boolean;
+  schedules?: Array<{
+    startTime: string;
+    endTime: string;
+    days: string[];
+    label?: string;
+  }>;
 }
 
 export const PlaceService = {
@@ -25,7 +31,7 @@ export const PlaceService = {
   },
 
   createPlace: (realm: Realm, data: PlaceData) => {
-    let place;
+    let place: any;
     realm.write(() => {
       place = realm.create('Place', {
         id: generateUUID(),
@@ -39,13 +45,29 @@ export const PlaceService = {
         updatedAt: new Date(),
         isEnabled: data.isEnabled !== undefined ? data.isEnabled : true,
         totalCheckIns: 0,
+        schedules: [],
       });
+
+      // Add schedules if provided
+      if (data.schedules && data.schedules.length > 0) {
+        data.schedules.forEach(s => {
+          const schedule = realm.create('Schedule', {
+            id: generateUUID(),
+            startTime: s.startTime,
+            endTime: s.endTime,
+            days: s.days,
+            label: s.label || 'Active',
+            createdAt: new Date(),
+          });
+          place.schedules.push(schedule);
+        });
+      }
     });
     return place;
   },
 
-  updatePlace: (realm: Realm, id: string, data: Partial<PlaceData> & { isEnabled?: boolean }) => {
-    const place = realm.objectForPrimaryKey('Place', id);
+  updatePlace: (realm: Realm, id: string, data: Partial<PlaceData>) => {
+    const place = realm.objectForPrimaryKey('Place', id) as any;
     if (place) {
       realm.write(() => {
         place.name = data.name !== undefined ? data.name : place.name;
@@ -55,6 +77,23 @@ export const PlaceService = {
         place.category = data.category !== undefined ? data.category : place.category;
         place.icon = data.icon !== undefined ? data.icon : place.icon;
         place.isEnabled = data.isEnabled !== undefined ? data.isEnabled : place.isEnabled;
+        
+        // Handle schedules update
+        if (data.schedules) {
+          realm.delete(place.schedules); // Delete old schedule objects
+          data.schedules.forEach(s => {
+            const schedule = realm.create('Schedule', {
+              id: generateUUID(),
+              startTime: s.startTime,
+              endTime: s.endTime,
+              days: s.days,
+              label: s.label || 'Active',
+              createdAt: new Date(),
+            });
+            place.schedules.push(schedule);
+          });
+        }
+
         place.updatedAt = new Date();
       });
       return true;

@@ -196,6 +196,27 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
              </View>
         </View>
 
+        {/* Schedule Display */}
+        <View style={styles.historySection}>
+            <Text style={styles.sectionTitle}>Active Schedule</Text>
+            {(!place.schedules || place.schedules.length === 0) ? (
+                <View style={styles.scheduleRow}>
+                    <MaterialIcon name="schedule" size={20} color={theme.colors.success} />
+                    <Text style={styles.scheduleText}>Always Active - 24/7 Monitoring</Text>
+                </View>
+            ) : (
+                place.schedules.map((s: any, idx: number) => (
+                    <View key={s.id || idx} style={styles.scheduleCard}>
+                        <View style={styles.scheduleInfo}>
+                            <Text style={styles.scheduleLabel}>{s.label || 'Interval'}</Text>
+                            <Text style={styles.scheduleTime}>{s.startTime} — {s.endTime}</Text>
+                        </View>
+                        <MaterialIcon name="access-time" size={20} color={theme.colors.primary} />
+                    </View>
+                ))
+            )}
+        </View>
+
         {/* Action Button */}
         {!isCurrentlyActive && (
           <TouchableOpacity 
@@ -436,6 +457,47 @@ const styles = StyleSheet.create({
     fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
     color: theme.colors.text.secondary.light,
+  },
+  scheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: theme.colors.surface.light,
+    padding: theme.spacing.md,
+    borderRadius: theme.layout.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+    marginBottom: theme.spacing.lg,
+  },
+  scheduleText: {
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.text.primary.light,
+    fontWeight: theme.typography.weights.medium,
+  },
+  scheduleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: theme.colors.surface.light,
+    padding: theme.spacing.md,
+    borderRadius: theme.layout.borderRadius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+    marginBottom: theme.spacing.sm,
+  },
+  scheduleInfo: {},
+  scheduleLabel: {
+    fontSize: 10,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text.secondary.light,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  scheduleTime: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text.primary.light,
   },
   emptyHistory: {
     padding: theme.spacing.xl,

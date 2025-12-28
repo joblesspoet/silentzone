@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
 import MapView, { Marker, Circle, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
 import { theme } from '../theme';
@@ -9,6 +9,15 @@ import { ToggleSwitch } from '../components/ToggleSwitch';
 import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
 import { CheckInService } from '../database/services/CheckInService';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+interface ScheduleSlot {
+  id: string;
+  startTime: string;
+  endTime: string;
+  days: string[];
+  label: string;
+}
 
 interface Props {
   navigation: any;
@@ -34,6 +43,11 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
   const [isEnabled, setIsEnabled] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState({ id: 'other', icon: 'place', label: 'Other' });
   const [loading, setLoading] = useState(true);
+
+  // Schedule state
+  const [isScheduleEnabled, setIsScheduleEnabled] = useState(false);
+  const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
+  const [showPicker, setShowPicker] = useState<{ index: number, type: 'start' | 'end' } | null>(null);
 
   const CATEGORIES = [
     { id: 'mosque', icon: 'mosque', label: 'Mosque' },
@@ -61,6 +75,18 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         // Find and set current category
         const cat = CATEGORIES.find(c => c.id === place.category) || CATEGORIES[3];
         setSelectedCategory(cat);
+
+        // Load schedules
+        if (place.schedules && place.schedules.length > 0) {
+            setIsScheduleEnabled(true);
+            setSchedules(place.schedules.map((s: any) => ({
+                id: s.id,
+                startTime: s.startTime,
+                endTime: s.endTime,
+                days: [...s.days],
+                label: s.label
+            })));
+        }
     } else {
         Alert.alert("Error", "Place not found");
         navigation.goBack();
@@ -107,6 +133,12 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         isEnabled: isEnabled,
         category: selectedCategory.id,
         icon: selectedCategory.icon,
+        schedules: isScheduleEnabled ? schedules.map(s => ({
+            startTime: s.startTime,
+            endTime: s.endTime,
+            days: s.days,
+            label: s.label
+        })) : [],
       });
 
       if (success) {
@@ -286,6 +318,186 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
               onValueChange={setIsEnabled}
             />
           </View>
+
+          {/* Schedule Toggle */}
+          <View style={styles.card}>
+            <View>
+              <Text style={styles.cardTitle}>Silence Schedule</Text>
+              <Text style={styles.cardSubtitle}>Only silence during specific times</Text>
+            </View>
+            <ToggleSwitch
+              value={isScheduleEnabled}
+              onValueChange={setIsScheduleEnabled}
+            />
+          </View>
+
+          {/* Schedule List */}
+          {isScheduleEnabled && (
+            <View style={styles.scheduleSection}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionLabel}>TIME INTERVALS</Text>
+                <TouchableOpacity 
+                    onPress={() => {
+                        const newSlot: ScheduleSlot = {
+                            id: Math.random().toString(),
+                            startTime: '12:00',
+                            endTime: '13:00',
+                            days: [],
+                            label: 'Interval ' + (schedules.length + 1)
+                        };
+                        setSchedules([...schedules, newSlot]);
+                    }}
+                    style={styles.addSlotButton}
+                >
+                    <MaterialIcon name="add" size={18} color={theme.colors.primary} />
+                    <Text style={styles.addSlotText}>Add Time</Text>
+                </TouchableOpacity>
+              </View>
+
+              {schedules.length === 0 ? (
+                  <View style={styles.emptySchedule}>
+                      <Text style={styles.emptyScheduleText}>No intervals added. App will silence only during these times.</Text>
+                  </View>
+              ) : (
+                  schedules.map((slot, index) => (
+                    <View key={slot.id} style={styles.slotCard}>
+                        {/* Time Row */}
+                        <View style={styles.slotMain}>
+                            <TouchableOpacity 
+                                style={styles.timeControl}
+                                onPress={() => setShowPicker({ index, type: 'start' })}
+                            >
+                                <Text style={styles.timeLabel}>START</Text>
+                                <Text style={styles.timeValue}>{slot.startTime}</Text>
+                            </TouchableOpacity>
+
+                            <MaterialIcon name="arrow-forward" size={20} color={theme.colors.border.dark} />
+
+                            <TouchableOpacity 
+                                style={styles.timeControl}
+                                onPress={() => setShowPicker({ index, type: 'end' })}
+                            >
+                                <Text style={styles.timeLabel}>END</Text>
+                                <Text style={styles.timeValue}>{slot.endTime}</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                onPress={() => {
+                                    const newSchedules = schedules.filter((_, i) => i !== index);
+                                    setSchedules(newSchedules);
+                                }}
+                                style={styles.removeSlot}
+                            >
+                                <MaterialIcon name="delete-outline" size={22} color={theme.colors.error} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Day Config Row */}
+                        <View style={styles.dayConfigRow}>
+                           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayPresets}>
+                                {[
+                                    { label: 'Every Day', days: [] },
+                                    { label: 'Mon-Fri', days: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] },
+                                    { label: 'Weekends', days: ['Saturday', 'Sunday'] },
+                                    { label: 'Custom', days: null }
+                                ].map((preset) => (
+                                    <TouchableOpacity
+                                        key={preset.label}
+                                        style={[
+                                            styles.dayPresetChip,
+                                            (preset.days === null 
+                                                ? slot.days.length > 0 && !['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].every(d => slot.days.includes(d)) && !['Saturday', 'Sunday'].every(d => slot.days.includes(d))
+                                                : (preset.days!.length === 0 ? slot.days.length === 0 : (slot.days.length === preset.days!.length && preset.days!.every(d => slot.days.includes(d))))) 
+                                            && styles.dayPresetChipActive
+                                        ]}
+                                        onPress={() => {
+                                            const newSchedules = [...schedules];
+                                            if (preset.days !== null) {
+                                                newSchedules[index].days = preset.days;
+                                            } else {
+                                                if (slot.days.length === 0) newSchedules[index].days = ['Monday']; 
+                                            }
+                                            setSchedules(newSchedules);
+                                        }}
+                                    >
+                                        <Text style={[
+                                            styles.dayPresetText,
+                                            (preset.days === null 
+                                                ? slot.days.length > 0 && !['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].every(d => slot.days.includes(d)) && !['Saturday', 'Sunday'].every(d => slot.days.includes(d))
+                                                : (preset.days!.length === 0 ? slot.days.length === 0 : (slot.days.length === preset.days!.length && preset.days!.every(d => slot.days.includes(d)))))
+                                            && styles.dayPresetTextActive
+                                        ]}>{preset.label}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                           </ScrollView>
+                        </View>
+                        
+                        {/* Custom Day Toggles */}
+                        {slot.days.length > 0 && 
+                        !(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].length === slot.days.length && ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].every(d => slot.days.includes(d))) &&
+                        !(['Saturday', 'Sunday'].length === slot.days.length && ['Saturday', 'Sunday'].every(d => slot.days.includes(d))) && (
+                            <View style={styles.customDaysContainer}>
+                                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((dayShort, idx) => {
+                                    const fullDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                                    const fullDay = fullDays[idx];
+                                    const isSelected = slot.days.includes(fullDay);
+                                    
+                                    return (
+                                        <TouchableOpacity
+                                            key={dayShort}
+                                            style={[styles.dayToggle, isSelected && styles.dayToggleActive]}
+                                            onPress={() => {
+                                                const newSchedules = [...schedules];
+                                                const currentDays = newSchedules[index].days;
+                                                if (isSelected) {
+                                                    newSchedules[index].days = currentDays.filter(d => d !== fullDay);
+                                                } else {
+                                                    newSchedules[index].days = [...currentDays, fullDay];
+                                                }
+                                                setSchedules(newSchedules);
+                                            }}
+                                        >
+                                            <Text style={[styles.dayToggleText, isSelected && styles.dayToggleTextActive]}>{dayShort[0]}</Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                        )}
+                    </View>
+                  ))
+              )}
+
+              {showPicker && (
+                  <DateTimePicker
+                    value={(() => {
+                        const [h, m] = (showPicker.type === 'start' ? schedules[showPicker.index].startTime : schedules[showPicker.index].endTime).split(':').map(Number);
+                        const d = new Date();
+                        d.setHours(h, m);
+                        return d;
+                    })()}
+                    mode="time"
+                    is24Hour={true}
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={(event, selectedDate) => {
+                        if (event.type === 'dismissed' || !selectedDate) {
+                            setShowPicker(null);
+                            return;
+                        }
+                        
+                        const timeStr = `${selectedDate.getHours().toString().padStart(2, '0')}:${selectedDate.getMinutes().toString().padStart(2, '0')}`;
+                        const newSchedules = [...schedules];
+                        if (showPicker.type === 'start') {
+                            newSchedules[showPicker.index].startTime = timeStr;
+                        } else {
+                            newSchedules[showPicker.index].endTime = timeStr;
+                        }
+                        setSchedules(newSchedules);
+                        setShowPicker(null);
+                    }}
+                  />
+              )}
+            </View>
+          )}
           
           <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
               <MaterialIcon name="delete" size={20} color={theme.colors.error} />
@@ -491,6 +703,124 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     fontSize: theme.typography.sizes.xs,
     color: theme.colors.text.secondary.light,
+  },
+  scheduleSection: {
+    marginBottom: theme.spacing.xl,
+  },
+  addSlotButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  addSlotText: {
+    fontSize: theme.typography.sizes.sm,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.primary,
+  },
+  emptySchedule: {
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.colors.border.dark,
+    borderRadius: theme.layout.borderRadius.md,
+    opacity: 0.6,
+  },
+  emptyScheduleText: {
+    textAlign: 'center',
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.text.secondary.dark,
+  },
+  slotCard: {
+    backgroundColor: theme.colors.surface.light,
+    borderRadius: theme.layout.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+  },
+  slotMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  timeControl: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  timeLabel: {
+    fontSize: 10,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text.secondary.light,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  timeValue: {
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text.primary.light,
+  },
+  removeSlot: {
+    padding: 8,
+  },
+  dayConfigRow: {
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border.light,
+    paddingTop: 12,
+  },
+  dayPresets: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dayPresetChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surface.dark + '10',
+    marginRight: 8,
+  },
+  dayPresetChipActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  dayPresetText: {
+    fontSize: 12,
+    fontWeight: theme.typography.weights.medium,
+    color: theme.colors.text.secondary.dark,
+  },
+  dayPresetTextActive: {
+    color: theme.colors.white,
+  },
+  customDaysContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border.light,
+  },
+  dayToggle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surface.light,
+    borderWidth: 1,
+    borderColor: theme.colors.border.dark,
+  },
+  dayToggleActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  dayToggleText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: theme.colors.text.secondary.dark,
+  },
+  dayToggleTextActive: {
+    color: theme.colors.white,
   },
   deleteButton: {
       flexDirection: 'row',

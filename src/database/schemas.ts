@@ -1,5 +1,18 @@
 import Realm from 'realm';
 
+export const ScheduleSchema: Realm.ObjectSchema = {
+  name: 'Schedule',
+  primaryKey: 'id',
+  properties: {
+    id: 'string', // UUID
+    startTime: 'string', // HH:mm format
+    endTime: 'string', // HH:mm format
+    days: { type: 'list', objectType: 'string', default: [] }, // ['Monday', 'Tuesday', etc.]
+    label: { type: 'string', default: 'Active' },
+    createdAt: 'date',
+  },
+};
+
 export const PlaceSchema: Realm.ObjectSchema = {
   name: 'Place',
   primaryKey: 'id',
@@ -17,6 +30,7 @@ export const PlaceSchema: Realm.ObjectSchema = {
     lastCheckInAt: 'date?',
     totalCheckIns: { type: 'int', default: 0 },
     isInside: { type: 'bool', default: false },
+    schedules: 'Schedule[]', // Link to schedules
   },
 };
 
@@ -47,5 +61,5 @@ export const PreferencesSchema: Realm.ObjectSchema = {
   },
 };
 
-export const schema = [PlaceSchema, CheckInLogSchema, PreferencesSchema];
-export const SCHEMA_VERSION = 4;
+export const schema = [PlaceSchema, CheckInLogSchema, PreferencesSchema, ScheduleSchema];
+export const SCHEMA_VERSION = 5;

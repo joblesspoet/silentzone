@@ -19,6 +19,9 @@ export const getDistance = (
 };
 
 export const formatDistance = (distanceInMeters: number): string => {
+  if (distanceInMeters < 20) {
+    return 'Inside location';
+  }
   if (distanceInMeters < 1000) {
     return `${Math.round(distanceInMeters)}m away`;
   }

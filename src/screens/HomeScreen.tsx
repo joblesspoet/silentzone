@@ -158,6 +158,11 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const getPlaceDistance = (place: any) => {
+    // Priority: Use the "official" status from LocationService
+    if (place.isInside) {
+      return 'Currently inside';
+    }
+
     if (!userLocation) return 'Locating...';
     
     const dist = getDistance(
@@ -167,24 +172,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       place.longitude
     );
 
-    // Check if inside
-    if (dist <= place.radius) {
-      return 'Currently inside';
-    }
-
     return formatDistance(dist);
   };
 
-  // Determine if specific place is "Current Location" (inside radius)
+  // Determine if specific place is "Current Location" (active)
   const isInsidePlace = (place: any) => {
-    if (!userLocation) return false;
-    const dist = getDistance(
-      userLocation.latitude,
-      userLocation.longitude,
-      place.latitude,
-      place.longitude
-    );
-    return dist <= place.radius;
+    return place.isInside;
   };
 
   const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' });
