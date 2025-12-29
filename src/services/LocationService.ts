@@ -161,23 +161,30 @@ class LocationService {
     try {
       const trackingEnabled = this.isPreferenceTrackingEnabled();
       const enabledPlaces = trackingEnabled ? PlaceService.getEnabledPlaces(this.realm) : [];
-      const enabledIdsArray = enabledPlaces.map(p => p.id as string);
-      const enabledIdsString = enabledIdsArray.sort().join(',');
-      const enabledIdsSet = new Set(enabledIdsArray);
+
+      // Schedule-aware active set: always-active + currently scheduled active
+      const alwaysActivePlaces = enabledPlaces.filter(p => !(p as any).schedules || (p as any).schedules.length === 0);
+      const scheduledPlaces = enabledPlaces.filter(p => (p as any).schedules && (p as any).schedules.length > 0);
+      const activeScheduledPlaces = scheduledPlaces.filter(p => this.isWithinSchedule(p));
+      const activeEligiblePlaces = [...alwaysActivePlaces, ...activeScheduledPlaces];
+
+      const activeIdsArray = activeEligiblePlaces.map(p => p.id as string);
+      const activeIdsString = activeIdsArray.sort().join(',');
+      const activeIdsSet = new Set(activeIdsArray);
       
       // 1. Check for redundant syncs (prevent loops from isInside toggle)
-      if (enabledIdsString === this.lastEnabledIds) {
+      if (activeIdsString === this.lastEnabledIds) {
           // If the list of enabled places hasn't changed, 
           // we should still handle Force CheckOut in case singular places were toggled
           // but if nothing actually structural changed, we can exit early.
-          this.handleManualDisableCleanup(enabledIdsSet);
+          this.handleManualDisableCleanup(activeIdsSet);
           return;
       }
-      this.lastEnabledIds = enabledIdsString;
+      this.lastEnabledIds = activeIdsString;
       console.log('[LocationService] Syncing geofences...');
 
       // 2. Handle "Force CheckOut" for any active zones that were just disabled/deleted/paused
-      await this.handleManualDisableCleanup(enabledIdsSet);
+      await this.handleManualDisableCleanup(activeIdsSet);
 
       // 3. Clear and re-add geofences
       await Geofencing.removeAllGeofence();
@@ -197,8 +204,8 @@ class LocationService {
         return;
       }
 
-      // 5. Add Geofences
-      for (const place of enabledPlaces) {
+      // 5. Add Geofences ONLY for active-eligible places (battery friendly)
+      for (const place of activeEligiblePlaces) {
          await Geofencing.addGeofence({
             id: place.id as string,
             latitude: place.latitude as number,
@@ -207,7 +214,8 @@ class LocationService {
          });
       }
       
-      console.log(`[LocationService] Monitoring ${enabledPlaces.length} geofences`);
+      console.log(`[LocationService] Monitoring ${activeEligiblePlaces.length} active geofences (enabled places: ${enabledPlaces.length})`);
+      // Keep service running even if no currently active geofences (so we can deep-sleep and wake at schedule boundaries)
       await this.startForegroundService();
 
     } catch (error) {
@@ -243,6 +251,8 @@ class LocationService {
   }
 
   private async runMonitoringCycle() {
+    // Keep geofences aligned with current schedules and place states
+    await this.syncGeofences();
     await this.checkGeofences();
     
     // Schedule next run
@@ -427,22 +437,30 @@ class LocationService {
                   
                   const radiusWithBuffer = (place.radius as number) * 1.1;
 
-                  // Adaptive Accuracy Check:
-                  // If we are already active, we are more lenient with accuracy to prevent "flickering" exits.
-                  // If we are trying to enter, we only allow high accuracy, EXCEPT if we are very close.
-                  const maxAllowedAccuracy = isActive ? 150 : (distance < radiusWithBuffer / 2 ? 100 : 60);
+                  // Accuracy-aware distance: treat inside if effective distance (distance - accuracy)
+                  // is within the geofence, or if very close regardless of accuracy.
+                  const effectiveDistance = Math.max(0, distance - accuracy);
+                  const allowWithPoorAccuracy = distance <= radiusWithBuffer / 2;
+                  const isInsideByEffective = effectiveDistance <= radiusWithBuffer;
+                  const isInside = isInsideByEffective || allowWithPoorAccuracy;
 
-                  if (accuracy > maxAllowedAccuracy) {
+                  // Adaptive Accuracy Check:
+                  // Be forgiving in background; only block when clearly outside and accuracy is very poor.
+                  const maxAllowedAccuracy = isActive ? 250 : 200;
+                  if (!isInside && accuracy > maxAllowedAccuracy) {
                     if (isActive) {
-                        console.log(`[LocationService] Maintaining ${place.name} despite low accuracy (${Math.round(accuracy)}m)`);
-                        return true;
+                      console.log(`[LocationService] Maintaining ${place.name} despite low accuracy (${Math.round(accuracy)}m)`);
+                      return true;
                     }
-                    console.log(`[LocationService] Skipping ${place.name} - accuracy too low (${Math.round(accuracy)}m)`);
+                    console.log(`[LocationService] Skipping ${place.name} - outside and accuracy too low (${Math.round(accuracy)}m)`);
                     return false;
                   }
                   
-                  const isInside = distance <= radiusWithBuffer;
-                  console.log(`[LocationService] Place: ${place.name}, Distance: ${Math.round(distance)}m, Radius: ${place.radius}m, Inside: ${isInside}`);
+                  console.log(
+                    `[LocationService] Place: ${place.name}, Distance: ${Math.round(distance)}m, ` +
+                    `Effective: ${Math.round(effectiveDistance)}m, Acc: ${Math.round(accuracy)}m, ` +
+                    `Radius: ${place.radius}m, Inside: ${isInside}`
+                  );
                   
                   return isInside;
                 });
@@ -530,20 +548,29 @@ class LocationService {
         const activeLogs = CheckInService.getActiveCheckIns(this.realm);
         
         if (activeLogs.length > 0) {
-            // Already in another zone. Just log this one without silencing again.
-            // We want to preserve the "Original Volume" from the very first zone.
+            // Already in another zone.
+            // If the earliest check-in did not capture original sound values (e.g., missing DND permission),
+            // attempt silencing now to ensure the phone goes quiet.
             const firstLog = activeLogs[0] as any;
-            CheckInService.logCheckIn(
-                this.realm, 
-                placeId, 
-                firstLog.savedVolumeLevel, 
+            const missingOriginal = firstLog.savedVolumeLevel == null || firstLog.savedMediaVolume == null;
+
+            if (missingOriginal) {
+              // Attempt to silence now and log this entry.
+              await this.saveAndSilencePhone(placeId);
+            } else {
+              // Preserve the original values from the first zone and just log this entry.
+              CheckInService.logCheckIn(
+                this.realm,
+                placeId,
+                firstLog.savedVolumeLevel,
                 firstLog.savedMediaVolume
-            );
-            
+              );
+            }
+
             await this.showNotification(
-                'Silent Zone Updated',
-                `Also inside ${place.name}. Remaining silent.`,
-                'check-in-multi'
+              'Silent Zone Updated',
+              `Also inside ${place.name}. Remaining silent.`,
+              'check-in-multi'
             );
         } else {
             // Fresh entry into the FIRST silent zone
