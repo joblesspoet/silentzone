@@ -1,5 +1,8 @@
 import Geofencing from '@rn-org/react-native-geofencing';
-import notifee, { AndroidImportance, AndroidForegroundServiceType } from '@notifee/react-native';
+import notifee, {
+  AndroidImportance,
+  AndroidForegroundServiceType,
+} from '@notifee/react-native';
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
 import { CheckInService } from '../database/services/CheckInService';
@@ -18,6 +21,7 @@ class LocationService {
   private isChecking = false;
   private isSyncing = false;
   private monitoringTimeout: ReturnType<typeof setTimeout> | null = null;
+  private geofencesActive: boolean = false; // Track whether geofences are currently installed
 
   // Initialize service
   async initialize(realmInstance: Realm) {
@@ -27,14 +31,14 @@ class LocationService {
     // NOTE: We do NOT request permissions here anymore!
     // Permissions are handled during the onboarding flow.
     // This prevents interrupting the user experience on app start.
-    
+
     // Create notification channel for service
     if (Platform.OS === 'android') {
-        await notifee.createChannel({
-            id: 'silent-zone-service-channel',
-            name: 'Silent Zone Service',
-            importance: AndroidImportance.LOW, // Low priority for ongoing service
-        });
+      await notifee.createChannel({
+        id: 'silent-zone-service-channel',
+        name: 'Silent Zone Service',
+        importance: AndroidImportance.LOW, // Low priority for ongoing service
+      });
     }
 
     // Sync and listen for database changes
@@ -46,48 +50,57 @@ class LocationService {
     this.setupReactiveSync();
 
     this.isReady = true;
-    console.log('[LocationService] Initialized - service will start when places are added');
+    console.log(
+      '[LocationService] Initialized - service will start when places are added',
+    );
   }
 
   private async startForegroundService() {
     if (Platform.OS !== 'android') {
-        this.startGeofenceMonitoring(); // Fallback for iOS
-        return;
+      this.startGeofenceMonitoring(); // Fallback for iOS
+      return;
     }
 
     try {
-        await notifee.displayNotification({
-            id: 'silent-zone-service',
-            title: 'Silent Zone Active',
-            body: 'Monitoring your location for silent zones...',
-            android: {
-                channelId: 'silent-zone-service-channel',
-                asForegroundService: true,
-                color: '#3B82F6', // theme.colors.primary
-                ongoing: true,
-                foregroundServiceTypes: [AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION],
-                pressAction: {
-                    id: 'default',
-                },
-            },
-        });
+      await notifee.displayNotification({
+        id: 'silent-zone-service',
+        title: 'Silent Zone Active',
+        body: 'Monitoring your location for silent zones...',
+        android: {
+          channelId: 'silent-zone-service-channel',
+          asForegroundService: true,
+          color: '#3B82F6', // theme.colors.primary
+          ongoing: true,
+          foregroundServiceTypes: [
+            AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION,
+          ],
+          pressAction: {
+            id: 'default',
+          },
+        },
+      });
 
-        this.startGeofenceMonitoring();
-        console.log('[LocationService] Foreground Service started successfully.');
+      this.startGeofenceMonitoring();
+      console.log('[LocationService] Foreground Service started successfully.');
     } catch (error) {
-        console.error('[LocationService] Failed to start foreground service:', error);
+      console.error(
+        '[LocationService] Failed to start foreground service:',
+        error,
+      );
     }
   }
 
   private async stopForegroundService() {
     if (Platform.OS === 'android') {
-        try {
-            await notifee.stopForegroundService();
-            await notifee.cancelNotification('silent-zone-service');
-            console.log('[LocationService] Foreground Service notification cleared');
-        } catch (e) {
-            console.error('[LocationService] Error stopping service:', e);
-        }
+      try {
+        await notifee.stopForegroundService();
+        await notifee.cancelNotification('silent-zone-service');
+        console.log(
+          '[LocationService] Foreground Service notification cleared',
+        );
+      } catch (e) {
+        console.error('[LocationService] Error stopping service:', e);
+      }
     }
     this.stopGeofenceMonitoring();
   }
@@ -99,31 +112,39 @@ class LocationService {
   async cleanupOnCrash() {
     console.log('[LocationService] Emergency cleanup triggered...');
     try {
-        if (!this.realm) return; // Cannot restore if DB is inaccessible
-        
-        const activeLogs = CheckInService.getActiveCheckIns(this.realm);
-        if (activeLogs.length > 0) {
-            console.log(`[LocationService] Restoring sound for ${activeLogs.length} active zones before exit.`);
-            for (const log of activeLogs) {
-                // We use a try-catch for each to ensure we try as many as possible
-                try {
-                    await this.restoreRingerMode(log.id as string);
-                    CheckInService.logCheckOut(this.realm, log.id as string);
-                } catch (e) {
-                    console.error('[LocationService] Failed to restore specific zone during crash:', e);
-                }
-            }
+      if (!this.realm) return; // Cannot restore if DB is inaccessible
+
+      const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+      if (activeLogs.length > 0) {
+        console.log(
+          `[LocationService] Restoring sound for ${activeLogs.length} active zones before exit.`,
+        );
+        for (const log of activeLogs) {
+          // We use a try-catch for each to ensure we try as many as possible
+          try {
+            await this.restoreRingerMode(log.id as string);
+            CheckInService.logCheckOut(this.realm, log.id as string);
+          } catch (e) {
+            console.error(
+              '[LocationService] Failed to restore specific zone during crash:',
+              e,
+            );
+          }
         }
+      }
     } catch (error) {
-        console.error('[LocationService] Emergency restore failed:', error);
+      console.error('[LocationService] Emergency restore failed:', error);
     } finally {
-        await this.stopForegroundService();
+      await this.stopForegroundService();
     }
   }
 
   private isPreferenceTrackingEnabled(): boolean {
     if (!this.realm) return false;
-    const prefs = this.realm.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
+    const prefs = this.realm.objectForPrimaryKey(
+      'Preferences',
+      'USER_PREFS',
+    ) as any;
     return prefs ? prefs.trackingEnabled : true;
   }
 
@@ -137,19 +158,23 @@ class LocationService {
     // 1. Listen for Places
     const places = this.realm.objects('Place');
     places.addListener((collection, changes) => {
-        // Broad check for structural changes OR modifications
-        if (changes.insertions.length > 0 || changes.deletions.length > 0 || changes.newModifications.length > 0) {
-            this.syncGeofences();
-        }
+      // Broad check for structural changes OR modifications
+      if (
+        changes.insertions.length > 0 ||
+        changes.deletions.length > 0 ||
+        changes.newModifications.length > 0
+      ) {
+        this.syncGeofences();
+      }
     });
 
     // 2. Listen for Preferences (Global Pause/Resume)
     const prefs = this.realm.objectForPrimaryKey('Preferences', 'USER_PREFS');
     if (prefs) {
-        prefs.addListener(() => {
-            console.log('[LocationService] Preferences changed, syncing...');
-            this.syncGeofences();
-        });
+      prefs.addListener(() => {
+        console.log('[LocationService] Preferences changed, syncing...');
+        this.syncGeofences();
+      });
     }
   }
 
@@ -160,25 +185,38 @@ class LocationService {
     this.isSyncing = true;
     try {
       const trackingEnabled = this.isPreferenceTrackingEnabled();
-      const enabledPlaces = trackingEnabled ? PlaceService.getEnabledPlaces(this.realm) : [];
+      const enabledPlaces = trackingEnabled
+        ? PlaceService.getEnabledPlaces(this.realm)
+        : [];
 
       // Schedule-aware active set: always-active + currently scheduled active
-      const alwaysActivePlaces = enabledPlaces.filter(p => !(p as any).schedules || (p as any).schedules.length === 0);
-      const scheduledPlaces = enabledPlaces.filter(p => (p as any).schedules && (p as any).schedules.length > 0);
-      const activeScheduledPlaces = scheduledPlaces.filter(p => this.isWithinSchedule(p));
-      const activeEligiblePlaces = [...alwaysActivePlaces, ...activeScheduledPlaces];
+      const alwaysActivePlaces = enabledPlaces.filter(
+        p => !(p as any).schedules || (p as any).schedules.length === 0,
+      );
+      const scheduledPlaces = enabledPlaces.filter(
+        p => (p as any).schedules && (p as any).schedules.length > 0,
+      );
+      const activeScheduledPlaces = scheduledPlaces.filter(p =>
+        this.isWithinSchedule(p),
+      );
+      const activeEligiblePlaces = [
+        ...alwaysActivePlaces,
+        ...activeScheduledPlaces,
+      ];
 
       const activeIdsArray = activeEligiblePlaces.map(p => p.id as string);
       const activeIdsString = activeIdsArray.sort().join(',');
       const activeIdsSet = new Set(activeIdsArray);
-      
+
       // 1. Check for redundant syncs (prevent loops from isInside toggle)
-      if (activeIdsString === this.lastEnabledIds) {
-          // If the list of enabled places hasn't changed, 
-          // we should still handle Force CheckOut in case singular places were toggled
-          // but if nothing actually structural changed, we can exit early.
-          this.handleManualDisableCleanup(activeIdsSet);
-          return;
+      // Only skip if the active set is unchanged AND we currently have geofences active.
+      // If geofences are inactive (e.g., previously cleared due to permissions), proceed to rebuild.
+      if (activeIdsString === this.lastEnabledIds && this.geofencesActive) {
+        // If the list of enabled places hasn't changed and geofences are active,
+        // we still handle Force CheckOut in case singular places were toggled
+        // but can exit early to avoid unnecessary re-adds.
+        this.handleManualDisableCleanup(activeIdsSet);
+        return;
       }
       this.lastEnabledIds = activeIdsString;
       console.log('[LocationService] Syncing geofences...');
@@ -188,17 +226,22 @@ class LocationService {
 
       // 3. Clear and re-add geofences
       await Geofencing.removeAllGeofence();
+      this.geofencesActive = false;
 
       if (enabledPlaces.length === 0 || !trackingEnabled) {
-          console.log('[LocationService] Tracking stopped (no places or tracking disabled).');
-          await this.stopForegroundService();
-          return;
+        console.log(
+          '[LocationService] Tracking stopped (no places or tracking disabled).',
+        );
+        await this.stopForegroundService();
+        return;
       }
 
       // 4. Check if we have required permissions before starting service
       const hasPermissions = await PermissionsManager.hasScanningPermissions();
       if (!hasPermissions) {
-        console.warn('[LocationService] Missing required permissions. Cannot start geofencing.');
+        console.warn(
+          '[LocationService] Missing required permissions. Cannot start geofencing.',
+        );
         await this.stopForegroundService();
         this.isSyncing = false;
         return;
@@ -206,18 +249,21 @@ class LocationService {
 
       // 5. Add Geofences ONLY for active-eligible places (battery friendly)
       for (const place of activeEligiblePlaces) {
-         await Geofencing.addGeofence({
-            id: place.id as string,
-            latitude: place.latitude as number,
-            longitude: place.longitude as number,
-            radius: Math.max(100, (place.radius as number) + 20),
-         });
+        await Geofencing.addGeofence({
+          id: place.id as string,
+          latitude: place.latitude as number,
+          longitude: place.longitude as number,
+          // Allow small-radius geofences; apply a modest buffer but keep minimum low
+          radius: Math.max(30, (place.radius as number) + 20),
+        });
       }
-      
-      console.log(`[LocationService] Monitoring ${activeEligiblePlaces.length} active geofences (enabled places: ${enabledPlaces.length})`);
+
+      console.log(
+        `[LocationService] Monitoring ${activeEligiblePlaces.length} active geofences (enabled places: ${enabledPlaces.length})`,
+      );
       // Keep service running even if no currently active geofences (so we can deep-sleep and wake at schedule boundaries)
       await this.startForegroundService();
-
+      this.geofencesActive = true;
     } catch (error) {
       console.error('[LocationService] Sync failed:', error);
     } finally {
@@ -227,15 +273,17 @@ class LocationService {
   }
 
   private async handleManualDisableCleanup(enabledIdsSet: Set<string>) {
-      if (!this.realm) return;
-      const activeLogs = CheckInService.getActiveCheckIns(this.realm);
-      for (const log of activeLogs) {
-          if (!enabledIdsSet.has(log.placeId as string)) {
-              console.log(`[LocationService] Manual disable detected for: ${log.placeId}`);
-              // Use force=true to bypass debounce
-              await this.handleGeofenceExit(log.placeId as string, true);
-          }
+    if (!this.realm) return;
+    const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+    for (const log of activeLogs) {
+      if (!enabledIdsSet.has(log.placeId as string)) {
+        console.log(
+          `[LocationService] Manual disable detected for: ${log.placeId}`,
+        );
+        // Use force=true to bypass debounce
+        await this.handleGeofenceExit(log.placeId as string, true);
       }
+    }
   }
 
   private startGeofenceMonitoring() {
@@ -254,12 +302,17 @@ class LocationService {
     // Keep geofences aligned with current schedules and place states
     await this.syncGeofences();
     await this.checkGeofences();
-    
+
     // Schedule next run
     if (this.isPreferenceTrackingEnabled()) {
-        const interval = await this.getDynamicCheckInterval();
-        console.log(`[LocationService] Next check in ${Math.round(interval / 1000)}s`);
-        this.monitoringTimeout = setTimeout(() => this.runMonitoringCycle(), interval);
+      const interval = await this.getDynamicCheckInterval();
+      console.log(
+        `[LocationService] Next check in ${Math.round(interval / 1000)}s`,
+      );
+      this.monitoringTimeout = setTimeout(
+        () => this.runMonitoringCycle(),
+        interval,
+      );
     }
   }
 
@@ -267,69 +320,86 @@ class LocationService {
     if (!this.realm || this.realm.isClosed) return 60000; // Default 1m if closed
 
     const enabledPlaces = PlaceService.getEnabledPlaces(this.realm);
-    
+
     // Separate places into two categories:
     // 1. Places WITHOUT schedules (always active 24/7)
     // 2. Places WITH schedules (only active during specific times)
-    const alwaysActivePlaces = enabledPlaces.filter(p => !(p as any).schedules || (p as any).schedules.length === 0);
-    const scheduledPlaces = enabledPlaces.filter(p => (p as any).schedules && (p as any).schedules.length > 0);
-    const activeScheduledPlaces = scheduledPlaces.filter(p => this.isWithinSchedule(p));
+    const alwaysActivePlaces = enabledPlaces.filter(
+      p => !(p as any).schedules || (p as any).schedules.length === 0,
+    );
+    const scheduledPlaces = enabledPlaces.filter(
+      p => (p as any).schedules && (p as any).schedules.length > 0,
+    );
+    const activeScheduledPlaces = scheduledPlaces.filter(p =>
+      this.isWithinSchedule(p),
+    );
 
     // Combine: always-active places + currently-scheduled places
     const allActivePlaces = [...alwaysActivePlaces, ...activeScheduledPlaces];
 
     // 1. "Deep Sleep": ONLY if ALL places have schedules AND none are currently active
-    if (alwaysActivePlaces.length === 0 && activeScheduledPlaces.length === 0 && scheduledPlaces.length > 0) {
-        // Calculate exact time until the next schedule starts to wake up precisely
-        const timeToNext = this.getTimeToNextSchedule(scheduledPlaces);
-        
-        // Cap the sleep at 30 minutes. 
-        // If the next schedule is in 7 minutes, we sleep 7 minutes.
-        // If it's in 4 hours, we sleep 30 minutes and check again.
-        const sleepDuration = Math.min(timeToNext, 30 * 60 * 1000);
-        
-        // Ensure we don't sleep for tiny intervals (min 1 minute)
-        const finalSleep = Math.max(sleepDuration, 60000);
-        
-        console.log(`[LocationService] Deep Sleep: ${Math.round(finalSleep / 60000)}m (Next schedule in ${Math.round(timeToNext / 60000)}m)`);
-        return finalSleep;
+    if (
+      alwaysActivePlaces.length === 0 &&
+      activeScheduledPlaces.length === 0 &&
+      scheduledPlaces.length > 0
+    ) {
+      // Calculate exact time until the next schedule starts to wake up precisely
+      const timeToNext = this.getTimeToNextSchedule(scheduledPlaces);
+
+      // Cap the sleep at 30 minutes.
+      // If the next schedule is in 7 minutes, we sleep 7 minutes.
+      // If it's in 4 hours, we sleep 30 minutes and check again.
+      const sleepDuration = Math.min(timeToNext, 30 * 60 * 1000);
+
+      // Ensure we don't sleep for tiny intervals (min 1 minute)
+      const finalSleep = Math.max(sleepDuration, 60000);
+
+      console.log(
+        `[LocationService] Deep Sleep: ${Math.round(
+          finalSleep / 60000,
+        )}m (Next schedule in ${Math.round(timeToNext / 60000)}m)`,
+      );
+      return finalSleep;
     }
 
     // 2. "Distance-Aware Polling" - we have active places to monitor
     // We need the last known position to decide distance.
     // If we don't have it, we default to 1 minute.
-    return new Promise((resolve) => {
-        Geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude } = position.coords;
-                let minDistance = Infinity;
+    return new Promise(resolve => {
+      Geolocation.getCurrentPosition(
+        position => {
+          const { latitude, longitude } = position.coords;
+          let minDistance = Infinity;
 
-                allActivePlaces.forEach(place => {
-                    const dist = this.calculateDistance(
-                        latitude,
-                        longitude,
-                        place.latitude as number,
-                        place.longitude as number
-                    );
-                    if (dist < minDistance) minDistance = dist;
-                });
+          allActivePlaces.forEach(place => {
+            const dist = this.calculateDistance(
+              latitude,
+              longitude,
+              place.latitude as number,
+              place.longitude as number,
+            );
+            if (dist < minDistance) minDistance = dist;
+          });
 
-                if (minDistance <= 500) {
-                    resolve(15000); // 15 seconds (Close or Inside)
-                } else if (minDistance <= 2000) {
-                    resolve(60000); // 1 minute (Near)
-                } else if (minDistance <= 5000) {
-                    resolve(5 * 60 * 1000); // 5 minutes (Approaching)
-                } else {
-                    resolve(10 * 60 * 1000); // 10 minutes (Far)
-                }
-            },
-            (error) => {
-                console.warn('[LocationService] Could not get position for interval calc:', error);
-                resolve(60000); // fallback to 1m
-            },
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 }
-        );
+          if (minDistance <= 500) {
+            resolve(10000); // 10 seconds (Close or Inside)
+          } else if (minDistance <= 2000) {
+            resolve(30000); // 30 seconds (Near)
+          } else if (minDistance <= 5000) {
+            resolve(2 * 60 * 1000); // 2 minutes (Approaching)
+          } else {
+            resolve(6 * 60 * 1000); // 6 minutes (Far)
+          }
+        },
+        error => {
+          console.warn(
+            '[LocationService] Could not get position for interval calc:',
+            error,
+          );
+          resolve(60000); // fallback to 1m
+        },
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 30000 },
+      );
     });
   }
 
@@ -337,27 +407,41 @@ class LocationService {
     if (!place.schedules || place.schedules.length === 0) return true; // Always Active if no schedule
 
     const now = new Date();
-    const currentDay = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
+    const currentDay = [
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+    ][now.getDay()];
     const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
 
     return place.schedules.some((s: any) => {
-        // Day match
-        const dayMatch = s.days.length === 0 || s.days.includes(currentDay);
-        if (!dayMatch) return false;
+      // Day match
+      const dayMatch = s.days.length === 0 || s.days.includes(currentDay);
+      if (!dayMatch) return false;
 
-        // Time match
-        const [startHours, startMins] = s.startTime.split(':').map(Number);
-        const [endHours, endMins] = s.endTime.split(':').map(Number);
-        const startTimeMinutes = startHours * 60 + startMins;
-        const endTimeMinutes = endHours * 60 + endMins;
+      // Time match
+      const [startHours, startMins] = s.startTime.split(':').map(Number);
+      const [endHours, endMins] = s.endTime.split(':').map(Number);
+      const startTimeMinutes = startHours * 60 + startMins;
+      const endTimeMinutes = endHours * 60 + endMins;
 
-        // Handle overnight schedules (e.g. 22:00 to 02:00)
-        if (startTimeMinutes <= endTimeMinutes) {
-            return currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes;
-        } else {
-            // Overnight window
-            return currentTimeMinutes >= startTimeMinutes || currentTimeMinutes <= endTimeMinutes;
-        }
+      // Handle overnight schedules (e.g. 22:00 to 02:00)
+      if (startTimeMinutes <= endTimeMinutes) {
+        return (
+          currentTimeMinutes >= startTimeMinutes &&
+          currentTimeMinutes <= endTimeMinutes
+        );
+      } else {
+        // Overnight window
+        return (
+          currentTimeMinutes >= startTimeMinutes ||
+          currentTimeMinutes <= endTimeMinutes
+        );
+      }
     });
   }
 
@@ -367,154 +451,251 @@ class LocationService {
     const gpsEnabled = await PermissionsManager.isGpsEnabled();
 
     if (!hasPermissions || !gpsEnabled) {
-        console.warn(`[LocationService] Missing requirements: permissions=${hasPermissions}, gps=${gpsEnabled}. Skipping check.`);
-        return;
+      console.warn(
+        `[LocationService] Missing requirements: permissions=${hasPermissions}, gps=${gpsEnabled}. Skipping check.`,
+      );
+      return;
     }
 
     if (!this.realm || this.realm.isClosed) return;
     if (this.isChecking) return;
 
     this.isChecking = true;
-    
-    return new Promise<void>((resolve) => {
-        Geolocation.getCurrentPosition(
-            async (position) => {
-              try {
-                const { latitude, longitude, accuracy } = position.coords;
 
-                if (!this.realm || this.realm.isClosed) {
-                    resolve();
-                    return;
-                }
+    return new Promise<void>(resolve => {
+      Geolocation.getCurrentPosition(
+        async position => {
+          try {
+            const { latitude, longitude, accuracy } = position.coords;
 
-                console.log(`[LocationService] Check: lat=${latitude.toFixed(4)}, lon=${longitude.toFixed(4)}, acc=${accuracy.toFixed(1)}m`);
-
-                const allEnabledPlaces = PlaceService.getEnabledPlaces(this.realm!);
-                console.log(`[LocationService] Total enabled places: ${allEnabledPlaces.length}`);
-                
-                // Use same categorization as getDynamicCheckInterval
-                const alwaysActivePlaces = allEnabledPlaces.filter(p => !(p as any).schedules || (p as any).schedules.length === 0);
-                const scheduledPlaces = allEnabledPlaces.filter(p => (p as any).schedules && (p as any).schedules.length > 0);
-                const activeScheduledPlaces = scheduledPlaces.filter(p => this.isWithinSchedule(p));
-                const enabledPlaces = [...alwaysActivePlaces, ...activeScheduledPlaces];
-                
-                console.log(`[LocationService] Always active: ${alwaysActivePlaces.length}, Scheduled active: ${activeScheduledPlaces.length}, Total to check: ${enabledPlaces.length}`);
-                
-                const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm!);
-
-                // 1. Explicitly check if we are still inside the CURRENT place (fixes "stuck" status)
-                if (currentCheckIn) {
-                   const place = PlaceService.getPlaceById(this.realm!, currentCheckIn.placeId as string);
-                   if (place) {
-                     const dist = this.calculateDistance(latitude, longitude, place.latitude as number, place.longitude as number);
-                     const threshold = (place.radius as number) * 1.1; // 10% buffer
-                     
-                     // Smart Exit Strategy:
-                     const confidenceExit = (dist > threshold + accuracy) || (accuracy < 60 && dist > threshold);
-
-                     if (confidenceExit) {
-                       console.log(`[LocationService] Explicit EXIT detected for ${place.name} (dist: ${Math.round(dist)}m, acc: ${Math.round(accuracy)}m)`);
-                       await this.handleGeofenceExit(place.id as string);
-                     } else if (dist > threshold) {
-                        console.log(`[LocationService] Potential EXIT ignored due to low accuracy (dist: ${Math.round(dist)}m, acc: ${Math.round(accuracy)}m)`);
-                     }
-                   } else {
-                     // Place was deleted or invalid? Clean up.
-                     await this.handleGeofenceExit(currentCheckIn.placeId as string);
-                   }
-                }
-                
-                // 2. Scan for entries (and maintain active states)
-                const activePlaces = enabledPlaces.filter(place => {
-                  const isActive = CheckInService.isPlaceActive(this.realm!, place.id as string);
-                  
-                  const distance = this.calculateDistance(
-                    latitude,
-                    longitude,
-                    place.latitude as number,
-                    place.longitude as number
-                  );
-                  
-                  const radiusWithBuffer = (place.radius as number) * 1.1;
-
-                  // Accuracy-aware distance: treat inside if effective distance (distance - accuracy)
-                  // is within the geofence, or if very close regardless of accuracy.
-                  const effectiveDistance = Math.max(0, distance - accuracy);
-                  const allowWithPoorAccuracy = distance <= radiusWithBuffer / 2;
-                  const isInsideByEffective = effectiveDistance <= radiusWithBuffer;
-                  const isInside = isInsideByEffective || allowWithPoorAccuracy;
-
-                  // Adaptive Accuracy Check:
-                  // Be forgiving in background; only block when clearly outside and accuracy is very poor.
-                  const maxAllowedAccuracy = isActive ? 250 : 200;
-                  if (!isInside && accuracy > maxAllowedAccuracy) {
-                    if (isActive) {
-                      console.log(`[LocationService] Maintaining ${place.name} despite low accuracy (${Math.round(accuracy)}m)`);
-                      return true;
-                    }
-                    console.log(`[LocationService] Skipping ${place.name} - outside and accuracy too low (${Math.round(accuracy)}m)`);
-                    return false;
-                  }
-                  
-                  console.log(
-                    `[LocationService] Place: ${place.name}, Distance: ${Math.round(distance)}m, ` +
-                    `Effective: ${Math.round(effectiveDistance)}m, Acc: ${Math.round(accuracy)}m, ` +
-                    `Radius: ${place.radius}m, Inside: ${isInside}`
-                  );
-                  
-                  return isInside;
-                });
-
-                // 3. Handle Schedule-Aware Cleanup
-                // If we are currently "Inside" a place according to CheckInLog, 
-                // but that place is no longer in 'enabledPlaces' (because its schedule ended),
-                // we must trigger an EXIT immediately.
-                const currentActiveLogs = CheckInService.getActiveCheckIns(this.realm!);
-                const enabledPlaceIds = new Set(enabledPlaces.map(p => p.id));
-                
-                for (const log of currentActiveLogs) {
-                    if (!enabledPlaceIds.has(log.placeId as string)) {
-                        console.log(`[LocationService] Schedule EXPIRED for placeId: ${log.placeId}`);
-                        await this.handleGeofenceExit(log.placeId as string, true);
-                    } else {
-                        // Place is still enabled and in schedule, check if we are physically outside
-                        const activePlaceIds = new Set(activePlaces.map(p => p.id));
-                        if (!activePlaceIds.has(log.placeId as string)) {
-                            console.log(`[LocationService] Physical EXIT detected for placeId: ${log.placeId}`);
-                            await this.handleGeofenceExit(log.placeId as string);
-                        }
-                    }
-                }
-
-                // 4. Handle Specific Entries
-                for (const place of activePlaces) {
-                  if (!CheckInService.isPlaceActive(this.realm!, place.id as string)) {
-                     console.log(`[LocationService] ENTER detected for ${place.name}`);
-                     await this.handleGeofenceEntry(place.id as string);
-                  }
-                }
-              } catch (internalError) {
-                console.error('[LocationService] Crashed inside Geolocation success callback:', internalError);
-              } finally {
-                resolve();
-              }
-            },
-            (error) => {
-              console.error('[LocationService] Geofence check location error:', error);
+            if (!this.realm || this.realm.isClosed) {
               resolve();
-            },
-            {
-              enableHighAccuracy: true,
-              timeout: 30000,
-              maximumAge: 10000,
+              return;
             }
-        );
+
+            console.log(
+              `[LocationService] Check: lat=${latitude.toFixed(
+                4,
+              )}, lon=${longitude.toFixed(4)}, acc=${accuracy.toFixed(1)}m`,
+            );
+
+            const allEnabledPlaces = PlaceService.getEnabledPlaces(this.realm!);
+            console.log(
+              `[LocationService] Total enabled places: ${allEnabledPlaces.length}`,
+            );
+
+            // Use same categorization as getDynamicCheckInterval
+            const alwaysActivePlaces = allEnabledPlaces.filter(
+              p => !(p as any).schedules || (p as any).schedules.length === 0,
+            );
+            const scheduledPlaces = allEnabledPlaces.filter(
+              p => (p as any).schedules && (p as any).schedules.length > 0,
+            );
+            const activeScheduledPlaces = scheduledPlaces.filter(p =>
+              this.isWithinSchedule(p),
+            );
+            const enabledPlaces = [
+              ...alwaysActivePlaces,
+              ...activeScheduledPlaces,
+            ];
+
+            console.log(
+              `[LocationService] Always active: ${alwaysActivePlaces.length}, Scheduled active: ${activeScheduledPlaces.length}, Total to check: ${enabledPlaces.length}`,
+            );
+
+            const currentCheckIn = CheckInService.getCurrentCheckIn(
+              this.realm!,
+            );
+
+            // 1. Explicitly check if we are still inside the CURRENT place (fixes "stuck" status)
+            if (currentCheckIn) {
+              const place = PlaceService.getPlaceById(
+                this.realm!,
+                currentCheckIn.placeId as string,
+              );
+              if (place) {
+                const dist = this.calculateDistance(
+                  latitude,
+                  longitude,
+                  place.latitude as number,
+                  place.longitude as number,
+                );
+                const threshold = (place.radius as number) * 1.1; // 10% buffer
+
+                // Smart Exit Strategy:
+                const confidenceExit =
+                  dist > threshold + accuracy ||
+                  (accuracy < 60 && dist > threshold);
+
+                if (confidenceExit) {
+                  console.log(
+                    `[LocationService] Explicit EXIT detected for ${
+                      place.name
+                    } (dist: ${Math.round(dist)}m, acc: ${Math.round(
+                      accuracy,
+                    )}m)`,
+                  );
+                  await this.handleGeofenceExit(place.id as string);
+                } else if (dist > threshold) {
+                  console.log(
+                    `[LocationService] Potential EXIT ignored due to low accuracy (dist: ${Math.round(
+                      dist,
+                    )}m, acc: ${Math.round(accuracy)}m)`,
+                  );
+                }
+              } else {
+                // Place was deleted or invalid? Clean up.
+                await this.handleGeofenceExit(currentCheckIn.placeId as string);
+              }
+            }
+
+            // 2. Scan for entries (and maintain active states)
+            const activePlaces = enabledPlaces.filter(place => {
+              const isActive = CheckInService.isPlaceActive(
+                this.realm!,
+                place.id as string,
+              );
+
+              const distance = this.calculateDistance(
+                latitude,
+                longitude,
+                place.latitude as number,
+                place.longitude as number,
+              );
+
+              const radiusWithBuffer = (place.radius as number) * 1.1;
+
+              // Accuracy-aware distance: treat inside if effective distance (distance - accuracy)
+              // is within the geofence, or if very close regardless of accuracy.
+              const effectiveDistance = Math.max(0, distance - accuracy);
+              const allowWithPoorAccuracy = distance <= radiusWithBuffer / 2;
+              const isInsideByEffective = effectiveDistance <= radiusWithBuffer;
+              // Small-radius precision: add dynamic tolerance to reduce misses for tiny zones
+              const smallRadius = (place.radius as number) <= 60;
+              const dynamicTolerance = smallRadius
+                ? Math.max(8, accuracy * 0.4)
+                : Math.max(5, accuracy * 0.2);
+              const isInsideLoose =
+                distance <= (place.radius as number) + dynamicTolerance;
+              const isInside =
+                isInsideByEffective || allowWithPoorAccuracy || isInsideLoose;
+
+              // Adaptive Accuracy Check:
+              // Be forgiving in background; only block when clearly outside and accuracy is very poor.
+              // Accuracy gating: be forgiving, especially for small radii
+              const maxAllowedAccuracy = isActive ? 300 : 250;
+              if (!isInside && accuracy > maxAllowedAccuracy) {
+                // With very poor accuracy, treat as inside if within radius plus a fraction of accuracy
+                const forgiveness = radiusWithBuffer + accuracy * 0.5;
+                const maybeInside = distance <= forgiveness;
+                if (maybeInside) {
+                  console.log(
+                    `[LocationService] Treating ${
+                      place.name
+                    } as inside (poor acc ${Math.round(accuracy)}m)`,
+                  );
+                  return true;
+                }
+                if (isActive) {
+                  console.log(
+                    `[LocationService] Maintaining ${
+                      place.name
+                    } despite very low accuracy (${Math.round(accuracy)}m)`,
+                  );
+                  return true;
+                }
+                console.log(
+                  `[LocationService] Skipping ${
+                    place.name
+                  } - outside and accuracy too low (${Math.round(accuracy)}m)`,
+                );
+                return false;
+              }
+
+              console.log(
+                `[LocationService] Place: ${place.name}, Distance: ${Math.round(
+                  distance,
+                )}m, ` +
+                  `Effective: ${Math.round(
+                    effectiveDistance,
+                  )}m, Acc: ${Math.round(accuracy)}m, ` +
+                  `Radius: ${place.radius}m, Inside: ${isInside}`,
+              );
+
+              return isInside;
+            });
+
+            // 3. Handle Schedule-Aware Cleanup
+            // If we are currently "Inside" a place according to CheckInLog,
+            // but that place is no longer in 'enabledPlaces' (because its schedule ended),
+            // we must trigger an EXIT immediately.
+            const currentActiveLogs = CheckInService.getActiveCheckIns(
+              this.realm!,
+            );
+            const enabledPlaceIds = new Set(enabledPlaces.map(p => p.id));
+
+            for (const log of currentActiveLogs) {
+              if (!enabledPlaceIds.has(log.placeId as string)) {
+                console.log(
+                  `[LocationService] Schedule EXPIRED for placeId: ${log.placeId}`,
+                );
+                await this.handleGeofenceExit(log.placeId as string, true);
+              } else {
+                // Place is still enabled and in schedule, check if we are physically outside
+                const activePlaceIds = new Set(activePlaces.map(p => p.id));
+                if (!activePlaceIds.has(log.placeId as string)) {
+                  console.log(
+                    `[LocationService] Physical EXIT detected for placeId: ${log.placeId}`,
+                  );
+                  await this.handleGeofenceExit(log.placeId as string);
+                }
+              }
+            }
+
+            // 4. Handle Specific Entries
+            for (const place of activePlaces) {
+              if (
+                !CheckInService.isPlaceActive(this.realm!, place.id as string)
+              ) {
+                console.log(
+                  `[LocationService] ENTER detected for ${place.name}`,
+                );
+                await this.handleGeofenceEntry(place.id as string);
+              }
+            }
+          } catch (internalError) {
+            console.error(
+              '[LocationService] Crashed inside Geolocation success callback:',
+              internalError,
+            );
+          } finally {
+            resolve();
+          }
+        },
+        error => {
+          console.error(
+            '[LocationService] Geofence check location error:',
+            error,
+          );
+          resolve();
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 30000,
+          maximumAge: 10000,
+        },
+      );
     }).finally(() => {
-        this.isChecking = false;
+      this.isChecking = false;
     });
   }
 
-  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  private calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
     // Haversine formula
     const R = 6371e3; // Earth's radius in meters
     const φ1 = (lat1 * Math.PI) / 180;
@@ -533,11 +714,11 @@ class LocationService {
   private async handleGeofenceEntry(placeId: string) {
     const now = Date.now();
     const lastTime = this.lastTriggerTime[placeId] || 0;
-    
+
     // Debounce check
     if (now - lastTime < this.DEBOUNCE_TIME) {
-        console.log(`[LocationService] Debouncing ENTER for ${placeId}`);
-        return;
+      console.log(`[LocationService] Debouncing ENTER for ${placeId}`);
+      return;
     }
     this.lastTriggerTime[placeId] = now;
 
@@ -545,54 +726,56 @@ class LocationService {
 
     const place = PlaceService.getPlaceById(this.realm, placeId);
     if (place && place.isEnabled) {
-        const activeLogs = CheckInService.getActiveCheckIns(this.realm);
-        
-        if (activeLogs.length > 0) {
-            // Already in another zone.
-            // If the earliest check-in did not capture original sound values (e.g., missing DND permission),
-            // attempt silencing now to ensure the phone goes quiet.
-            const firstLog = activeLogs[0] as any;
-            const missingOriginal = firstLog.savedVolumeLevel == null || firstLog.savedMediaVolume == null;
+      const activeLogs = CheckInService.getActiveCheckIns(this.realm);
 
-            if (missingOriginal) {
-              // Attempt to silence now and log this entry.
-              await this.saveAndSilencePhone(placeId);
-            } else {
-              // Preserve the original values from the first zone and just log this entry.
-              CheckInService.logCheckIn(
-                this.realm,
-                placeId,
-                firstLog.savedVolumeLevel,
-                firstLog.savedMediaVolume
-              );
-            }
+      if (activeLogs.length > 0) {
+        // Already in another zone.
+        // If the earliest check-in did not capture original sound values (e.g., missing DND permission),
+        // attempt silencing now to ensure the phone goes quiet.
+        const firstLog = activeLogs[0] as any;
+        const missingOriginal =
+          firstLog.savedVolumeLevel == null ||
+          firstLog.savedMediaVolume == null;
 
-            await this.showNotification(
-              'Silent Zone Updated',
-              `Also inside ${place.name}. Remaining silent.`,
-              'check-in-multi'
-            );
+        if (missingOriginal) {
+          // Attempt to silence now and log this entry.
+          await this.saveAndSilencePhone(placeId);
         } else {
-            // Fresh entry into the FIRST silent zone
-            await this.saveAndSilencePhone(placeId);
-            
-            await this.showNotification(
-                'Silent Zone Active',
-                `Now in ${place.name}. Phone is being silenced.`,
-                'check-in'
-            );
+          // Preserve the original values from the first zone and just log this entry.
+          CheckInService.logCheckIn(
+            this.realm,
+            placeId,
+            firstLog.savedVolumeLevel,
+            firstLog.savedMediaVolume,
+          );
         }
+
+        await this.showNotification(
+          'Silent Zone Updated',
+          `Also inside ${place.name}. Remaining silent.`,
+          'check-in-multi',
+        );
+      } else {
+        // Fresh entry into the FIRST silent zone
+        await this.saveAndSilencePhone(placeId);
+
+        await this.showNotification(
+          'Silent Zone Active',
+          `Now in ${place.name}. Phone is being silenced.`,
+          'check-in',
+        );
+      }
     }
   }
 
   private async handleGeofenceExit(placeId: string, force: boolean = false) {
     const now = Date.now();
     const lastTime = this.lastTriggerTime[placeId] || 0;
-    
+
     // Debounce check - skip if forced (e.g. manual disable)
     if (!force && now - lastTime < this.DEBOUNCE_TIME) {
-        console.log(`[LocationService] Debouncing EXIT for ${placeId}`);
-        return;
+      console.log(`[LocationService] Debouncing EXIT for ${placeId}`);
+      return;
     }
     this.lastTriggerTime[placeId] = now;
 
@@ -605,24 +788,24 @@ class LocationService {
     const thisLog = activeLogs.find(l => l.placeId === placeId);
 
     if (activeLogs.length === 1 && thisLog) {
-        // This is the LAST active zone. Restore sound.
-        await this.restoreRingerMode(thisLog.id as string);
-        CheckInService.logCheckOut(this.realm, thisLog.id as string);
-        
-        await this.showNotification(
-            'Silent Zone Deactivated',
-            `Exited ${place?.name || 'Silent Zone'}. Sound restored.`,
-            'check-out'
-        );
+      // This is the LAST active zone. Restore sound.
+      await this.restoreRingerMode(thisLog.id as string);
+      CheckInService.logCheckOut(this.realm, thisLog.id as string);
+
+      await this.showNotification(
+        'Silent Zone Deactivated',
+        `Exited ${place?.name || 'Silent Zone'}. Sound restored.`,
+        'check-out',
+      );
     } else if (thisLog) {
-        // Still in other zones. Don't restore sound yet.
-        CheckInService.logCheckOut(this.realm, thisLog.id as string);
-        
-        await this.showNotification(
-            'Silent Zone Partial Exit',
-            `Exited ${place?.name || 'area'}. Still in other active zones.`,
-            'check-out-partial'
-        );
+      // Still in other zones. Don't restore sound yet.
+      CheckInService.logCheckOut(this.realm, thisLog.id as string);
+
+      await this.showNotification(
+        'Silent Zone Partial Exit',
+        `Exited ${place?.name || 'area'}. Still in other active zones.`,
+        'check-out-partial',
+      );
     }
   }
 
@@ -632,13 +815,15 @@ class LocationService {
       if (Platform.OS === 'android') {
         // Check DND permission first
         const hasPermission = await RingerMode.checkDndPermission();
-        
+
         if (!hasPermission) {
-          console.warn('[LocationService] No DND permission, cannot silence phone');
+          console.warn(
+            '[LocationService] No DND permission, cannot silence phone',
+          );
           await this.showNotification(
             'Permission Required',
             'Grant "Do Not Disturb" access in settings to enable automatic silencing',
-            'dnd-required'
+            'dnd-required',
           );
           // Still log check-in
           CheckInService.logCheckIn(this.realm!, placeId);
@@ -647,26 +832,50 @@ class LocationService {
 
         // Get current ringer mode and media volume
         const currentMode = await RingerMode.getRingerMode();
-        const currentMediaVolume = await RingerMode.getStreamVolume(RingerMode.STREAM_TYPES.MUSIC);
-        console.log(`[LocationService] Current mode: ${currentMode}, Media volume: ${currentMediaVolume}`);
-        
+        const currentMediaVolume = await RingerMode.getStreamVolume(
+          RingerMode.STREAM_TYPES.MUSIC,
+        );
+        console.log(
+          `[LocationService] Current mode: ${currentMode}, Media volume: ${currentMediaVolume}`,
+        );
+
         // Save them to the check-in log
-        CheckInService.logCheckIn(this.realm!, placeId, currentMode, currentMediaVolume);
-        
+        CheckInService.logCheckIn(
+          this.realm!,
+          placeId,
+          currentMode,
+          currentMediaVolume,
+        );
+
         // Set phone to silent and media to 0
         try {
-          console.log(`[LocationService] Attempting to set RingerMode to silent (0) for ${placeId}`);
-          const ringerResult = await RingerMode.setRingerMode(RINGER_MODE.silent);
-          console.log(`[LocationService] setRingerMode(silent) result: ${ringerResult}`);
-          
+          console.log(
+            `[LocationService] Attempting to set RingerMode to silent (0) for ${placeId}`,
+          );
+          const ringerResult = await RingerMode.setRingerMode(
+            RINGER_MODE.silent,
+          );
+          console.log(
+            `[LocationService] setRingerMode(silent) result: ${ringerResult}`,
+          );
+
           console.log('[LocationService] Attempting to set Media Volume to 0');
-          const volumeResult = await RingerMode.setStreamVolume(RingerMode.STREAM_TYPES.MUSIC, 0);
-          console.log(`[LocationService] setStreamVolume(0) result: ${volumeResult}`);
-          
-          console.log('[LocationService] Phone silenced and media muted successfully');
+          const volumeResult = await RingerMode.setStreamVolume(
+            RingerMode.STREAM_TYPES.MUSIC,
+            0,
+          );
+          console.log(
+            `[LocationService] setStreamVolume(0) result: ${volumeResult}`,
+          );
+
+          console.log(
+            '[LocationService] Phone silenced and media muted successfully',
+          );
         } catch (error: any) {
           if (error.code === 'NO_PERMISSION') {
-            console.warn('[LocationService] DND permission was revoked/not granted');
+            console.warn(
+              '[LocationService] DND permission was revoked/not granted',
+            );
             await RingerMode.requestDndPermission();
           } else {
             console.error('[LocationService] Failed to silence phone:', error);
@@ -690,17 +899,26 @@ class LocationService {
           const savedMediaVolume = (log as any).savedMediaVolume;
 
           if (savedMode !== null && savedMode !== undefined) {
-             console.log('[LocationService] Restoring ringer mode to:', savedMode);
-             await RingerMode.setRingerMode(savedMode as any);
+            console.log(
+              '[LocationService] Restoring ringer mode to:',
+              savedMode,
+            );
+            await RingerMode.setRingerMode(savedMode as any);
           } else {
-             await RingerMode.setRingerMode(RINGER_MODE.normal);
+            await RingerMode.setRingerMode(RINGER_MODE.normal);
           }
 
           if (savedMediaVolume !== null && savedMediaVolume !== undefined) {
-             console.log('[LocationService] Restoring media volume to:', savedMediaVolume);
-             await RingerMode.setStreamVolume(RingerMode.STREAM_TYPES.MUSIC, savedMediaVolume);
+            console.log(
+              '[LocationService] Restoring media volume to:',
+              savedMediaVolume,
+            );
+            await RingerMode.setStreamVolume(
+              RingerMode.STREAM_TYPES.MUSIC,
+              savedMediaVolume,
+            );
           }
-          
+
           console.log('[LocationService] Sound and media volume restored');
         }
       }
@@ -711,34 +929,34 @@ class LocationService {
 
   private async showNotification(title: string, body: string, id: string) {
     try {
-        if (Platform.OS === 'android') {
-            await notifee.createChannel({
-                id: 'silent-zone-alerts',
-                name: 'Silent Zone Alerts',
-                importance: AndroidImportance.HIGH,
-            });
-        }
-
-        await notifee.displayNotification({
-            title,
-            body,
-            android: {
-                channelId: 'silent-zone-alerts',
-                smallIcon: 'ic_launcher',
-                pressAction: {
-                    id: 'default',
-                },
-            },
-            ios: {
-                foregroundPresentationOptions: {
-                    alert: true,
-                    badge: true,
-                    sound: true,
-                },
-            },
+      if (Platform.OS === 'android') {
+        await notifee.createChannel({
+          id: 'silent-zone-alerts',
+          name: 'Silent Zone Alerts',
+          importance: AndroidImportance.HIGH,
         });
+      }
+
+      await notifee.displayNotification({
+        title,
+        body,
+        android: {
+          channelId: 'silent-zone-alerts',
+          smallIcon: 'ic_launcher',
+          pressAction: {
+            id: 'default',
+          },
+        },
+        ios: {
+          foregroundPresentationOptions: {
+            alert: true,
+            badge: true,
+            sound: true,
+          },
+        },
+      });
     } catch (error) {
-        console.error('[LocationService] Notification failed:', error);
+      console.error('[LocationService] Notification failed:', error);
     }
   }
 
@@ -746,29 +964,38 @@ class LocationService {
   destroy() {
     this.stopGeofenceMonitoring();
     this.isReady = false;
+    this.geofencesActive = false;
   }
   private getTimeToNextSchedule(places: any[]): number {
     let minDiff = Infinity;
     const now = new Date();
-    const currentDay = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
+    const currentDay = [
+      'Sunday',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+    ][now.getDay()];
     const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
 
     places.forEach(place => {
-        if (!place.schedules || place.schedules.length === 0) return;
-        
-        place.schedules.forEach((s: any) => {
-            // Check if schedule applies today
-            if (s.days.length > 0 && !s.days.includes(currentDay)) return;
+      if (!place.schedules || place.schedules.length === 0) return;
 
-            const [startHours, startMins] = s.startTime.split(':').map(Number);
-            const startTimeMinutes = startHours * 60 + startMins;
+      place.schedules.forEach((s: any) => {
+        // Check if schedule applies today
+        if (s.days.length > 0 && !s.days.includes(currentDay)) return;
 
-            if (startTimeMinutes > currentTimeMinutes) {
-                const diffMinutes = startTimeMinutes - currentTimeMinutes;
-                const diffMs = diffMinutes * 60 * 1000;
-                if (diffMs < minDiff) minDiff = diffMs;
-            }
-        });
+        const [startHours, startMins] = s.startTime.split(':').map(Number);
+        const startTimeMinutes = startHours * 60 + startMins;
+
+        if (startTimeMinutes > currentTimeMinutes) {
+          const diffMinutes = startTimeMinutes - currentTimeMinutes;
+          const diffMs = diffMinutes * 60 * 1000;
+          if (diffMs < minDiff) minDiff = diffMs;
+        }
+      });
     });
 
     return minDiff === Infinity ? 30 * 60 * 1000 : minDiff;

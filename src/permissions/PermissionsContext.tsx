@@ -106,7 +106,12 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         navigate(target);
       } else if (!hadAllPermissions && hasAllNow) {
         console.log('[PermissionsContext] All permissions granted! Geofencing can resume.');
-        // Geofencing will auto-resume when LocationService checks permissions
+        // Explicitly resync geofences to ensure monitoring restarts immediately
+        try {
+          await locationService.syncGeofences();
+        } catch (e) {
+          console.warn('[PermissionsContext] Failed to resync geofences after permissions restored:', e);
+        }
       }
     }
     
