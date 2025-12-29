@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { AppState, AppStateStatus, Alert } from 'react-native';
+import { AppState, AppStateStatus } from 'react-native';
 import { PermissionStatus, RESULTS } from 'react-native-permissions';
 import { PermissionsManager } from './PermissionsManager';
 import { locationService } from '../services/LocationService';
+import { navigate } from '../navigation/NavigationService';
 
 interface PermissionsContextType {
   locationStatus: PermissionStatus;
@@ -87,31 +88,22 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       });
       
       if (hadAllPermissions && !hasAllNow) {
-        console.log('[PermissionsContext] Critical permissions revoked! Stopping geofencing...');
+        console.log('[PermissionsContext] Critical permissions revoked! Stopping geofencing and redirecting to permission screen...');
         
-        // Stop geofencing service
+        // Stop background services/geofencing immediately
         locationService.destroy();
-        
-        // Show alert to user
-        Alert.alert(
-          'Permissions Required',
-          'Some permissions were revoked. Location tracking has been paused. Please grant permissions again to resume.',
-          [
-            {
-              text: 'Grant Permissions',
-              onPress: async () => {
-                // Re-request permissions
-                await requestLocationFlow();
-                await requestNotificationFlow();
-                await requestDndFlow();
-              }
-            },
-            {
-              text: 'Later',
-              style: 'cancel'
-            }
-          ]
-        );
+
+        // Determine which permission is missing and navigate to that screen
+        const getFirstMissingScreen = () => {
+          const locationOk = (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) && (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED);
+          if (!locationOk) return 'PermissionLocation';
+          if (notif !== RESULTS.GRANTED) return 'PermissionNotification';
+          if (dnd !== RESULTS.GRANTED) return 'PermissionDnd';
+          return 'PermissionLocation';
+        };
+
+        const target = getFirstMissingScreen();
+        navigate(target);
       } else if (!hadAllPermissions && hasAllNow) {
         console.log('[PermissionsContext] All permissions granted! Geofencing can resume.');
         // Geofencing will auto-resume when LocationService checks permissions

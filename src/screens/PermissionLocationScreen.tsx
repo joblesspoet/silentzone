@@ -74,15 +74,7 @@ export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
         <CustomButton 
           title="Maybe Later" 
           onPress={handleSkip} 
-          variant="ghost" 
-          fullWidth
-          textStyle={{ 
-            color: theme.colors.text.secondary.light,
-            fontSize: 13,
-            letterSpacing: 1.5,
-            textTransform: 'uppercase',
-            fontWeight: '600',
-          }}
+          variant="link"
         />
       </View>
     </View>

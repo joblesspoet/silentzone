@@ -50,7 +50,7 @@ export const PermissionNotificationScreen: React.FC<Props> = ({ navigation }) =>
         </View>
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, theme.spacing.xl) }]}>
         <CustomButton 
           title="Allow Notifications" 
           onPress={handleGrant} 
@@ -60,8 +60,7 @@ export const PermissionNotificationScreen: React.FC<Props> = ({ navigation }) =>
         <CustomButton 
           title="Not Now" 
           onPress={handleSkip} 
-          variant="ghost" 
-          fullWidth
+          variant="link"
         />
       </View>
     </View>

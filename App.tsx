@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { StatusBar } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { navigationRef } from './src/navigation/NavigationService';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { theme } from './src/theme';
@@ -17,7 +18,7 @@ const AppContent = () => {
     }, [realm]);
 
     return (
-      <NavigationContainer theme={{
+      <NavigationContainer ref={navigationRef} theme={{
         ...DefaultTheme,
         dark: false,
         colors: { 
