@@ -18,8 +18,11 @@ interface Props {
   navigation: any;
 }
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
+  const insets = useSafeAreaInsets();
   const { locationStatus, backgroundLocationStatus, dndStatus, notificationStatus } = usePermissions();
 
   const [places, setPlaces] = useState<any[]>([]);
@@ -205,7 +208,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
         <View style={styles.headerTop}>
           <Text style={styles.dateText}>{currentDate}</Text>
           <TouchableOpacity 
@@ -294,7 +297,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       {/* FAB */}
       {places.length > 0 && canAddPlace && hasFullPermissions && (
         <TouchableOpacity 
-          style={styles.fab}
+          style={[styles.fab, { bottom: Math.max(insets.bottom, 20) + 20 }]}
           onPress={() => {
             if (canAddPlace) {
               navigation.navigate('AddPlace');
@@ -318,7 +321,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: theme.spacing.xl,
-    paddingTop: 60, // Safe area
+    paddingTop: 0, // Handled inline (was 60)
     paddingBottom: theme.spacing.md,
   },
   headerTop: {
@@ -401,7 +404,7 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: 'absolute',
-    bottom: 32,
+    // bottom handled inline
     right: 24,
     width: 56,
     height: 56,

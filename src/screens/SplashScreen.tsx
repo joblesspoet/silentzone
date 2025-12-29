@@ -18,9 +18,12 @@ import { useRealm } from '../database/RealmProvider';
 import { PreferencesService } from '../database/services/PreferencesService';
 type SplashScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Splash'>;
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const SplashScreen = () => {
   const navigation = useNavigation<SplashScreenNavigationProp>();
   const realm = useRealm();
+  const insets = useSafeAreaInsets();
   
   // Animation Values
   const pulseScale = useSharedValue(1);
@@ -150,7 +153,7 @@ export const SplashScreen = () => {
         </View>
       </View>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <Text style={styles.version}>v1.0</Text>
       </View>
     </View>
@@ -240,7 +243,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
   },
   footer: {
-    paddingBottom: theme.spacing.xxl,
+    paddingBottom: 0, // Handled inline
     alignItems: 'center',
     zIndex: 10,
   },

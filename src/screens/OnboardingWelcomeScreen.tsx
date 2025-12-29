@@ -13,8 +13,11 @@ interface Props {
 
 const { width, height } = Dimensions.get('window');
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
+  const insets = useSafeAreaInsets();
 
   const handleSkip = () => {
     // Skip to the last onboarding screen, which will then go to permissions
@@ -24,7 +27,7 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <View style={styles.container}>
       {/* Top Bar */}
-      <View style={styles.topBar}>
+      <View style={[styles.topBar, { paddingTop: Math.max(insets.top, 20) }]}>
         <TouchableOpacity 
           onPress={handleSkip}
           style={styles.skipButton}
@@ -65,7 +68,7 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
       </ScrollView>
 
       {/* Bottom Actions */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
         {/* Page Indicators */}
         <View style={styles.indicators}>
           <View style={[styles.indicator, styles.indicatorActive]} />
@@ -96,7 +99,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     paddingHorizontal: theme.spacing.xl,
-    paddingTop: 60, // Safe area approx
+    paddingTop: 0, // Handled inline
     paddingBottom: theme.spacing.md,
     zIndex: 10,
   },
@@ -182,7 +185,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: theme.spacing.xl,
-    paddingBottom: 48, // Safe area
+    paddingBottom: 0, // Handled inline
     paddingTop: theme.spacing.lg,
     backgroundColor: theme.colors.background.light,
   },

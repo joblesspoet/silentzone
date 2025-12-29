@@ -9,8 +9,11 @@ interface Props {
   navigation: any;
 }
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const PermissionNotificationScreen: React.FC<Props> = ({ navigation }) => {
   const { requestNotificationFlow } = usePermissions();
+  const insets = useSafeAreaInsets();
 
   const handleGrant = async () => {
     await requestNotificationFlow();
@@ -47,7 +50,7 @@ export const PermissionNotificationScreen: React.FC<Props> = ({ navigation }) =>
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
         <CustomButton 
           title="Allow Notifications" 
           onPress={handleGrant} 
@@ -129,8 +132,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: theme.spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border.light,
+    paddingBottom: 0, // Handled inline
     backgroundColor: theme.colors.white,
   },
   grantButton: {

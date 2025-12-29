@@ -15,9 +15,12 @@ interface Props {
 
 const { height } = Dimensions.get('window');
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const { placeId } = route.params;
   const realm = useRealm();
+  const insets = useSafeAreaInsets();
   const [place, setPlace] = useState<any>(null);
   const [checkIns, setCheckIns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +116,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
            <MaterialIcon name="arrow-back-ios" size={20} color={theme.colors.text.primary.light} />
         </TouchableOpacity>
@@ -129,7 +132,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 20) + 40 }]}>
         
         {/* Status Badge */}
         <View style={styles.statusSection}>
@@ -288,7 +291,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: 60,
+    paddingTop: 0, // Handled inline
     paddingHorizontal: theme.spacing.lg,
     paddingBottom: theme.spacing.md,
     backgroundColor: theme.colors.background.light,

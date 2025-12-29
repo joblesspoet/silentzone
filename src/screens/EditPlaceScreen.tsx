@@ -26,10 +26,13 @@ interface Props {
 
 const { width, height } = Dimensions.get('window');
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
   const { placeId } = route.params;
   const realm = useRealm();
   const mapRef = useRef<MapView>(null);
+  const insets = useSafeAreaInsets();
   
   const [region, setRegion] = useState<Region>({
     latitude: 37.78825,
@@ -526,7 +529,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
               <Text style={styles.deleteText}>Delete Place</Text>
           </TouchableOpacity>
 
-          <View style={{ height: 40 }} />
+          <View style={{ height: Math.max(insets.bottom, 20) }} />
         </ScrollView>
       </View>
     </View>

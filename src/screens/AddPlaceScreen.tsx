@@ -37,10 +37,13 @@ const DEFAULT_REGION = {
   longitudeDelta: 0.01,
 };
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
   const { locationStatus, backgroundLocationStatus, dndStatus, refreshPermissions } = usePermissions();
   const mapRef = useRef<MapView>(null);
+  const insets = useSafeAreaInsets();
   
   const [region, setRegion] = useState(DEFAULT_REGION);
   const [placeName, setPlaceName] = useState('');
@@ -598,13 +601,14 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
               )}
             </View>
           )}
-
-          <View style={{ height: 40 }} />
+          
+          <View style={{ height: Math.max(insets.bottom, 20) + 60 }} />
         </ScrollView>
       </View>
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {

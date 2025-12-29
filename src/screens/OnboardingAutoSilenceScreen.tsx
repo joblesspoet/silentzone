@@ -13,8 +13,11 @@ interface Props {
 
 const { width, height } = Dimensions.get('window');
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const OnboardingAutoSilenceScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
+  const insets = useSafeAreaInsets();
 
   const handleFinish = () => {
     // Don't mark onboarding complete yet - that happens after permissions
@@ -66,7 +69,7 @@ export const OnboardingAutoSilenceScreen: React.FC<Props> = ({ navigation }) => 
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) + 20 }]}>
         <View style={styles.indicators}>
           <View style={styles.indicator} />
           <View style={styles.indicator} />
@@ -95,7 +98,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     paddingHorizontal: theme.spacing.xl,
-    paddingTop: 60,
+    paddingTop: 0, // Handled inline
     paddingBottom: theme.spacing.md,
     zIndex: 10,
   },
@@ -217,7 +220,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: theme.spacing.xl,
-    paddingBottom: 48,
+    paddingBottom: 0, // Handled inline
     paddingTop: theme.spacing.xs,
     backgroundColor: 'transparent',
   },

@@ -11,10 +11,13 @@ interface Props {
   navigation: any;
 }
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
   const [hasPermission, setHasPermission] = useState(false);
   const [checking, setChecking] = useState(true);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     checkPermission();
@@ -117,7 +120,7 @@ export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, theme.spacing.xl) }]}>
         <CustomButton 
           title="Grant Permission" 
           onPress={handleGrant} 
@@ -129,6 +132,13 @@ export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
           onPress={handleSkip} 
           variant="ghost" 
           fullWidth
+          textStyle={{ 
+            color: theme.colors.text.secondary.light,
+            fontSize: 13,
+            letterSpacing: 1.5,
+            textTransform: 'uppercase',
+            fontWeight: '600',
+          }}
         />
       </View>
     </View>
@@ -216,8 +226,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: theme.spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: theme.colors.border.light,
+    paddingBottom: theme.spacing.xl, // Will be overridden
     backgroundColor: theme.colors.white,
   },
   grantButton: {

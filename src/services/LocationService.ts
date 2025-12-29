@@ -487,8 +487,8 @@ class LocationService {
             },
             {
               enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 5000,
+              timeout: 30000,
+              maximumAge: 10000,
             }
         );
     }).finally(() => {
