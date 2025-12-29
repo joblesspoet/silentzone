@@ -24,13 +24,11 @@ class LocationService {
     if (this.isReady) return;
     this.realm = realmInstance;
 
-    // 1. Request Location Permissions
-    await this.requestLocationPermissions();
-
-    // 2. Request Notification Permissions
-    await notifee.requestPermission();
+    // NOTE: We do NOT request permissions here anymore!
+    // Permissions are handled during the onboarding flow.
+    // This prevents interrupting the user experience on app start.
     
-    // Create channel for service
+    // Create notification channel for service
     if (Platform.OS === 'android') {
         await notifee.createChannel({
             id: 'silent-zone-service-channel',
@@ -39,25 +37,16 @@ class LocationService {
         });
     }
 
-    // 3. Request DND Permission (required to change ringer mode)
-    // We already handle this in the onboarding, but good to have as backup
-    const hasPermission = await RingerMode.checkDndPermission();
-    if (!hasPermission) {
-        console.log('[LocationService] DND permission not granted, requesting...');
-        await RingerMode.requestDndPermission();
-    }
-
-    // 4. Sync and listen for database changes
+    // Sync and listen for database changes
+    // Note: syncGeofences will only start the foreground service if:
+    // 1. There are enabled places to track
+    // 2. Tracking is enabled in preferences
+    // 3. Required permissions are granted
     this.syncGeofences();
     this.setupReactiveSync();
 
-    // 5. Start monitoring geofences with Foreground Service
-    if (this.isPreferenceTrackingEnabled()) {
-        await this.startForegroundService();
-    }
-
     this.isReady = true;
-    console.log('[LocationService] Initialized and monitoring (Foreground Service)');
+    console.log('[LocationService] Initialized - service will start when places are added');
   }
 
   private async startForegroundService() {
@@ -84,6 +73,7 @@ class LocationService {
         });
 
         this.startGeofenceMonitoring();
+        console.log('[LocationService] Foreground Service started successfully.');
     } catch (error) {
         console.error('[LocationService] Failed to start foreground service:', error);
     }
@@ -193,12 +183,21 @@ class LocationService {
       await Geofencing.removeAllGeofence();
 
       if (enabledPlaces.length === 0 || !trackingEnabled) {
-          console.log('[LocationService] Tracking stopped (pause or no places).');
+          console.log('[LocationService] Tracking stopped (no places or tracking disabled).');
           await this.stopForegroundService();
           return;
       }
 
-      // 4. Add Geofences
+      // 4. Check if we have required permissions before starting service
+      const hasPermissions = await PermissionsManager.hasScanningPermissions();
+      if (!hasPermissions) {
+        console.warn('[LocationService] Missing required permissions. Cannot start geofencing.');
+        await this.stopForegroundService();
+        this.isSyncing = false;
+        return;
+      }
+
+      // 5. Add Geofences
       for (const place of enabledPlaces) {
          await Geofencing.addGeofence({
             id: place.id as string,
@@ -215,6 +214,7 @@ class LocationService {
       console.error('[LocationService] Sync failed:', error);
     } finally {
       this.isSyncing = false;
+      console.log('[LocationService] SyncGeofences completed.');
     }
   }
 
@@ -356,112 +356,104 @@ class LocationService {
     if (this.isChecking) return;
 
     this.isChecking = true;
-    try {
-      // Get current location
-      Geolocation.getCurrentPosition(
-        async (position) => {
-          try {
-            const { latitude, longitude, accuracy } = position.coords;
+    
+    return new Promise<void>((resolve) => {
+        Geolocation.getCurrentPosition(
+            async (position) => {
+              try {
+                const { latitude, longitude, accuracy } = position.coords;
 
-            if (!this.realm || this.realm.isClosed) return;
+                if (!this.realm || this.realm.isClosed) {
+                    resolve();
+                    return;
+                }
 
-            console.log(`[LocationService] Check: lat=${latitude.toFixed(4)}, lon=${longitude.toFixed(4)}, acc=${accuracy.toFixed(1)}m`);
+                console.log(`[LocationService] Check: lat=${latitude.toFixed(4)}, lon=${longitude.toFixed(4)}, acc=${accuracy.toFixed(1)}m`);
 
-            const allEnabledPlaces = PlaceService.getEnabledPlaces(this.realm!);
-            // FILTER BY SCHEDULE
-            const enabledPlaces = allEnabledPlaces.filter(p => this.isWithinSchedule(p));
-            
-            const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm!);
+                const allEnabledPlaces = PlaceService.getEnabledPlaces(this.realm!);
+                const enabledPlaces = allEnabledPlaces.filter(p => this.isWithinSchedule(p));
+                
+                const currentCheckIn = CheckInService.getCurrentCheckIn(this.realm!);
 
-            // 1. Explicitly check if we are still inside the CURRENT place (fixes "stuck" status)
-            if (currentCheckIn) {
-               const place = PlaceService.getPlaceById(this.realm!, currentCheckIn.placeId as string);
-               if (place) {
-                 const dist = this.calculateDistance(latitude, longitude, place.latitude as number, place.longitude as number);
-                 const threshold = (place.radius as number) * 1.1; // 10% buffer
-                 
-                 // Smart Exit Strategy:
-                 // If clearly outside (distance > threshold + accuracy), exit even with poor accuracy.
-                 // If accuracy is good (< 60m), trust the distance directly.
-                 const confidenceExit = (dist > threshold + accuracy) || (accuracy < 60 && dist > threshold);
+                // 1. Explicitly check if we are still inside the CURRENT place (fixes "stuck" status)
+                if (currentCheckIn) {
+                   const place = PlaceService.getPlaceById(this.realm!, currentCheckIn.placeId as string);
+                   if (place) {
+                     const dist = this.calculateDistance(latitude, longitude, place.latitude as number, place.longitude as number);
+                     const threshold = (place.radius as number) * 1.1; // 10% buffer
+                     
+                     // Smart Exit Strategy:
+                     const confidenceExit = (dist > threshold + accuracy) || (accuracy < 60 && dist > threshold);
 
-                 if (confidenceExit) {
-                   console.log(`[LocationService] Explicit EXIT detected for ${place.name} (dist: ${Math.round(dist)}m, acc: ${Math.round(accuracy)}m)`);
-                   await this.handleGeofenceExit(place.id as string);
-                 } else if (dist > threshold) {
-                    console.log(`[LocationService] Potential EXIT ignored due to low accuracy (dist: ${Math.round(dist)}m, acc: ${Math.round(accuracy)}m)`);
-                 }
-               } else {
-                 // Place was deleted or invalid? Clean up.
-                 await this.handleGeofenceExit(currentCheckIn.placeId as string);
-               }
-            }
-            
-            // 2. Scan for entries (and maintain active states)
-            const activePlaces = enabledPlaces.filter(place => {
-              // If we are already checked in, we trust Step 1 to have handled the Exit logic.
-              // We should KEEP it in the active list so Step 5 doesn't force-kill it.
-              if (CheckInService.isPlaceActive(this.realm!, place.id as string)) {
-                  return true;
+                     if (confidenceExit) {
+                       console.log(`[LocationService] Explicit EXIT detected for ${place.name} (dist: ${Math.round(dist)}m, acc: ${Math.round(accuracy)}m)`);
+                       await this.handleGeofenceExit(place.id as string);
+                     } else if (dist > threshold) {
+                        console.log(`[LocationService] Potential EXIT ignored due to low accuracy (dist: ${Math.round(dist)}m, acc: ${Math.round(accuracy)}m)`);
+                     }
+                   } else {
+                     // Place was deleted or invalid? Clean up.
+                     await this.handleGeofenceExit(currentCheckIn.placeId as string);
+                   }
+                }
+                
+                // 2. Scan for entries (and maintain active states)
+                const activePlaces = enabledPlaces.filter(place => {
+                  if (CheckInService.isPlaceActive(this.realm!, place.id as string)) {
+                      return true;
+                  }
+
+                  if (accuracy > 100) return false;
+
+                  const distance = this.calculateDistance(
+                    latitude,
+                    longitude,
+                    place.latitude as number,
+                    place.longitude as number
+                  );
+                  return distance <= (place.radius as number) * 1.1;
+                });
+
+                // 3. Global Restore Check: If we are NO LONGER in ANY zone, but have active logs
+                // (Logic handled implicitly by specific exits below)
+
+                // 4. Handle Specific Entries
+                for (const place of activePlaces) {
+                  if (!CheckInService.isPlaceActive(this.realm!, place.id as string)) {
+                     console.log(`[LocationService] ENTER detected for ${place.name}`);
+                     await this.handleGeofenceEntry(place.id as string);
+                  }
+                }
+
+                // 5. Handle Specific Exits
+                const currentActiveLogs = CheckInService.getActiveCheckIns(this.realm!);
+                const activePlaceIds = new Set(activePlaces.map(p => p.id));
+                
+                for (const log of currentActiveLogs) {
+                   if (!activePlaceIds.has(log.placeId as string)) {
+                      console.log(`[LocationService] EXIT detected for placeId: ${log.placeId}`);
+                      await this.handleGeofenceExit(log.placeId as string);
+                   }
+                }
+              } catch (internalError) {
+                console.error('[LocationService] Crashed inside Geolocation success callback:', internalError);
+              } finally {
+                resolve();
               }
-
-              // For NEW entries, we require good accuracy to prevent false positives
-              if (accuracy > 100) return false;
-
-              const distance = this.calculateDistance(
-                latitude,
-                longitude,
-                place.latitude as number,
-                place.longitude as number
-              );
-              return distance <= (place.radius as number) * 1.1;
-            });
-
-            const activePlaceIds = new Set(activePlaces.map(p => p.id));
-
-            // 3. Global Restore Check: If we are NO LONGER in ANY zone, but have active logs
-            const currentActiveLogs = CheckInService.getActiveCheckIns(this.realm!);
-            
-            if (activePlaces.length === 0 && currentActiveLogs.length > 0) {
-                // Only force restore if we didn't just handle a specific exit above
-                // or if we are cleaning up phantom states
-                // activePlaces is empty because of our filter or accuracy
+            },
+            (error) => {
+              console.error('[LocationService] Geofence check location error:', error);
+              resolve();
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 5000,
             }
-
-            // 4. Handle Specific Entries
-            for (const place of activePlaces) {
-              if (!CheckInService.isPlaceActive(this.realm!, place.id as string)) {
-                 console.log(`[LocationService] ENTER detected for ${place.name}`);
-                 await this.handleGeofenceEntry(place.id as string);
-              }
-            }
-
-            // 5. Handle Specific Exits
-            for (const log of currentActiveLogs) {
-               if (!activePlaceIds.has(log.placeId as string)) {
-                  console.log(`[LocationService] EXIT detected for placeId: ${log.placeId}`);
-                  await this.handleGeofenceExit(log.placeId as string);
-               }
-            }
-          } catch (internalError) {
-            console.error('[LocationService] Crashed inside Geolocation success callback:', internalError);
-          }
-        },
-        (error) => {
-          console.error('[LocationService] Geofence check location error:', error);
-          // If location is failing, we might want to check if we're "stuck" silenced and offer a timeout recovery
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 5000, // Fresher location for better transition response
-        }
-      );
-    } catch (error) {
-      console.error('[LocationService] Geofence check failed:', error);
-    } finally {
-      this.isChecking = false;
-    }
+        );
+    }).finally(() => {
+        this.isChecking = false;
+    });
   }
 
   private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {

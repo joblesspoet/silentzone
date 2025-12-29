@@ -17,11 +17,8 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
 
   const handleSkip = () => {
-    PreferencesService.setOnboardingComplete(realm);
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Home' }],
-    });
+    // Skip to the last onboarding screen, which will then go to permissions
+    navigation.navigate('OnboardingAutoSilence');
   };
 
   return (

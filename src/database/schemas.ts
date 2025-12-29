@@ -58,8 +58,9 @@ export const PreferencesSchema: Realm.ObjectSchema = {
     trackingEnabled: { type: 'bool', default: true },
     notificationsEnabled: { type: 'bool', default: true },
     maxPlaces: { type: 'int', default: 3 },
+    databaseSeeded: { type: 'bool', default: false },
   },
 };
 
 export const schema = [PlaceSchema, CheckInLogSchema, PreferencesSchema, ScheduleSchema];
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;

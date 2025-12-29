@@ -17,11 +17,8 @@ export const OnboardingAutoSilenceScreen: React.FC<Props> = ({ navigation }) => 
   const realm = useRealm();
 
   const handleFinish = () => {
-    PreferencesService.setOnboardingComplete(realm);
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Home' }],
-    });
+    // Don't mark onboarding complete yet - that happens after permissions
+    navigation.replace('PermissionLocation');
   };
 
   return (

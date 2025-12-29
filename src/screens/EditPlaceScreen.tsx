@@ -204,8 +204,12 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
           provider={PROVIDER_GOOGLE}
           style={styles.map}
           initialRegion={region}
-          region={region}
           onRegionChangeComplete={setRegion}
+          zoomEnabled={true}
+          zoomControlEnabled={true}
+          scrollEnabled={true}
+          pitchEnabled={true}
+          rotateEnabled={true}
         >
           <Circle 
             center={region}
@@ -470,29 +474,47 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
               {showPicker && (
                   <DateTimePicker
                     value={(() => {
-                        const [h, m] = (showPicker.type === 'start' ? schedules[showPicker.index].startTime : schedules[showPicker.index].endTime).split(':').map(Number);
+                        let h = 12, m = 0;
+                        try {
+                            if (showPicker?.index !== undefined && schedules[showPicker.index]) {
+                                const timeStr = showPicker.type === 'start' ? schedules[showPicker.index].startTime : schedules[showPicker.index].endTime;
+                                const parts = timeStr.split(':').map(Number);
+                                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                                    h = parts[0];
+                                    m = parts[1];
+                                }
+                            }
+                        } catch (e) {
+                            console.warn("Error parsing time", e);
+                        }
                         const d = new Date();
-                        d.setHours(h, m);
+                        d.setHours(h, m, 0, 0);
                         return d;
                     })()}
                     mode="time"
                     is24Hour={true}
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    display="default"
                     onChange={(event, selectedDate) => {
-                        if (event.type === 'dismissed' || !selectedDate) {
+                         // Immediately hide on Android
+                        if (Platform.OS === 'android') {
                             setShowPicker(null);
-                            return;
                         }
-                        
-                        const timeStr = `${selectedDate.getHours().toString().padStart(2, '0')}:${selectedDate.getMinutes().toString().padStart(2, '0')}`;
-                        const newSchedules = [...schedules];
-                        if (showPicker.type === 'start') {
-                            newSchedules[showPicker.index].startTime = timeStr;
-                        } else {
-                            newSchedules[showPicker.index].endTime = timeStr;
+
+                        if (selectedDate) {
+                             const timeStr = `${selectedDate.getHours().toString().padStart(2, '0')}:${selectedDate.getMinutes().toString().padStart(2, '0')}`;
+                             
+                             setSchedules(prevSchedules => {
+                                 const newSchedules = [...prevSchedules];
+                                 if (showPicker && newSchedules[showPicker.index]) {
+                                     if (showPicker.type === 'start') {
+                                         newSchedules[showPicker.index].startTime = timeStr;
+                                     } else {
+                                         newSchedules[showPicker.index].endTime = timeStr;
+                                     }
+                                 }
+                                 return newSchedules;
+                             });
                         }
-                        setSchedules(newSchedules);
-                        setShowPicker(null);
                     }}
                   />
               )}

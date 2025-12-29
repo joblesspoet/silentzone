@@ -4,12 +4,15 @@ import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
 import { CustomButton } from '../components/CustomButton';
 import RingerMode from '../modules/RingerMode';
+import { useRealm } from '../database/RealmProvider';
+import { PreferencesService } from '../database/services/PreferencesService';
 
 interface Props {
   navigation: any;
 }
 
 export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
+  const realm = useRealm();
   const [hasPermission, setHasPermission] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -29,34 +32,43 @@ export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
     setChecking(false);
   };
 
+  const completeSetup = () => {
+    // Mark onboarding as complete
+    PreferencesService.setOnboardingComplete(realm);
+    
+    // Navigate to Home
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Home' }],
+    });
+  };
+
   const handleGrant = async () => {
     if (Platform.OS === 'android') {
       try {
         await RingerMode.requestDndPermission();
-        // The checkPermission will be triggered by AppState listener in PermissionsContext
-        // or user can just tap "Grant" again. We'll wait a bit then navigate.
+        // Wait a bit then complete setup
         setTimeout(async () => {
           const granted = await RingerMode.checkDndPermission();
-          if (granted) {
-            navigation.replace('OnboardingWelcome');
-          }
+          completeSetup();
         }, 2000);
       } catch (error) {
         console.error('Failed to request DND permission:', error);
+        completeSetup(); // Complete anyway
       }
     } else {
-      navigation.replace('OnboardingWelcome');
+      completeSetup();
     }
   };
 
   const handleSkip = () => {
-    navigation.replace('OnboardingWelcome');
+    completeSetup();
   };
 
-  // If already has permission, skip this screen
+  // If already has permission, auto-proceed
   useEffect(() => {
     if (!checking && hasPermission) {
-      navigation.replace('OnboardingWelcome');
+      completeSetup();
     }
   }, [checking, hasPermission]);
 
@@ -113,7 +125,7 @@ export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
           style={styles.grantButton}
         />
         <CustomButton 
-          title="Skip for Now" 
+          title="Maybe Later" 
           onPress={handleSkip} 
           variant="ghost" 
           fullWidth

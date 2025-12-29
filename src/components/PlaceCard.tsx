@@ -92,7 +92,7 @@ export const PlaceCard: React.FC<PlaceCardProps> = ({
                 styles.infoText,
                 (isCurrentLocation && !isPaused) && { color: theme.colors.success, fontWeight: 'bold' }
               ]}>
-                {(isCurrentLocation && !isPaused) ? "Currently inside" : `${radius} radius • ${distance}`}
+                {(isCurrentLocation && !isPaused) ? distance : `${radius} radius • ${distance}`}
               </Text>
             </View>
           </View>

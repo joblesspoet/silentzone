@@ -7,6 +7,7 @@ export interface PreferencesData {
   trackingEnabled?: boolean;
   notificationsEnabled?: boolean;
   maxPlaces?: number;
+  databaseSeeded?: boolean;
 }
 
 export const PreferencesService = {
@@ -22,6 +23,7 @@ export const PreferencesService = {
           trackingEnabled: true,
           notificationsEnabled: true,
           maxPlaces: 3,
+          databaseSeeded: false,
         });
       });
     }
@@ -37,6 +39,7 @@ export const PreferencesService = {
       if (data.trackingEnabled !== undefined) prefs.trackingEnabled = data.trackingEnabled;
       if (data.notificationsEnabled !== undefined) prefs.notificationsEnabled = data.notificationsEnabled;
       if (data.maxPlaces !== undefined) prefs.maxPlaces = data.maxPlaces;
+      if (data.databaseSeeded !== undefined) prefs.databaseSeeded = data.databaseSeeded;
     });
     
     return prefs;
@@ -57,5 +60,14 @@ export const PreferencesService = {
       prefs.trackingEnabled = !prefs.trackingEnabled;
     });
     return prefs.trackingEnabled;
+  },
+
+  isDatabaseSeeded: (realm: Realm) => {
+    const prefs = PreferencesService.getPreferences(realm);
+    return prefs.databaseSeeded;
+  },
+
+  setDatabaseSeeded: (realm: Realm) => {
+    return PreferencesService.updatePreferences(realm, { databaseSeeded: true });
   }
 };

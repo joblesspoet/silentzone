@@ -23,6 +23,8 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const [loading, setLoading] = useState(true);
   const [isCurrentlyActive, setIsCurrentlyActive] = useState(false);
 
+  const isDeleting = React.useRef(false);
+
   // Load Data
   useEffect(() => {
     loadPlaceData();
@@ -49,9 +51,11 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   }, [placeId]);
 
   const loadPlaceData = () => {
+    if (isDeleting.current) return; // Prevent reaction if we are deleting
+
     const p = PlaceService.getPlaceById(realm, placeId);
     if (!p) {
-        // Handle deletion case if staying on screen
+        // Handle deletion case (e.g. from outside)
         navigation.goBack();
         return;
     }
@@ -84,6 +88,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           text: "Delete", 
           style: "destructive",
           onPress: () => {
+            isDeleting.current = true; // Flag to suppress listeners
             PlaceService.deletePlace(realm, placeId);
             navigation.goBack();
           }
@@ -143,27 +148,31 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         {/* Read-only Map */}
         <View style={styles.mapContainer}>
              <MapView
-                provider={PROVIDER_GOOGLE}
-                style={styles.map}
-                initialRegion={{
-                    latitude: place.latitude,
-                    longitude: place.longitude,
-                    latitudeDelta: 0.005,
-                    longitudeDelta: 0.005,
+              provider={PROVIDER_GOOGLE}
+              style={styles.map}
+              initialRegion={{
+                latitude: place.latitude as number,
+                longitude: place.longitude as number,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+              scrollEnabled={true}
+              zoomEnabled={true}
+              zoomControlEnabled={true}
+              pitchEnabled={true}
+              rotateEnabled={true}
+            >
+              <Circle
+                center={{
+                  latitude: place.latitude as number,
+                  longitude: place.longitude as number,
                 }}
-                scrollEnabled={false}
-                zoomEnabled={false}
-                pitchEnabled={false}
-                rotateEnabled={false}
-             >
-                <Circle 
-                    center={{ latitude: place.latitude, longitude: place.longitude }}
-                    radius={place.radius}
-                    fillColor={theme.colors.primary + '33'}
-                    strokeColor={theme.colors.primary}
-                    strokeWidth={2}
-                />
-             </MapView>
+                radius={place.radius as number}
+                fillColor="rgba(59, 130, 246, 0.2)"
+                strokeColor="rgba(59, 130, 246, 0.5)"
+                strokeWidth={2}
+              />
+            </MapView>
              {/* Center Marker Overlay */}
              <View style={styles.centerMarker}>
                  <MaterialIcon name={place.icon || "location-on"} size={32} color={theme.colors.primary} />

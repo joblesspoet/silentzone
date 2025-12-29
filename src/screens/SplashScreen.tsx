@@ -84,10 +84,16 @@ export const SplashScreen = () => {
       await new Promise(resolve => setTimeout(() => resolve(undefined), 2000));
       
       const prefs = PreferencesService.getPreferences(realm);
+      console.log('[SplashScreen] Preferences:', JSON.stringify({
+        onboardingCompleted: prefs?.onboardingCompleted,
+        databaseSeeded: prefs?.databaseSeeded,
+      }));
       
       if (prefs && prefs.onboardingCompleted) {
+        console.log('[SplashScreen] Navigating to Home (onboarding completed)');
         navigation.replace('Home');
       } else {
+        console.log('[SplashScreen] Navigating to OnboardingWelcome (onboarding NOT completed)');
         navigation.replace('OnboardingWelcome');
       }
     };

@@ -8,7 +8,6 @@ import { MaterialIcon } from '../components/MaterialIcon';
 import { RESULTS } from 'react-native-permissions';
 import { PlaceCard } from '../components/PlaceCard';
 import { StatusCard } from '../components/StatusCard';
-import { PermissionsGate } from '../components/PermissionsGate';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { getDistance, formatDistance } from '../utils/geo';
 import { PermissionsManager } from '../permissions/PermissionsManager';
@@ -308,9 +307,6 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
           <MaterialIcon name="add" size={32} color={theme.colors.white} />
         </TouchableOpacity>
       )}
-
-      {/* Permissions Gate Overlay */}
-      {!hasFullPermissions && <PermissionsGate />}
     </View>
   );
 };

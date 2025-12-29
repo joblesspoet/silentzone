@@ -242,8 +242,24 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
           initialRegion={DEFAULT_REGION}
           region={region} // Control region state
           // We use onRegionChangeComplete to track the center
-          onRegionChangeComplete={setRegion}
+          onRegionChangeComplete={(newRegion) => {
+            // Only update if change is significant (> 0.00001 degrees) to prevent micro-jitter
+            if (
+              Math.abs(newRegion.latitude - region.latitude) > 0.00001 ||
+              Math.abs(newRegion.longitude - region.longitude) > 0.00001 ||
+              Math.abs(newRegion.latitudeDelta - region.latitudeDelta) > 0.00001 ||
+              Math.abs(newRegion.longitudeDelta - region.longitudeDelta) > 0.00001
+            ) {
+              setRegion(newRegion);
+            }
+          }}
           showsUserLocation={hasLocationPermission}
+          followsUserLocation={false}
+          zoomEnabled={true}
+          zoomControlEnabled={true}
+          scrollEnabled={true}
+          pitchEnabled={true}
+          rotateEnabled={true}
         >
           {/* Circle moves with region */}
           <Circle 
@@ -271,20 +287,6 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                  <Text style={styles.gpsWarningText}>Low GPS Accuracy: ±{Math.round(accuracy)}m</Text>
              </View>
         )}
-
-        {/* Map Controls */}
-        <View style={styles.mapControls}>
-          <TouchableOpacity 
-            style={styles.myLocationButton}
-            onPress={handleGetCurrentLocation}
-          >
-            <MaterialIcon 
-              name="my-location" 
-              size={24} 
-              color={hasLocationPermission ? theme.colors.primary : theme.colors.text.secondary.dark} 
-            />
-          </TouchableOpacity>
-        </View>
       </View>
 
       {/* Form Section */}
@@ -550,29 +552,47 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
               {showPicker && (
                   <DateTimePicker
                     value={(() => {
-                        const [h, m] = (showPicker.type === 'start' ? schedules[showPicker.index].startTime : schedules[showPicker.index].endTime).split(':').map(Number);
+                        let h = 12, m = 0;
+                        try {
+                            if (showPicker?.index !== undefined && schedules[showPicker.index]) {
+                                const timeStr = showPicker.type === 'start' ? schedules[showPicker.index].startTime : schedules[showPicker.index].endTime;
+                                const parts = timeStr.split(':').map(Number);
+                                if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                                    h = parts[0];
+                                    m = parts[1];
+                                }
+                            }
+                        } catch (e) {
+                            console.warn("Error parsing time", e);
+                        }
                         const d = new Date();
-                        d.setHours(h, m);
+                        d.setHours(h, m, 0, 0);
                         return d;
                     })()}
                     mode="time"
                     is24Hour={true}
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    display="default"
                     onChange={(event, selectedDate) => {
-                        if (event.type === 'dismissed' || !selectedDate) {
+                        // Immediately hide on Android to prevent double triggers
+                        if (Platform.OS === 'android') {
                             setShowPicker(null);
-                            return;
                         }
-                        
-                        const timeStr = `${selectedDate.getHours().toString().padStart(2, '0')}:${selectedDate.getMinutes().toString().padStart(2, '0')}`;
-                        const newSchedules = [...schedules];
-                        if (showPicker.type === 'start') {
-                            newSchedules[showPicker.index].startTime = timeStr;
-                        } else {
-                            newSchedules[showPicker.index].endTime = timeStr;
+
+                        if (selectedDate) {
+                             const timeStr = `${selectedDate.getHours().toString().padStart(2, '0')}:${selectedDate.getMinutes().toString().padStart(2, '0')}`;
+                             
+                             setSchedules(prevSchedules => {
+                                 const newSchedules = [...prevSchedules];
+                                 if (showPicker && newSchedules[showPicker.index]) {
+                                     if (showPicker.type === 'start') {
+                                         newSchedules[showPicker.index].startTime = timeStr;
+                                     } else {
+                                         newSchedules[showPicker.index].endTime = timeStr;
+                                     }
+                                 }
+                                 return newSchedules;
+                             });
                         }
-                        setSchedules(newSchedules);
-                        setShowPicker(null);
                     }}
                   />
               )}

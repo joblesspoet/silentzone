@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Alert } from 'react-native';
 import { PermissionStatus, RESULTS } from 'react-native-permissions';
 import { PermissionsManager } from './PermissionsManager';
+import { locationService } from '../services/LocationService';
 
 interface PermissionsContextType {
   locationStatus: PermissionStatus;
@@ -13,6 +14,7 @@ interface PermissionsContextType {
   requestNotificationFlow: () => Promise<boolean>;
   requestDndFlow: () => Promise<boolean>;
   isLoading: boolean;
+  hasAllPermissions: boolean;
 }
 
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
@@ -31,6 +33,14 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [notificationStatus, setNotificationStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [dndStatus, setDndStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [isLoading, setIsLoading] = useState(true);
+  const [previousPermissionState, setPreviousPermissionState] = useState<string>('');
+
+  const hasAllPermissions = (
+    (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED) &&
+    (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED) &&
+    dndStatus === RESULTS.GRANTED &&
+    notificationStatus === RESULTS.GRANTED
+  );
 
   const refreshPermissions = async () => {
     const loc = await PermissionsManager.getLocationStatus();
@@ -43,6 +53,72 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     setNotificationStatus(notif);
     setDndStatus(dnd);
     setIsLoading(false);
+
+    // Create a permission state string for comparison
+    const currentState = `${loc}-${bg}-${notif}-${dnd}`;
+    
+    // Check if permissions changed
+    if (previousPermissionState && previousPermissionState !== currentState) {
+      console.log('[PermissionsContext] Permission state changed:', {
+        previous: previousPermissionState,
+        current: currentState
+      });
+      
+      // Calculate if we had all permissions before
+      const prevParts = previousPermissionState.split('-');
+      const hadAllPermissions = (
+        (prevParts[0] === RESULTS.GRANTED || prevParts[0] === RESULTS.LIMITED) &&
+        (prevParts[1] === RESULTS.GRANTED || prevParts[1] === RESULTS.LIMITED) &&
+        prevParts[2] === RESULTS.GRANTED &&
+        prevParts[3] === RESULTS.GRANTED
+      );
+      
+      // Calculate if we have all permissions now
+      const hasAllNow = (
+        (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
+        (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
+        notif === RESULTS.GRANTED &&
+        dnd === RESULTS.GRANTED
+      );
+      
+      console.log('[PermissionsContext] Permission check:', {
+        hadAllPermissions,
+        hasAllNow
+      });
+      
+      if (hadAllPermissions && !hasAllNow) {
+        console.log('[PermissionsContext] Critical permissions revoked! Stopping geofencing...');
+        
+        // Stop geofencing service
+        locationService.destroy();
+        
+        // Show alert to user
+        Alert.alert(
+          'Permissions Required',
+          'Some permissions were revoked. Location tracking has been paused. Please grant permissions again to resume.',
+          [
+            {
+              text: 'Grant Permissions',
+              onPress: async () => {
+                // Re-request permissions
+                await requestLocationFlow();
+                await requestNotificationFlow();
+                await requestDndFlow();
+              }
+            },
+            {
+              text: 'Later',
+              style: 'cancel'
+            }
+          ]
+        );
+      } else if (!hadAllPermissions && hasAllNow) {
+        console.log('[PermissionsContext] All permissions granted! Geofencing can resume.');
+        // Geofencing will auto-resume when LocationService checks permissions
+      }
+    }
+    
+    setPreviousPermissionState(currentState);
   };
 
   useEffect(() => {
@@ -51,6 +127,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     // Re-check permissions when app comes to foreground (e.g. back from Settings)
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
+        console.log('[PermissionsContext] App became active, refreshing permissions...');
         refreshPermissions();
       }
     });
@@ -73,12 +150,14 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     }
     
     setLocationStatus(status);
+    await refreshPermissions(); // Refresh to update state
     return status === RESULTS.GRANTED || status === RESULTS.LIMITED;
   };
 
   const requestNotificationFlow = async (): Promise<boolean> => {
     const status = await PermissionsManager.requestNotifications();
     setNotificationStatus(status);
+    await refreshPermissions(); // Refresh to update state
     return status === RESULTS.GRANTED;
   };
 
@@ -87,6 +166,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     // Since requestDndPermission opens settings, we can't reliably know the result immediately
     // Refresh will happen when app returns to foreground
     setDndStatus(status);
+    await refreshPermissions(); // Refresh to update state
     return status === RESULTS.GRANTED;
   };
 
@@ -102,6 +182,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         requestNotificationFlow,
         requestDndFlow,
         isLoading,
+        hasAllPermissions,
       }}
     >
       {children}
