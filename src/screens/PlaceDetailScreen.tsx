@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Dimensions } from 'react-native';
-import MapView, { Circle, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { theme } from '../theme';
 import { MaterialIcon } from '../components/MaterialIcon';
 import { PlaceService } from '../database/services/PlaceService';
@@ -148,7 +148,6 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
             />
         </View>
         
-        {/* Read-only Map */}
         <View style={styles.mapContainer}>
              <MapView
               provider={PROVIDER_GOOGLE}
@@ -159,12 +158,19 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                 latitudeDelta: 0.01,
                 longitudeDelta: 0.01,
               }}
-              scrollEnabled={true}
-              zoomEnabled={true}
-              zoomControlEnabled={true}
-              pitchEnabled={true}
-              rotateEnabled={true}
+              scrollEnabled={false}
+              zoomEnabled={false}
+              pitchEnabled={false}
+              rotateEnabled={false}
             >
+              <Marker
+                coordinate={{
+                  latitude: place.latitude as number,
+                  longitude: place.longitude as number,
+                }}
+              >
+                  <MaterialIcon name={place.icon || "location-on"} size={32} color={theme.colors.primary} />
+              </Marker>
               <Circle
                 center={{
                   latitude: place.latitude as number,
@@ -176,10 +182,6 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                 strokeWidth={2}
               />
             </MapView>
-             {/* Center Marker Overlay */}
-             <View style={styles.centerMarker}>
-                 <MaterialIcon name={place.icon || "location-on"} size={32} color={theme.colors.primary} />
-             </View>
         </View>
 
         {/* Info Card */}
