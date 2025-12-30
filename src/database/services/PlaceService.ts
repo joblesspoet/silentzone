@@ -1,5 +1,8 @@
+// database/services/PlaceService.ts
+
 import Realm from 'realm';
 import { generateUUID } from '../../utils/uuid';
+import { RealmWriteHelper } from '../helpers/RealmWriteHelper';
 
 export interface PlaceData {
   name: string;
@@ -18,70 +21,101 @@ export interface PlaceData {
 }
 
 export const PlaceService = {
+  /**
+   * Get all places - READ ONLY
+   */
   getAllPlaces: (realm: Realm) => {
     return realm.objects('Place').sorted('createdAt', true);
   },
 
+  /**
+   * Get enabled places - READ ONLY
+   */
   getEnabledPlaces: (realm: Realm) => {
     return realm.objects('Place').filtered('isEnabled == true');
   },
 
+  /**
+   * Get place by ID - READ ONLY
+   */
   getPlaceById: (realm: Realm, id: string) => {
     return realm.objectForPrimaryKey('Place', id);
   },
 
+  /**
+   * Create new place - THREAD SAFE
+   */
   createPlace: (realm: Realm, data: PlaceData) => {
-    let place: any;
-    realm.write(() => {
-      place = realm.create('Place', {
-        id: generateUUID(),
-        name: data.name,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        radius: data.radius || 50,
-        category: data.category || 'other',
-        icon: data.icon || 'place',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        isEnabled: data.isEnabled !== undefined ? data.isEnabled : true,
-        totalCheckIns: 0,
-        schedules: [],
-      });
-
-      // Add schedules if provided
-      if (data.schedules && data.schedules.length > 0) {
-        data.schedules.forEach(s => {
-          const schedule = realm.create('Schedule', {
-            id: generateUUID(),
-            startTime: s.startTime,
-            endTime: s.endTime,
-            days: s.days,
-            label: s.label || 'Active',
-            createdAt: new Date(),
-          });
-          place.schedules.push(schedule);
+    return RealmWriteHelper.safeWrite(
+      realm,
+      () => {
+        const place = realm.create('Place', {
+          id: generateUUID(),
+          name: data.name,
+          latitude: data.latitude,
+          longitude: data.longitude,
+          radius: data.radius || 50,
+          category: data.category || 'other',
+          icon: data.icon || 'place',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          isEnabled: data.isEnabled !== undefined ? data.isEnabled : true,
+          totalCheckIns: 0,
+          schedules: [],
+          isInside: false,
         });
-      }
-    });
-    return place;
+
+        // Add schedules if provided
+        if (data.schedules && data.schedules.length > 0) {
+          data.schedules.forEach((s) => {
+            const schedule = realm.create('Schedule', {
+              id: generateUUID(),
+              startTime: s.startTime,
+              endTime: s.endTime,
+              days: s.days,
+              label: s.label || 'Active',
+              createdAt: new Date(),
+            });
+            (place as any).schedules.push(schedule);
+          });
+        }
+
+        console.log(`[PlaceService] Created place: ${data.name}`);
+        return place;
+      },
+      `createPlace:${data.name}`
+    );
   },
 
-  updatePlace: (realm: Realm, id: string, data: Partial<PlaceData>) => {
-    const place = realm.objectForPrimaryKey('Place', id) as any;
-    if (place) {
-      realm.write(() => {
-        place.name = data.name !== undefined ? data.name : place.name;
-        place.latitude = data.latitude !== undefined ? data.latitude : place.latitude;
-        place.longitude = data.longitude !== undefined ? data.longitude : place.longitude;
-        place.radius = data.radius !== undefined ? data.radius : place.radius;
-        place.category = data.category !== undefined ? data.category : place.category;
-        place.icon = data.icon !== undefined ? data.icon : place.icon;
-        place.isEnabled = data.isEnabled !== undefined ? data.isEnabled : place.isEnabled;
-        
+  /**
+   * Update place - THREAD SAFE
+   */
+  updatePlace: (realm: Realm, id: string, data: Partial<PlaceData>): boolean => {
+    return RealmWriteHelper.safeWrite(
+      realm,
+      () => {
+        const place = realm.objectForPrimaryKey('Place', id) as any;
+        if (!place) {
+          console.warn(`[PlaceService] Place not found: ${id}`);
+          return false;
+        }
+
+        // Update basic fields
+        if (data.name !== undefined) place.name = data.name;
+        if (data.latitude !== undefined) place.latitude = data.latitude;
+        if (data.longitude !== undefined) place.longitude = data.longitude;
+        if (data.radius !== undefined) place.radius = data.radius;
+        if (data.category !== undefined) place.category = data.category;
+        if (data.icon !== undefined) place.icon = data.icon;
+        if (data.isEnabled !== undefined) place.isEnabled = data.isEnabled;
+
         // Handle schedules update
         if (data.schedules) {
-          realm.delete(place.schedules); // Delete old schedule objects
-          data.schedules.forEach(s => {
+          // Delete old schedule objects
+          realm.delete(place.schedules);
+          
+          // Create new schedules
+          data.schedules.forEach((s) => {
             const schedule = realm.create('Schedule', {
               id: generateUUID(),
               startTime: s.startTime,
@@ -95,40 +129,146 @@ export const PlaceService = {
         }
 
         place.updatedAt = new Date();
-      });
-      return true;
-    }
-    return false;
+        console.log(`[PlaceService] Updated place: ${place.name}`);
+        return true;
+      },
+      `updatePlace:${id}`
+    ) ?? false;
   },
 
-  deletePlace: (realm: Realm, id: string) => {
-    const place = realm.objectForPrimaryKey('Place', id);
-    if (place) {
-      realm.write(() => {
+  /**
+   * Delete place - THREAD SAFE
+   */
+  deletePlace: (realm: Realm, id: string): boolean => {
+    return RealmWriteHelper.safeWrite(
+      realm,
+      () => {
+        const place = realm.objectForPrimaryKey('Place', id);
+        if (!place) {
+          console.warn(`[PlaceService] Place not found: ${id}`);
+          return false;
+        }
+
+        const placeName = (place as any).name;
         realm.delete(place);
-      });
-      return true;
-    }
-    return false;
+        console.log(`[PlaceService] Deleted place: ${placeName}`);
+        return true;
+      },
+      `deletePlace:${id}`
+    ) ?? false;
   },
 
-  togglePlaceEnabled: (realm: Realm, id: string) => {
-    const place = realm.objectForPrimaryKey('Place', id);
-    if (place) {
-      realm.write(() => {
-        place.isEnabled = !place.isEnabled;
+  /**
+   * Toggle place enabled state - THREAD SAFE
+   */
+  togglePlaceEnabled: (realm: Realm, id: string): boolean | null => {
+    return RealmWriteHelper.safeWrite(
+      realm,
+      () => {
+        const place = realm.objectForPrimaryKey('Place', id) as any;
+        if (!place) {
+          console.warn(`[PlaceService] Place not found: ${id}`);
+          return null;
+        }
+
+        const newState = !place.isEnabled;
+        place.isEnabled = newState;
         place.updatedAt = new Date();
-      });
-      return place.isEnabled;
-    }
-    return null;
+
+        console.log(`[PlaceService] Toggled ${place.name}: ${newState}`);
+        return newState;
+      },
+      `togglePlace:${id}`
+    );
   },
 
-  getPlacesCount: (realm: Realm) => {
+  /**
+   * Get places count - READ ONLY
+   */
+  getPlacesCount: (realm: Realm): number => {
     return realm.objects('Place').length;
   },
 
-  canAddMorePlaces: (realm: Realm, maxPlaces: number = 3) => {
+  /**
+   * Check if more places can be added - READ ONLY
+   */
+  canAddMorePlaces: (realm: Realm, maxPlaces: number = 3): boolean => {
     return realm.objects('Place').length < maxPlaces;
-  }
+  },
+
+  /**
+   * Batch enable/disable multiple places - THREAD SAFE
+   * More efficient than multiple individual toggles
+   */
+  batchTogglePlaces: (
+    realm: Realm,
+    placeIds: string[],
+    enabled: boolean
+  ): boolean => {
+    if (placeIds.length === 0) return false;
+
+    const operations = placeIds.map((id) => ({
+      label: id,
+      callback: () => {
+        const place = realm.objectForPrimaryKey('Place', id) as any;
+        if (place) {
+          place.isEnabled = enabled;
+          place.updatedAt = new Date();
+        }
+      },
+    }));
+
+    return RealmWriteHelper.batchWrite(
+      realm,
+      operations,
+      `batchTogglePlaces:${enabled}`
+    );
+  },
+
+  /**
+   * Get places near a location - READ ONLY
+   * Useful for proximity-based features
+   */
+  getPlacesNearLocation: (
+    realm: Realm,
+    latitude: number,
+    longitude: number,
+    maxDistanceMeters: number = 5000
+  ) => {
+    const allPlaces = realm.objects('Place');
+    
+    return Array.from(allPlaces).filter((place: any) => {
+      const distance = calculateDistance(
+        latitude,
+        longitude,
+        place.latitude,
+        place.longitude
+      );
+      return distance <= maxDistanceMeters;
+    });
+  },
 };
+
+/**
+ * Helper function to calculate distance between two coordinates
+ * Uses Haversine formula
+ */
+function calculateDistance(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number
+): number {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}

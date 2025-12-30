@@ -19,6 +19,7 @@ interface Props {
 }
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { RealmWriteHelper } from '../database/helpers/RealmWriteHelper';
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
@@ -38,7 +39,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     notificationStatus === RESULTS.GRANTED
   );
 
-  // Fetch places and set up listener
+  //  Fetch places and set up listener - NO WRITES IN LISTENER
   useEffect(() => {
     const placesResult = PlaceService.getAllPlaces(realm);
     const prefs = PreferencesService.getPreferences(realm) as any;
@@ -52,22 +53,23 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       setTrackingEnabled(prefs.trackingEnabled);
     }
     
-    // Auto-pause if no active places on load
+    // FIXED: Auto-pause using deferred write (safe from transaction conflicts)
     if (initialActive === 0 && isInitialLoad) {
-      PreferencesService.updatePreferences(realm, { trackingEnabled: false });
+      PreferencesService.deferredUpdatePreferences(realm, { 
+        trackingEnabled: false 
+      }).then(() => {
+        console.log('[HomeScreen] Auto-paused tracking (no active places)');
+      });
       setIsInitialLoad(false);
     }
 
-    // Listener for places
+    // FIXED: Listener only updates UI state, NO writes
     const placesListener = (collection: any) => {
       setPlaces([...collection]);
       const currentActive = collection.filter((p: any) => p.isEnabled).length;
       setActiveCount(currentActive);
       
-      // If active places drop to 0, force pause tracking
-      if (currentActive === 0) {
-        PreferencesService.updatePreferences(realm, { trackingEnabled: false });
-      }
+      // REMOVED: No write here, moved to separate effect below
     };
 
     // Listener for preferences
@@ -130,15 +132,52 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     };
   }, [hasFullPermissions]);
 
+  // Separate effect for auto-pause logic (avoids listener conflicts)
+  useEffect(() => {
+    if (activeCount === 0 && trackingEnabled && !isInitialLoad) {
+      console.log('[HomeScreen] No active places, auto-pausing tracking');
+      PreferencesService.deferredUpdatePreferences(realm, {
+        trackingEnabled: false,
+      });
+    }
+  }, [activeCount, trackingEnabled, realm, isInitialLoad]);
+
   const handleToggle = (id: string) => {
     const place = places.find(p => p.id === id);
     const currentlyEnabled = place?.isEnabled;
     
-    PlaceService.togglePlaceEnabled(realm, id);
-    
-    // Auto-resume logic: If we are turning a place ON and tracking is currently OFF
-    if (!currentlyEnabled && !trackingEnabled) {
-      PreferencesService.updatePreferences(realm, { trackingEnabled: true });
+    // Determine if we need to update both place and preferences
+    const needsTrackingUpdate = !currentlyEnabled && !trackingEnabled;
+
+    if (needsTrackingUpdate) {
+      // BATCH WRITE: Update both in a single transaction (atomic)
+      const success = RealmWriteHelper.batchWrite(
+        realm,
+        [
+          {
+            label: 'togglePlace',
+            callback: () => {
+              const p = realm.objectForPrimaryKey('Place', id) as any;
+              if (p) p.isEnabled = !p.isEnabled;
+            },
+          },
+          {
+            label: 'enableTracking',
+            callback: () => {
+              const prefs = realm.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
+              if (prefs) prefs.trackingEnabled = true;
+            },
+          },
+        ],
+        'toggleWithTracking'
+      );
+
+      if (success) {
+        console.log('[HomeScreen] Toggled place and enabled tracking (batch)');
+      }
+    } else {
+      // Single write: just toggle the place
+      PlaceService.togglePlaceEnabled(realm, id);
     }
   };
 
