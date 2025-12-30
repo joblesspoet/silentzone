@@ -2,6 +2,15 @@ import Realm from 'realm';
 
 const PREFS_ID = 'USER_PREFS';
 
+export interface Preferences {
+  id: string;
+  onboardingCompleted: boolean;
+  trackingEnabled: boolean;
+  notificationsEnabled: boolean;
+  maxPlaces: number;
+  databaseSeeded: boolean;
+}
+
 export interface PreferencesData {
   onboardingCompleted?: boolean;
   trackingEnabled?: boolean;
@@ -11,13 +20,13 @@ export interface PreferencesData {
 }
 
 export const PreferencesService = {
-  getPreferences: (realm: Realm) => {
-    let prefs = realm.objectForPrimaryKey('Preferences', PREFS_ID);
+  getPreferences: (realm: Realm): Preferences => {
+    let prefs = realm.objectForPrimaryKey<Preferences>('Preferences', PREFS_ID);
     
     if (!prefs) {
       // Create defaults if not exist
       realm.write(() => {
-        prefs = realm.create('Preferences', {
+        prefs = realm.create<Preferences>('Preferences', {
           id: PREFS_ID,
           onboardingCompleted: false,
           trackingEnabled: true,
@@ -28,7 +37,7 @@ export const PreferencesService = {
       });
     }
     
-    return prefs;
+    return prefs!;
   },
 
   updatePreferences: (realm: Realm, data: PreferencesData) => {

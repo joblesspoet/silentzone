@@ -14,6 +14,7 @@ import { PermissionsManager } from '../permissions/PermissionsManager';
 import { usePermissions } from '../permissions/PermissionsContext';
 import { RESULTS } from 'react-native-permissions';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { locationService } from '../services/LocationService';
 
 interface ScheduleSlot {
   id: string;
@@ -198,11 +199,12 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
             label: s.label
         })) : [],
       });
-
+await locationService.syncGeofences();
       // Auto-resume logic: If adding an ENABLED place while global tracking is PAUSED
       const prefs = PreferencesService.getPreferences(realm);
       if (isSilencingEnabled && prefs && !(prefs as any).trackingEnabled) {
           PreferencesService.updatePreferences(realm, { trackingEnabled: true });
+          
       }
 
       navigation.goBack();
