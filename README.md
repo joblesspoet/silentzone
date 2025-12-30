@@ -1,97 +1,83 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Silent Zone
 
-# Getting Started
+**Silent Zone** is an intelligent mobile application that automatically manages your phone's ringer mode based on your location and schedule. Never worry about your phone ringing in a meeting, mosque, library, or classroom again.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## 🚀 Features
 
-## Step 1: Start Metro
+### Core Functionality
+- **Location-Based Muting**: Automatically silences your phone when you enter specific geofenced areas.
+- **Auto-Resume**: Automatically restores your ringer volume when you leave the designated area.
+- **Schedule Integration**: Define specific days and time intervals for when the silencing should be active (e.g., "Only silence between 9 AM - 5 PM on Weekdays").
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### Advanced Features
+- **Background Operation**: Runs reliably in the background with a persistent foreground service notification (Android).
+- **Offline Support**: Fully functional offline using local database storage and GPS.
+- **Smart Battery Management**: Adaptive location polling intervals to minimize battery usage while maintaining accuracy.
+- **Crash Recovery**: value safety nets to restore ringer settings if the app encounters an unexpected issue.
+- **Transaction Safety**: Robust database operations using Realm with transaction safeguards to prevent data corruption.
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### User Interface
+- **Visual Map Interface**: easy-to-use map for selecting locations and adjusting geofence radius.
+- **Dashboard**: Quick view of active places and current status.
+- **Customizable Places**: Icons and categories for different types of locations (Mosque, Office, School, Home, etc.).
 
-```sh
-# Using npm
-npm start
+## 🛠 Tech Stack
 
-# OR using Yarn
-yarn start
-```
+- **Framework**: React Native (0.76+)
+- **Language**: TypeScript
+- **Database**: Realm (Local offline-first storage)
+- **Maps**: React Native Maps (Google Maps)
+- **Location**: `react-native-geolocation-service`, `@rn-org/react-native-geofencing` (custom implementation or library)
+- **Background Tasks**: `@notifee/react-native` for foreground services.
+- **Navigation**: React Navigation v7.
 
-## Step 2: Build and run your app
+## 📱 Getting Started
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+### Prerequisites
+- Node.js (>= 20)
+- React Native CLI
+- Android Studio / Xcode
 
-### Android
+### Installation
 
-```sh
-# Using npm
-npm run android
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/joblesspoet/silentzone.git
+   cd silentzone
+   ```
 
-# OR using Yarn
-yarn android
-```
+2. **Install dependencies**
+   ```bash
+   npm install
+   # or
+   yarn install
+   ```
 
-### iOS
+3. **Install iOS Pods (Mac only)**
+   ```bash
+   cd ios && pod install && cd ..
+   ```
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+4. **Run the application**
+   ```bash
+   # Android
+   npm run android
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+   # iOS
+   npm run ios
+   ```
 
-```sh
-bundle install
-```
+## 🔒 Permissions
 
-Then, and every time you update your native dependencies, run:
+The app requires the following permissions to function correctly:
+- **Location**: "Allow all the time" (Background access) is required for geofencing to work when the app is closed.
+- **Notification**: To show the foreground service status.
+- **Do Not Disturb Access**: To programmatically change the ringer mode.
 
-```sh
-bundle exec pod install
-```
+## 🤝 Contributing
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-```sh
-# Using npm
-npm run ios
+## 📄 License
 
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+This project is licensed under the MIT License.
