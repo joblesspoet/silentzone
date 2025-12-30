@@ -124,16 +124,19 @@ export const PermissionsManager = {
       Geolocation.getCurrentPosition(
         () => resolve(true),
         (error) => {
-          // Error code 2 is usually POSITION_UNAVAILABLE (GPS disabled)
+          console.log('[PermissionsManager] GPS Check Error:', error);
+          // Error code 2 is POSITION_UNAVAILABLE (GPS disabled or Airplane mode)
           if (error.code === 2) {
             resolve(false);
           } else {
-            // Other errors (timeout, permission) don't necessarily mean GPS is off
-            // but for our purposes, if we can't get a position due to system, we treat as disabled
-            resolve(false);
+            // Timeout (3) or Permission (1) does not mean the SWITCH is off.
+            // We assume true to avoid blocking the user, as the actual location fetch will retry.
+            resolve(true); 
           }
         },
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        // We use low accuracy for this check because we just want to know if 
+        // ANY location provider is on, and it's faster.
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 10000 }
       );
     });
   },

@@ -352,21 +352,37 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
             </View>
             
             <View style={styles.sliderContainer}>
-              <Slider
-                style={{ width: '100%', height: 40 }}
-                minimumValue={30}
-                maximumValue={500}
-                step={10}
-                value={radius}
-                onValueChange={setRadius}
-                minimumTrackTintColor={theme.colors.primary}
-                maximumTrackTintColor={theme.colors.border.light}
-                thumbTintColor={theme.colors.white}
-              />
-              <View style={styles.sliderLabels}>
-                <Text style={styles.sliderLabelText}>30m</Text>
-                <Text style={styles.sliderLabelText}>500m</Text>
+              <TouchableOpacity 
+                style={styles.radiusButton}
+                onPress={() => setRadius(Math.max(30, radius - 1))}
+              >
+                  <MaterialIcon name="remove" size={20} color={theme.colors.primary} />
+              </TouchableOpacity>
+
+              <View style={{ flex: 1 }}>
+                <Slider
+                  style={{ width: '100%', height: 40 }}
+                  minimumValue={30}
+                  maximumValue={150}
+                  step={1}
+                  value={radius}
+                  onValueChange={setRadius}
+                  minimumTrackTintColor={theme.colors.primary}
+                  maximumTrackTintColor={theme.colors.border.light}
+                  thumbTintColor={theme.colors.white}
+                />
+                <View style={styles.sliderLabels}>
+                  <Text style={styles.sliderLabelText}>30m</Text>
+                  <Text style={styles.sliderLabelText}>150m</Text>
+                </View>
               </View>
+
+              <TouchableOpacity 
+                style={styles.radiusButton}
+                onPress={() => setRadius(Math.min(150, radius + 1))}
+              >
+                  <MaterialIcon name="add" size={20} color={theme.colors.primary} />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -779,7 +795,20 @@ const styles = StyleSheet.create({
   },
   sliderContainer: {
     height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  radiusButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.colors.surface.light,
+    alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+    ...theme.layout.shadows.soft,
   },
   sliderLabels: {
     flexDirection: 'row',

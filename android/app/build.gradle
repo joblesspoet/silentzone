@@ -85,8 +85,13 @@ android {
         versionCode 1
         versionName "1.0"
 
+        Properties properties = new Properties()
+        if (project.rootProject.file('local.properties').exists()) {
+            properties.load(project.rootProject.file('local.properties').newDataInputStream())
+        }
+
         manifestPlaceholders = [
-            googleMapsApiKey: project.hasProperty("GOOGLE_MAPS_API_KEY") ? project.getProperty("GOOGLE_MAPS_API_KEY") : ""
+            googleMapsApiKey: properties.getProperty("GOOGLE_MAPS_API_KEY") ?: (project.hasProperty("GOOGLE_MAPS_API_KEY") ? project.getProperty("GOOGLE_MAPS_API_KEY") : "")
         ]
     }
     signingConfigs {
