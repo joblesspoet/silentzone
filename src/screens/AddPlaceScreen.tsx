@@ -199,12 +199,17 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
             label: s.label
         })) : [],
       });
-await locationService.syncGeofences();
+      
+      await locationService.syncGeofences();
+      
       // Auto-resume logic: If adding an ENABLED place while global tracking is PAUSED
       const prefs = PreferencesService.getPreferences(realm);
+      console.log('[AddPlaceScreen] Place enabled:', isSilencingEnabled);
+      console.log('[AddPlaceScreen] Current tracking:', (prefs as any)?.trackingEnabled);
+
       if (isSilencingEnabled && prefs && !(prefs as any).trackingEnabled) {
-          PreferencesService.updatePreferences(realm, { trackingEnabled: true });
-          
+        console.log('[AddPlaceScreen] ✅ Auto-enabling tracking from AddPlace');
+        PreferencesService.updatePreferences(realm, { trackingEnabled: true });
       }
 
       navigation.goBack();

@@ -65,6 +65,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     setPlace({
         ...p,
         isEnabled: p.isEnabled, 
+        isInside: !!p.isInside,  
     });
     
     // Fetch History

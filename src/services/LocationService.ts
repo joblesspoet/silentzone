@@ -276,6 +276,24 @@ class LocationService {
         changes.newModifications.length > 0
       ) {
         console.log('[LocationService] Locations changed, syncing');
+        const enabledPlaces = Array.from(collection).filter((p: any) => p.isEnabled);
+        if (enabledPlaces.length > 0) {
+          const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
+          if (prefs && !prefs.trackingEnabled) {
+            console.log('[LocationService] ✅ Auto-enabling tracking (places added)');
+            this.realm!.write(() => {
+              prefs.trackingEnabled = true;
+            });
+            
+            // Wait a moment for the write to complete and listeners to update
+            setTimeout(() => {
+              console.log('[LocationService] Syncing after tracking enabled');
+              this.syncGeofences();
+            }, 100);
+            return; // Don't call syncGeofences immediately
+          }
+        }
+
         this.syncGeofences();
       }
     });

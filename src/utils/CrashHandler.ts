@@ -13,7 +13,7 @@ class CrashHandler {
     initialize() {
         if (this.isInitialized) return;
 
-        const globalAny = global as any;
+        const globalAny = globalThis as any;
         const originalHandler = globalAny.ErrorUtils?.getGlobalHandler();
 
         if (globalAny.ErrorUtils) {
