@@ -106,11 +106,12 @@ class LocationService {
   private lastTriggerTime: { [key: string]: number } = {};
   private lastEnabledIds: string = '';
   private lastKnownLocation: LocationState | null = null;
-  private monitoringTimeout: ReturnType<typeof setTimeout> | null = null;
+  private watchId: number | null = null;
   
   // Schedule tracking
   private upcomingSchedules: UpcomingSchedule[] = [];
   private isInScheduleWindow = false;
+  private scheduleEndTimer: ReturnType<typeof setTimeout> | null = null;
 
   private restartCheckInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -174,6 +175,19 @@ class LocationService {
       return;
     }
 
+    // Check if we have background location permission
+    const hasPermission = await PermissionsManager.hasScanningPermissions();
+    if (!hasPermission) {
+      console.error('[LocationService] Missing background location permission!');
+      // Show notification to user
+      await this.showNotification(
+        'Permission Required',
+        'Enable "Allow all the time" for location to use Silent Zone in background',
+        'permission-warning'
+      );
+      return;
+    }
+
     try {
       // Small delay to ensure notifee is fully ready
      await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
@@ -220,6 +234,80 @@ class LocationService {
     }
   }
 
+  /**
+   * Schedule a cleanup check for when current schedule ends
+   */
+  private scheduleCleanupTimer(activePlaces: any[]) {
+    // Clear existing timer
+    if (this.scheduleEndTimer) {
+      clearTimeout(this.scheduleEndTimer);
+      this.scheduleEndTimer = null;
+    }
+
+    if (activePlaces.length === 0) return;
+
+    // Find the earliest schedule end time
+    let nextEndTime: Date | null = null;
+    
+    for (const place of activePlaces) {
+      if (!place.schedules || place.schedules.length === 0) continue;
+
+      for (const schedule of place.schedules) {
+        const endTime = this.getScheduleEndTime(schedule);
+        if (endTime && (!nextEndTime || endTime < nextEndTime)) {
+          nextEndTime = endTime;
+        }
+      }
+    }
+
+    if (!nextEndTime) return;
+
+    const msUntilEnd = nextEndTime.getTime() - Date.now();
+    
+    if (msUntilEnd > 0 && msUntilEnd < 24 * 60 * 60 * 1000) { // Within 24 hours
+      console.log(`[LocationService] Scheduling cleanup in ${Math.round(msUntilEnd / 60000)} minutes`);
+      
+      this.scheduleEndTimer = setTimeout(() => {
+        console.log('[LocationService] Schedule end timer fired');
+        this.forceScheduleCheck();
+      }, msUntilEnd);
+    }
+  }
+
+  /**
+   * Get schedule end time for today
+   */
+  private getScheduleEndTime(schedule: any): Date | null {
+    const now = new Date();
+    const [hours, minutes] = schedule.endTime.split(':');
+    
+    const endTime = new Date();
+    endTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    
+    // If already passed today, return null
+    if (endTime <= now) return null;
+    
+    return endTime;
+  }
+
+
+  /**
+   * Force a schedule check (called by timer)
+   */
+  private async forceScheduleCheck() {
+    if (!this.realm || this.realm.isClosed) return;
+
+    console.log('[LocationService] Forcing schedule check');
+
+    const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
+    const { activePlaces } = this.categorizeBySchedule(enabledPlaces);
+
+    // Run cleanup - this will restore sound if schedule ended
+    await this.handleScheduleCleanup(activePlaces);
+    
+    // Schedule next cleanup if needed
+    this.scheduleCleanupTimer(activePlaces);
+  }
 
   /**
    * Restart service if killed by Android
@@ -229,9 +317,9 @@ class LocationService {
 
     // Set up restart on kill
     const restartInterval = setInterval(() => {
-      if (this.monitoringTimeout === null && this.geofencesActive) {
+      if (this.watchId === null && this.geofencesActive) {
         console.log('[LocationService] ⚠️ Service appears stopped, restarting');
-        this.runMonitoringCycle();
+        this.startGeofenceMonitoring();
       }
     }, 60000); // Check every minute
 
@@ -551,228 +639,73 @@ private setupReactiveSync() {
 
   private startGeofenceMonitoring() {
     this.stopGeofenceMonitoring();
-    this.runMonitoringCycle();
+    // Start watching position
+    this.startWatcher();
   }
 
   private stopGeofenceMonitoring() {
-    if (this.monitoringTimeout) {
-      clearTimeout(this.monitoringTimeout);
-      this.monitoringTimeout = null;
+    if (this.watchId !== null) {
+      Geolocation.clearWatch(this.watchId);
+      this.watchId = null;
+    }
+
+    // NEW: Clear schedule end timer
+    if (this.scheduleEndTimer) {
+      clearTimeout(this.scheduleEndTimer);
+      this.scheduleEndTimer = null;
     }
   }
 
   /**
-   * Main monitoring cycle with schedule awareness
+   * Start native location watcher (PUSH model)
+   * This allows the OS to wake up the JS thread only when meaningful updates occur
    */
-  private async runMonitoringCycle() {
-    try {
-      await this.syncGeofences();
-      await this.checkGeofences();
+  private startWatcher() {
+    if (this.watchId !== null) return;
 
-      if (this.isPreferenceTrackingEnabled()) {
-        const interval = await this.getDynamicCheckInterval();
-        
-        // Log interval with context
-        const context = this.isInScheduleWindow ? '⏰ ACTIVE' : 
-                       this.upcomingSchedules[0]?.minutesUntilStart <= 15 ? '⏳ SOON' : 
-                       '💤 IDLE';
-        console.log(`[LocationService] ${context} Next check in ${Math.round(interval / 1000)}s`);
-        
-        this.monitoringTimeout = setTimeout(
-          () => this.runMonitoringCycle(),
-          interval
-        );
-      }
-    } catch (error) {
-      console.error('[LocationService] Monitoring error:', error);
-      this.monitoringTimeout = setTimeout(
-        () => this.runMonitoringCycle(),
-        CONFIG.INTERVALS.CLOSE
-      );
-    }
-  }
-
-  /**
-   * SMART INTERVAL CALCULATION
-   * Adapts based on:
-   * 1. Whether we're in a scheduled time window
-   * 2. Distance to nearest location
-   * 3. Whether schedules are upcoming
-   */
-  private async getDynamicCheckInterval(): Promise<number> {
-    if (!this.realm || this.realm.isClosed) {
-      return CONFIG.INTERVALS.FAR;
-    }
-
-    const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
-    const { activePlaces, upcomingSchedules } = this.categorizeBySchedule(enabledPlaces);
-
-    // PRIORITY 1: During scheduled time - CHECK FREQUENTLY
-    if (this.isInScheduleWindow && activePlaces.length > 0) {
-      console.log('[LocationService] ⏰ ACTIVE SCHEDULE - Checking every 10s');
-      return CONFIG.INTERVALS.SCHEDULE_ACTIVE;
-    }
-
-    // PRIORITY 2: Schedule approaching (within 15 minutes)
-    if (upcomingSchedules.length > 0 && upcomingSchedules[0].minutesUntilStart <= 15) {
-      console.log(
-        `[LocationService] ⏳ Schedule in ${upcomingSchedules[0].minutesUntilStart}m - Checking every 20s`
-      );
-      return CONFIG.INTERVALS.SCHEDULE_APPROACHING;
-    }
-
-    // PRIORITY 3: No active or upcoming schedules - DEEP SLEEP
-    const alwaysActivePlaces = enabledPlaces.filter(
-      (p: any) => !p.schedules || p.schedules.length === 0
+    // 1. Get immediate location FIRST
+    Geolocation.getCurrentPosition(
+      async (position) => {
+        try {  // ← Add this
+          console.log('[LocationService] Initial location acquired');
+          await this.processLocationUpdate(position);
+        } catch (error) {  // ← Add this
+          console.error('[LocationService] Processing error:', error);
+        }
+      },
+      (error) => console.error('[LocationService] Initial location error:', error),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
 
-    if (alwaysActivePlaces.length === 0 && activePlaces.length === 0) {
-      const timeToNext = this.getTimeToNextSchedule(enabledPlaces);
-      const wakeTime = timeToNext - (CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000);
-      const sleepDuration = Math.max(60000, Math.min(wakeTime, CONFIG.INTERVALS.DEEP_SLEEP));
+    // Default configuration for background tracking
+    const config = {
+      enableHighAccuracy: true,
+      distanceFilter: CONFIG.DISTANCE.VERY_CLOSE / 2, // Update every ~50m movement
+      interval: 10000, // Android: Active update interval (10s)
+      fastestInterval: 5000, // Android: Fastest interval
+      showLocationDialog: false, // Don't show popup
+      forceRequestLocation: true, // Force check
+    };
 
-      console.log(
-        `[LocationService] 💤 DEEP SLEEP for ${Math.round(sleepDuration / 60000)}m ` +
-        `(Next schedule in ${Math.round(timeToNext / 60000)}m)`
-      );
-      
-      return sleepDuration;
-    }
+    console.log('[LocationService] Starting native watcher');
 
-    // PRIORITY 4: Distance-based for always-active places
-    const placesToCheck = [...alwaysActivePlaces, ...activePlaces];
-    
-    if (
-      this.lastKnownLocation &&
-      Date.now() - this.lastKnownLocation.timestamp < 30000
-    ) {
-      return this.calculateIntervalFromDistance(this.lastKnownLocation, placesToCheck);
-    }
-
-    return new Promise(resolve => {
-      Geolocation.getCurrentPosition(
-        position => {
-          const locationState: LocationState = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            timestamp: Date.now(),
-          };
-          
-          this.lastKnownLocation = locationState;
-          const interval = this.calculateIntervalFromDistance(locationState, placesToCheck);
-          resolve(interval);
-        },
-        error => {
-          console.warn('[LocationService] Location unavailable:', error);
-          resolve(CONFIG.INTERVALS.FAR);
-        },
-        {
-          enableHighAccuracy: false,
-          timeout: 5000,
-          maximumAge: 30000,
+    this.watchId = Geolocation.watchPosition(
+      async (position) => {
+        try {
+          await this.processLocationUpdate(position);
+        } catch (error) {
+          console.error('[LocationService] Processing error:', error);
         }
-      );
-    });
+      },
+      (error) => {
+        console.error('[LocationService] Watch error:', error);
+        // If error is timeout or position unavailable, retrying is handled by the OS/Library usually
+        // But if completely failed, we might want to restart watcher after delay
+      },
+      config
+    );
   }
 
-  private calculateIntervalFromDistance(location: LocationState, places: any[]): number {
-    let minDistance = Infinity;
-
-    for (const place of places) {
-      const dist = this.calculateDistance(
-        location.latitude,
-        location.longitude,
-        place.latitude as number,
-        place.longitude as number
-      );
-      minDistance = Math.min(minDistance, dist);
-    }
-
-    if (minDistance <= CONFIG.DISTANCE.VERY_CLOSE) {
-      return CONFIG.INTERVALS.VERY_CLOSE;
-    } else if (minDistance <= CONFIG.DISTANCE.CLOSE) {
-      return CONFIG.INTERVALS.CLOSE;
-    } else if (minDistance <= CONFIG.DISTANCE.NEAR) {
-      return CONFIG.INTERVALS.NEAR;
-    } else {
-      return CONFIG.INTERVALS.FAR;
-    }
-  }
-
-  /**
-   * Calculate time until next schedule
-   */
-  private getTimeToNextSchedule(places: any[]): number {
-    let minDiff = Infinity;
-    const now = new Date();
-    const currentDay = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
-    const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
-
-    for (const place of places) {
-      if (!place.schedules || place.schedules.length === 0) continue;
-
-      for (const schedule of place.schedules) {
-        if (schedule.days.length > 0 && !schedule.days.includes(currentDay)) {
-          continue;
-        }
-
-        const [startHours, startMins] = schedule.startTime.split(':').map(Number);
-        const startTimeMinutes = startHours * 60 + startMins;
-
-        if (startTimeMinutes > currentTimeMinutes) {
-          const diffMinutes = startTimeMinutes - currentTimeMinutes;
-          const diffMs = diffMinutes * 60 * 1000;
-          minDiff = Math.min(minDiff, diffMs);
-        }
-      }
-    }
-
-    return minDiff === Infinity ? CONFIG.INTERVALS.DEEP_SLEEP : minDiff;
-  }
-
-  /**
-   * Check current location against geofences
-   * OPTIMIZED FOR SMALL RADIUS (30m+)
-   */
-  private async checkGeofences(): Promise<void> {
-    const hasPermissions = await PermissionsManager.hasScanningPermissions();
-    const gpsEnabled = await PermissionsManager.isGpsEnabled();
-
-    if (!hasPermissions || !gpsEnabled) {
-      console.warn(`[LocationService] Requirements not met: perms=${hasPermissions}, gps=${gpsEnabled}`);
-      return;
-    }
-
-    if (!this.realm || this.realm.isClosed || this.isChecking) return;
-
-    this.isChecking = true;
-
-    return new Promise<void>(resolve => {
-      Geolocation.getCurrentPosition(
-        async position => {
-          try {
-            await this.processLocationUpdate(position);
-          } catch (error) {
-            console.error('[LocationService] Processing error:', error);
-          } finally {
-            resolve();
-          }
-        },
-        error => {
-          console.error('[LocationService] Location error:', error);
-          resolve();
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: CONFIG.GPS_TIMEOUT,
-          maximumAge: CONFIG.GPS_MAXIMUM_AGE,
-        }
-      );
-    }).finally(() => {
-      this.isChecking = false;
-    });
-  }
 
   /**
    * Process location update with smart detection
@@ -796,6 +729,8 @@ private setupReactiveSync() {
 
     if (accuracy > CONFIG.MAX_ACCEPTABLE_ACCURACY) {
       console.warn(`[LocationService] Poor GPS accuracy (${accuracy.toFixed(0)}m)`);
+      // We still process it, but maybe with caution?
+      // For now, let's proceed but just warn.
     }
 
     const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
@@ -804,9 +739,14 @@ private setupReactiveSync() {
     console.log(`[LocationService] Checking ${activePlaces.length} active locations`);
 
     await this.validateCurrentCheckIns(latitude, longitude, accuracy, activePlaces);
+    
     const insidePlaces = this.determineInsidePlaces(latitude, longitude, accuracy, activePlaces);
+    
     await this.handleScheduleCleanup(activePlaces);
     await this.handleNewEntries(insidePlaces);
+
+    // NEW: Schedule cleanup timer for schedule end
+    this.scheduleCleanupTimer(activePlaces);
   }
 
   private async validateCurrentCheckIns(

@@ -136,14 +136,14 @@ useEffect(() => {
   const currentlyEnabled = place?.isEnabled;
   
   // Block toggling off if currently inside
-  if (isActive && currentlyEnabled) {
-    Alert.alert(
-      "Cannot Disable Active Place",
-      "This location is currently active and silencing your phone. Please exit the area first.",
-      [{ text: "OK" }]
-    );
-    return;
-  }
+  //if (isActive && currentlyEnabled) {
+  //  Alert.alert(
+  //    "Cannot Disable Active Place",
+  //    "This location is currently active and silencing your phone. Please exit the area first.",
+  //    [{ text: "OK" }]
+  //  );
+  //  return;
+  //}
   
   // Just toggle - LocationService will handle tracking state
   PlaceService.togglePlaceEnabled(realm, id);
