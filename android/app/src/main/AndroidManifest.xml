@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
       android:name=".MainApplication"
@@ -40,9 +42,11 @@
 
       <!-- Android 14 Foreground Service Type Declaration -->
       <service
-          android:name="app.notifee.core.ForegroundService"
-          android:foregroundServiceType="location"
-          android:exported="false" />
+    android:name="app.notifee.core.ForegroundService"
+    android:foregroundServiceType="location"
+    android:exported="false"
+    android:stopWithTask="false"
+    android:enabled="true" />
 
     </application>
 </manifest>

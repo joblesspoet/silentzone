@@ -112,6 +112,8 @@ class LocationService {
   private upcomingSchedules: UpcomingSchedule[] = [];
   private isInScheduleWindow = false;
 
+  private restartCheckInterval: ReturnType<typeof setInterval> | null = null;
+
   /**
    * Initialize the location service
    */
@@ -129,6 +131,9 @@ class LocationService {
 
     await this.syncGeofences();
     this.setupReactiveSync();
+    
+    // Setup service restart mechanism
+    this.setupServiceRestart();
 
     this.isReady = true;
     console.log('[LocationService] ✅ Service initialized');
@@ -142,7 +147,9 @@ class LocationService {
       await notifee.createChannel({
         id: CONFIG.CHANNELS.SERVICE,
         name: 'Location Tracking Service',
-        importance: AndroidImportance.LOW,
+        importance: AndroidImportance.DEFAULT, // Changed from LOW to DEFAULT for better persistence
+        vibration: false,
+        lights: false,
       });
 
       await notifee.createChannel({
@@ -193,12 +200,15 @@ class LocationService {
           channelId: CONFIG.CHANNELS.SERVICE,
           asForegroundService: true,
           color: '#3B82F6',
-          ongoing: true,
+          ongoing: true, // Can't be swiped away
+          autoCancel: false, // Stays until manually stopped
+          colorized: true,
           foregroundServiceTypes: [
             AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION,
           ],
           pressAction: {
             id: 'default',
+            launchActivity: 'default',
           },
         },
       });
@@ -208,6 +218,25 @@ class LocationService {
     } catch (error) {
       console.error('[LocationService] Failed to start service:', error);
     }
+  }
+
+
+  /**
+   * Restart service if killed by Android
+   */
+  private setupServiceRestart() {
+    if (Platform.OS !== 'android') return;
+
+    // Set up restart on kill
+    const restartInterval = setInterval(() => {
+      if (this.monitoringTimeout === null && this.geofencesActive) {
+        console.log('[LocationService] ⚠️ Service appears stopped, restarting');
+        this.runMonitoringCycle();
+      }
+    }, 60000); // Check every minute
+
+    // Store reference for cleanup
+    this.restartCheckInterval = restartInterval;
   }
 
   /**
@@ -1118,6 +1147,13 @@ private setupReactiveSync() {
   destroy() {
     console.log('[LocationService] Destroying service');
     this.stopGeofenceMonitoring();
+    
+    // Cleanup restart interval
+    if (this.restartCheckInterval) {
+      clearInterval(this.restartCheckInterval);
+      this.restartCheckInterval = null;
+    }
+    
     this.isReady = false;
     this.geofencesActive = false;
     this.lastKnownLocation = null;
