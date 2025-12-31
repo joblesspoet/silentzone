@@ -40,56 +40,44 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   );
 
   //  Fetch places and set up listener - NO WRITES IN LISTENER
-  useEffect(() => {
-    const placesResult = PlaceService.getAllPlaces(realm);
-    const prefs = PreferencesService.getPreferences(realm) as any;
-    
-    // Set initial states
-    setPlaces([...placesResult]);
-    const initialActive = placesResult.filter((p: any) => p.isEnabled).length;
-    setActiveCount(initialActive);
-    
-    if (prefs) {
-      setTrackingEnabled(prefs.trackingEnabled);
+useEffect(() => {
+  const placesResult = PlaceService.getAllPlaces(realm);
+  const prefs = PreferencesService.getPreferences(realm) as any;
+  
+  // Set initial states
+  setPlaces([...placesResult]);
+  const initialActive = placesResult.filter((p: any) => p.isEnabled).length;
+  setActiveCount(initialActive);
+  
+  if (prefs) {
+    setTrackingEnabled(prefs.trackingEnabled);
+  }
+
+  // Listener for places - ONLY UPDATE UI, DON'T CHANGE TRACKING
+  const placesListener = (collection: any) => {
+    setPlaces([...collection]);
+    const currentActive = collection.filter((p: any) => p.isEnabled).length;
+    setActiveCount(currentActive);
+  };
+
+  // Listener for preferences
+  const prefsListener = (p: any) => {
+    setTrackingEnabled(!!p.trackingEnabled);
+  };
+
+  placesResult.addListener(placesListener);
+  
+  if (prefs && typeof prefs.addListener === 'function') {
+    prefs.addListener(prefsListener);
+  }
+
+  return () => {
+    placesResult.removeListener(placesListener);
+    if (prefs && typeof prefs.removeListener === 'function') {
+      prefs.removeListener(prefsListener);
     }
-    
-    // FIXED: Auto-pause using deferred write (safe from transaction conflicts)
-    if (initialActive === 0 && isInitialLoad) {
-      PreferencesService.deferredUpdatePreferences(realm, { 
-        trackingEnabled: false 
-      }).then(() => {
-        console.log('[HomeScreen] Auto-paused tracking (no active places)');
-      });
-      setIsInitialLoad(false);
-    }
-
-    // FIXED: Listener only updates UI state, NO writes
-    const placesListener = (collection: any) => {
-      setPlaces([...collection]);
-      const currentActive = collection.filter((p: any) => p.isEnabled).length;
-      setActiveCount(currentActive);
-      
-      // REMOVED: No write here, moved to separate effect below
-    };
-
-    // Listener for preferences
-    const prefsListener = (p: any) => {
-      setTrackingEnabled(!!p.trackingEnabled);
-    };
-
-    placesResult.addListener(placesListener);
-    
-    if (prefs && typeof prefs.addListener === 'function') {
-      prefs.addListener(prefsListener);
-    }
-
-    return () => {
-      placesResult.removeListener(placesListener);
-      if (prefs && typeof prefs.removeListener === 'function') {
-        prefs.removeListener(prefsListener);
-      }
-    };
-  }, [realm, isInitialLoad]);
+  };
+}, [realm]);
 
   // Location tracking
   useEffect(() => {
@@ -143,43 +131,23 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   }, [activeCount, trackingEnabled, realm, isInitialLoad]);
 
   const handleToggle = (id: string) => {
-    const place = places.find(p => p.id === id);
-    const currentlyEnabled = place?.isEnabled;
-    
-    // Determine if we need to update both place and preferences
-    const needsTrackingUpdate = !currentlyEnabled && !trackingEnabled;
-
-    if (needsTrackingUpdate) {
-      // BATCH WRITE: Update both in a single transaction (atomic)
-      const success = RealmWriteHelper.batchWrite(
-        realm,
-        [
-          {
-            label: 'togglePlace',
-            callback: () => {
-              const p = realm.objectForPrimaryKey('Place', id) as any;
-              if (p) p.isEnabled = !p.isEnabled;
-            },
-          },
-          {
-            label: 'enableTracking',
-            callback: () => {
-              const prefs = realm.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
-              if (prefs) prefs.trackingEnabled = true;
-            },
-          },
-        ],
-        'toggleWithTracking'
-      );
-
-      if (success) {
-        console.log('[HomeScreen] Toggled place and enabled tracking (batch)');
-      }
-    } else {
-      // Single write: just toggle the place
-      PlaceService.togglePlaceEnabled(realm, id);
-    }
-  };
+  const place = places.find(p => p.id === id);
+  const isActive = place?.isInside;
+  const currentlyEnabled = place?.isEnabled;
+  
+  // Block toggling off if currently inside
+  if (isActive && currentlyEnabled) {
+    Alert.alert(
+      "Cannot Disable Active Place",
+      "This location is currently active and silencing your phone. Please exit the area first.",
+      [{ text: "OK" }]
+    );
+    return;
+  }
+  
+  // Just toggle - LocationService will handle tracking state
+  PlaceService.togglePlaceEnabled(realm, id);
+};
 
   const handleDelete = (id: string, name: string) => {
     Alert.alert(

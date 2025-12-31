@@ -271,8 +271,6 @@ private setupReactiveSync() {
   if (!this.realm || this.realm.isClosed) return;
 
   const places = this.realm.objects('Place');
-  
-  // FIXED: Use deferred write to avoid nested transactions
   places.addListener((collection, changes) => {
     if (
       changes.insertions.length > 0 ||
@@ -281,38 +279,48 @@ private setupReactiveSync() {
     ) {
       console.log('[LocationService] Places changed, syncing');
       
+      // Check if we should auto-enable tracking
       const enabledPlaces = Array.from(collection).filter((p: any) => p.isEnabled);
       
-      // Auto-enable tracking if places added
       if (enabledPlaces.length > 0) {
         const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
-        
         if (prefs && !prefs.trackingEnabled) {
           console.log('[LocationService] ✅ Auto-enabling tracking (places added)');
           
-          // CRITICAL FIX: Use deferred write instead of immediate write
-          PreferencesService.deferredUpdatePreferences(this.realm!, {
-            trackingEnabled: true,
-          }).then(() => {
-            console.log('[LocationService] Tracking enabled, syncing geofences');
-            // Sync will happen automatically via preferences listener
+          // Enable tracking and wait for it to complete
+          this.realm!.write(() => {
+            prefs.trackingEnabled = true;
           });
           
-          return; // Don't sync immediately, let the preferences listener handle it
+          // Wait longer for all listeners to process
+          setTimeout(() => {
+            console.log('[LocationService] Syncing after tracking enabled');
+            this.syncGeofences();
+          }, 300);
+          
+          return; // Don't sync immediately
+        }
+      }
+      
+      // If no enabled places, auto-disable tracking
+      if (enabledPlaces.length === 0) {
+        const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
+        if (prefs && prefs.trackingEnabled) {
+          console.log('[LocationService] ❌ Auto-disabling tracking (no enabled places)');
+          this.realm!.write(() => {
+            prefs.trackingEnabled = false;
+          });
         }
       }
 
-      // Normal sync (no transaction conflict)
       this.syncGeofences();
     }
   });
 
-  // Preferences listener
   const prefs = this.realm.objectForPrimaryKey<Preferences>('Preferences', 'USER_PREFS');
   if (prefs) {
     prefs.addListener(() => {
       console.log('[LocationService] Preferences changed, syncing');
-      // This is safe because listeners fire AFTER the write completes
       this.syncGeofences();
     });
   }
