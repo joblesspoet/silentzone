@@ -473,8 +473,19 @@ private setupReactiveSync() {
            return;
          }
 
-         // Add geofences for currently active places
-         for (const place of activePlaces) {
+         // Add geofences for currently active places AND upcoming pre-start places
+         const placesToMonitor = new Set([...activePlaces]);
+         
+         // If we are monitoring because of an UPCOMING schedule (pre-start), add it too
+         if (upcomingSchedules.length > 0) {
+            const next = upcomingSchedules[0];
+            if (next.minutesUntilStart <= CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES) {
+                const place = enabledPlaces.find(p => p.id === next.placeId);
+                if (place) placesToMonitor.add(place);
+            }
+         }
+
+         for (const place of placesToMonitor) {
            await Geofencing.addGeofence({
              id: place.id as string,
              latitude: place.latitude as number,
@@ -486,7 +497,7 @@ private setupReactiveSync() {
            });
          }
 
-         console.log(`[LocationService] Added ${activePlaces.length} geofences (Active Monitoring)`);
+         console.log(`[LocationService] Added ${placesToMonitor.size} geofences (Active + Upcoming)`);
          await this.startForegroundService();
          this.geofencesActive = true;
          
