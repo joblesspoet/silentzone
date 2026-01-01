@@ -22,4 +22,12 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
   }
 });
 
+// Register foreground service (Required for Android 14+)
+notifee.registerForegroundService((notification) => {
+  return new Promise(() => {
+    // Long running task...
+    console.log('[ForegroundService] Active');
+  });
+});
+
 AppRegistry.registerComponent(appName, () => App);

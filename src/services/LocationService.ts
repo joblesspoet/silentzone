@@ -63,7 +63,7 @@ const CONFIG = {
   // Schedule settings
   SCHEDULE: {
     PRE_ACTIVATION_MINUTES: 15,  // Start checking 15 min before schedule
-    POST_GRACE_MINUTES: 5,        // Keep active 5 min after schedule ends
+    POST_GRACE_MINUTES: 0,        // Strict end time (was 5)
     SMALL_RADIUS_THRESHOLD: 60,  // Consider "small" if under this
   },
   
@@ -112,6 +112,9 @@ class LocationService {
   private upcomingSchedules: UpcomingSchedule[] = [];
   private isInScheduleWindow = false;
   private scheduleEndTimer: ReturnType<typeof setTimeout> | null = null;
+  // NEW: timer maps for specific places
+  private startTimers: { [key: string]: ReturnType<typeof setTimeout> } = {};
+  private endTimers: { [key: string]: ReturnType<typeof setTimeout> } = {};
 
   private restartCheckInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -237,76 +240,38 @@ class LocationService {
   /**
    * Schedule a cleanup check for when current schedule ends
    */
-  private scheduleCleanupTimer(activePlaces: any[]) {
-    // Clear existing timer
-    if (this.scheduleEndTimer) {
-      clearTimeout(this.scheduleEndTimer);
-      this.scheduleEndTimer = null;
-    }
+  /**
+   * Restore timers for active check-ins (e.g. after restart)
+   */
+  private async restoreActiveTimers() {
+    if (!this.realm || this.realm.isClosed) return;
 
-    if (activePlaces.length === 0) return;
+    const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+    console.log(`[LocationService] Restoring timers for ${activeLogs.length} active sessions`);
 
-    // Find the earliest schedule end time
-    let nextEndTime: Date | null = null;
-    
-    for (const place of activePlaces) {
-      if (!place.schedules || place.schedules.length === 0) continue;
+    for (const log of activeLogs) {
+      const placeId = log.placeId as string;
+      // Skip if we already have a timer
+      if (this.endTimers[placeId]) continue;
 
-      for (const schedule of place.schedules) {
-        const endTime = this.getScheduleEndTime(schedule);
-        if (endTime && (!nextEndTime || endTime < nextEndTime)) {
-          nextEndTime = endTime;
+      const place = PlaceService.getPlaceById(this.realm, placeId);
+      if (!place) continue;
+
+      const schedule = this.getCurrentOrNextSchedule(place);
+      if (schedule) {
+        const endTime = schedule.endTime.getTime();
+        const now = Date.now();
+        
+        if (now >= endTime) {
+           // Should have ended!
+           console.log(`[LocationService] Found expired session for ${place.name}, ending now`);
+           await this.handleGeofenceExit(placeId, true);
+        } else {
+           const delay = endTime - now;
+           this.scheduleEndTimerForPlace(placeId, delay);
         }
       }
     }
-
-    if (!nextEndTime) return;
-
-    const msUntilEnd = nextEndTime.getTime() - Date.now();
-    
-    if (msUntilEnd > 0 && msUntilEnd < 24 * 60 * 60 * 1000) { // Within 24 hours
-      console.log(`[LocationService] Scheduling cleanup in ${Math.round(msUntilEnd / 60000)} minutes`);
-      
-      this.scheduleEndTimer = setTimeout(() => {
-        console.log('[LocationService] Schedule end timer fired');
-        this.forceScheduleCheck();
-      }, msUntilEnd);
-    }
-  }
-
-  /**
-   * Get schedule end time for today
-   */
-  private getScheduleEndTime(schedule: any): Date | null {
-    const now = new Date();
-    const [hours, minutes] = schedule.endTime.split(':');
-    
-    const endTime = new Date();
-    endTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-    
-    // If already passed today, return null
-    if (endTime <= now) return null;
-    
-    return endTime;
-  }
-
-
-  /**
-   * Force a schedule check (called by timer)
-   */
-  private async forceScheduleCheck() {
-    if (!this.realm || this.realm.isClosed) return;
-
-    console.log('[LocationService] Forcing schedule check');
-
-    const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
-    const { activePlaces } = this.categorizeBySchedule(enabledPlaces);
-
-    // Run cleanup - this will restore sound if schedule ended
-    await this.handleScheduleCleanup(activePlaces);
-    
-    // Schedule next cleanup if needed
-    this.scheduleCleanupTimer(activePlaces);
   }
 
   /**
@@ -555,6 +520,7 @@ private setupReactiveSync() {
       for (const schedule of place.schedules) {
         // Day check
         if (schedule.days.length > 0 && !schedule.days.includes(currentDay)) {
+          // console.log(`[LocationService] ${place.name}: Day mismatch (${currentDay} not in [${schedule.days}])`);
           continue;
         }
 
@@ -581,6 +547,16 @@ private setupReactiveSync() {
           isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes || 
                                 currentTimeMinutes <= effectiveEndMinutes;
         }
+
+        /*
+        // Debug logging
+        console.log(
+          `[LocationService] Schedule Check for ${place.name}: \n` +
+          `  Current: ${currentTimeMinutes} (${Math.floor(currentTimeMinutes/60)}:${currentTimeMinutes%60})\n` +
+          `  Window: ${effectiveStartMinutes} - ${effectiveEndMinutes}\n` +
+          `  Match: ${isInEffectiveWindow}`
+        );
+        */
 
         if (isInEffectiveWindow) {
           if (!activePlaces.find(p => p.id === place.id)) {
@@ -654,6 +630,13 @@ private setupReactiveSync() {
       clearTimeout(this.scheduleEndTimer);
       this.scheduleEndTimer = null;
     }
+    
+    // Clear all specific timers
+    Object.values(this.startTimers).forEach(t => clearTimeout(t));
+    this.startTimers = {};
+    
+    Object.values(this.endTimers).forEach(t => clearTimeout(t));
+    this.endTimers = {};
   }
 
   /**
@@ -669,6 +652,8 @@ private setupReactiveSync() {
         try {  // ← Add this
           console.log('[LocationService] Initial location acquired');
           await this.processLocationUpdate(position);
+          // Restore timers after initial location check
+          await this.restoreActiveTimers();
         } catch (error) {  // ← Add this
           console.error('[LocationService] Processing error:', error);
         }
@@ -746,7 +731,7 @@ private setupReactiveSync() {
     await this.handleNewEntries(insidePlaces);
 
     // NEW: Schedule cleanup timer for schedule end
-    this.scheduleCleanupTimer(activePlaces);
+    // this.scheduleCleanupTimer(activePlaces); <--- RETIRED
   }
 
   private async validateCurrentCheckIns(
@@ -866,6 +851,7 @@ private setupReactiveSync() {
   }
 
   private async handleScheduleCleanup(activePlaces: any[]) {
+    // Legacy cleanup, mostly handled by timers now but good as failsafe
     if (!this.realm) return;
 
     const activePlaceIds = new Set(activePlaces.map(p => p.id));
@@ -873,7 +859,9 @@ private setupReactiveSync() {
 
     for (const log of activeLogs) {
       if (!activePlaceIds.has(log.placeId as string)) {
-        console.log(`[LocationService] Schedule ended: ${log.placeId}`);
+        // Double check time just to be safe? 
+        // categorizeBySchedule already checks time, so if it's not in activePlaces, it's out of time.
+        console.log(`[LocationService] Schedule ended (Detected by Poll): ${log.placeId}`);
         await this.handleGeofenceExit(log.placeId as string, true);
       }
     }
@@ -911,6 +899,7 @@ private setupReactiveSync() {
     const now = Date.now();
     const lastTime = this.lastTriggerTime[placeId] || 0;
 
+    // Debounce only if very recent (to avoid rapid toggling)
     if (now - lastTime < CONFIG.DEBOUNCE_TIME) {
       console.log(`[LocationService] Debouncing entry: ${placeId}`);
       return;
@@ -922,16 +911,69 @@ private setupReactiveSync() {
     const place = PlaceService.getPlaceById(this.realm, placeId);
     if (!place || !place.isEnabled) return;
 
-    const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+    // CHECK STRICT SCHEDULE
+    const currentSchedule = this.getCurrentOrNextSchedule(place);
+    
+    if (!currentSchedule) {
+      // 24/7 Place (No schedule)
+      await this.activateSilentZone(place);
+      return;
+    }
+
+    const startTime = currentSchedule.startTime.getTime();
+    const endTime = currentSchedule.endTime.getTime();
+
+    // 1. EARLY ARRIVAL CHECK
+    if (now < startTime) {
+      const msUntilStart = startTime - now;
+      console.log(`[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`);
+      
+      // Notify user they are being monitored but not yet silenced
+      // Optional: Could rely on existing "Upcoming" foreground notification
+      
+      // Schedule timer to silence exactly at start time
+      this.scheduleStartTimer(placeId, msUntilStart);
+      return;
+    }
+
+    // 2. LATE ARRIVAL / ALREADY ENDED CHECK
+    if (now >= endTime) {
+      console.log(`[LocationService] Schedule ended for ${place.name}, ignoring entry`);
+      return;
+    }
+
+    // 3. ACTIVE SCHEDULE
+    await this.activateSilentZone(place);
+    
+    // Schedule strict end time
+    const msUntilEnd = endTime - now;
+    this.scheduleEndTimerForPlace(placeId, msUntilEnd);
+  }
+
+  /**
+   * Helper to get the relevant schedule for strict checking
+   */
+  private getCurrentOrNextSchedule(place: any): UpcomingSchedule | null {
+    if (!place.schedules || place.schedules.length === 0) return null;
+
+    const { upcomingSchedules } = this.categorizeBySchedule([place]);
+    return upcomingSchedules[0] || null; // categorizeBySchedule handles the complex day/time logic
+  }
+
+  /**
+   * Activates the silent zone and logs check-in
+   */
+  private async activateSilentZone(place: any) {
+    const activeLogs = CheckInService.getActiveCheckIns(this.realm!);
 
     if (activeLogs.length > 0) {
       const firstLog = activeLogs[0] as any;
       const missingOriginal = firstLog.savedVolumeLevel == null || firstLog.savedMediaVolume == null;
 
       if (missingOriginal) {
-        await this.saveAndSilencePhone(placeId);
+        await this.saveAndSilencePhone(place.id);
       } else {
-        CheckInService.logCheckIn(this.realm, placeId, firstLog.savedVolumeLevel, firstLog.savedMediaVolume);
+        CheckInService.logCheckIn(this.realm!, place.id, firstLog.savedVolumeLevel, firstLog.savedMediaVolume);
       }
 
       await this.showNotification(
@@ -940,7 +982,7 @@ private setupReactiveSync() {
         'check-in-multi'
       );
     } else {
-      await this.saveAndSilencePhone(placeId);
+      await this.saveAndSilencePhone(place.id);
       await this.showNotification(
         'Silent Zone Active',
         `Entered ${place.name}. Phone silenced.`,
@@ -1055,6 +1097,48 @@ private setupReactiveSync() {
     } catch (error) {
       console.error('[LocationService] Failed to restore:', error);
     }
+  }
+
+  /**
+   * Schedule a timer to activate silent zone at strict start time
+   */
+  private scheduleStartTimer(placeId: string, delay: number) {
+    // Clear existing if any
+    if (this.startTimers[placeId]) {
+      clearTimeout(this.startTimers[placeId]);
+    }
+
+    console.log(`[LocationService] Scheduled START timer for ${placeId} in ${Math.round(delay / 1000)}s`);
+
+    this.startTimers[placeId] = setTimeout(async () => {
+      console.log(`[LocationService] ⏰ Start time arrived for ${placeId}`);
+      delete this.startTimers[placeId];
+      
+      // Re-verify if we are still here? 
+      // User might have left but geofence didn't trigger (rare but possible).
+      // Ideally receiving a 'Start Trigger' calls handleGeofenceEntry again 
+      // which will now fall into "ACTIVE SCHEDULE" block.
+      await this.handleGeofenceEntry(placeId);
+    }, delay);
+  }
+
+  /**
+   * Schedule a timer to force exit silent zone at strict end time
+   */
+  private scheduleEndTimerForPlace(placeId: string, delay: number) {
+    if (this.endTimers[placeId]) {
+      clearTimeout(this.endTimers[placeId]);
+    }
+
+    console.log(`[LocationService] Scheduled END timer for ${placeId} in ${Math.round(delay / 1000)}s`);
+
+    this.endTimers[placeId] = setTimeout(async () => {
+      console.log(`[LocationService] ⏰ End time arrived for ${placeId}`);
+      delete this.endTimers[placeId];
+      
+      // Force checkout
+      await this.handleGeofenceExit(placeId, true);
+    }, delay);
   }
 
   private async showNotification(title: string, body: string, id: string) {
