@@ -1,4 +1,4 @@
-import { Platform, Linking, Alert } from 'react-native';
+import { Platform, Linking, Alert, NativeModules } from 'react-native';
 import RingerMode from '../modules/RingerMode';
 import { 
   check, 
@@ -11,8 +11,31 @@ import {
 } from 'react-native-permissions';
 import Geolocation from '@react-native-community/geolocation';
 
+const { BatteryOptimization } = NativeModules;
+
 export const PermissionsManager = {
   // Check strict type for status to avoid string mismatch issues
+  isBatteryOptimizationEnabled: async (): Promise<boolean> => {
+     if (Platform.OS !== 'android') return false;
+     try {
+       return await BatteryOptimization.isIgnoringBatteryOptimizations();
+     } catch (error) {
+       console.error('Error checking battery optimization:', error);
+       return false;
+     }
+  },
+
+  requestBatteryOptimization: async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+    try {
+      await BatteryOptimization.requestIgnoreBatteryOptimizations();
+      return true;
+    } catch (error) {
+      console.error('Error requesting battery optimization:', error);
+      return false;
+    }
+  },
+
   getLocationStatus: async (): Promise<PermissionStatus> => {
     try {
       if (Platform.OS === 'ios') {
@@ -152,6 +175,20 @@ export const PermissionsManager = {
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
       (dnd === RESULTS.GRANTED) &&
+      (notif === RESULTS.GRANTED)
+    );
+  },
+
+  // Newer, more lenient check for starting the service active monitoring
+  hasCriticalPermissions: async (): Promise<boolean> => {
+    const loc = await PermissionsManager.getLocationStatus();
+    const bg = await PermissionsManager.getBackgroundLocationStatus();
+    const notif = await PermissionsManager.getNotificationStatus();
+    
+    // We allow DND to be missing (we just won't silence, but we WILL track)
+    return (
+      (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
+      (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
       (notif === RESULTS.GRANTED)
     );
   }

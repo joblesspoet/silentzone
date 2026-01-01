@@ -11,9 +11,17 @@ import { crashHandler } from './src/utils/CrashHandler';
 // Initialize safety net
 crashHandler.initialize();
 
+const { locationService } = require('./src/services/LocationService');
+
 // Handle background events (required for Foreground Service)
 notifee.onBackgroundEvent(async ({ type, detail }) => {
   const { notification, pressAction } = detail;
+
+  // Handle AlarmManager Trigger
+  if (type === EventType.DELIVERED && notification?.data?.action === 'START_MONITORING') {
+      console.log('[Background] ⏰ Alarm received via Notifee');
+      await locationService.handleAlarmFired();
+  }
 
   // Check if the user has pressed the notification
   if (type === EventType.PRESS && pressAction?.id === 'default') {

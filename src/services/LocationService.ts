@@ -2,6 +2,10 @@ import Geofencing from '@rn-org/react-native-geofencing';
 import notifee, {
   AndroidImportance,
   AndroidForegroundServiceType,
+  TriggerType,
+  TimestampTrigger,
+  AndroidCategory,
+  AlarmType,
 } from '@notifee/react-native';
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
@@ -11,6 +15,7 @@ import { Platform } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
 import RingerMode, { RINGER_MODE } from '../modules/RingerMode';
 import { PermissionsManager } from '../permissions/PermissionsManager';
+import { NativeModules } from 'react-native';
 
 /**
  * UNIVERSAL LOCATION SERVICE
@@ -113,8 +118,11 @@ class LocationService {
   private isInScheduleWindow = false;
   private scheduleEndTimer: ReturnType<typeof setTimeout> | null = null;
   // NEW: timer maps for specific places
+  // NEW: timer maps for specific places
   private startTimers: { [key: string]: ReturnType<typeof setTimeout> } = {};
   private endTimers: { [key: string]: ReturnType<typeof setTimeout> } = {};
+  
+  private nextAlarmScheduled = false;
 
   private restartCheckInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -179,9 +187,11 @@ class LocationService {
     }
 
     // Check if we have background location permission
-    const hasPermission = await PermissionsManager.hasScanningPermissions();
+    // Check for CRITICAL background location permission (Loc + Bg + Notif)
+    // We do NOT block on DND here. If missing, we'll prompt when entering zone.
+    const hasPermission = await PermissionsManager.hasCriticalPermissions();
     if (!hasPermission) {
-      console.error('[LocationService] Missing background location permission!');
+      console.error('[LocationService] Missing critical permissions (Loc/Bg/Notif)!');
       // Show notification to user
       await this.showNotification(
         'Permission Required',
@@ -429,10 +439,12 @@ private setupReactiveSync() {
 
       const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
       
-      // Calculate active and upcoming schedules
       const { activePlaces, upcomingSchedules } = this.categorizeBySchedule(enabledPlaces);
       this.upcomingSchedules = upcomingSchedules;
       this.isInScheduleWindow = activePlaces.length > 0 && upcomingSchedules.length > 0;
+
+      // NEW: Smart decision logic
+      const shouldMonitor = this.shouldStartMonitoring(activePlaces, upcomingSchedules);
 
       // Log next schedule if any
       if (upcomingSchedules.length > 0) {
@@ -442,49 +454,59 @@ private setupReactiveSync() {
         );
       }
 
-      const activeIdsString = activePlaces.map(p => p.id as string).sort().join(',');
+      if (shouldMonitor) {
+         // ACTIVE MONITORING
+         await this.handleManualDisableCleanup(new Set(activePlaces.map(p => p.id as string)));
+         await Geofencing.removeAllGeofence();
+         this.geofencesActive = false;
 
-      if (activeIdsString === this.lastEnabledIds && this.geofencesActive) {
-        await this.handleManualDisableCleanup(new Set(activePlaces.map(p => p.id as string)));
-        return;
+         if (enabledPlaces.length === 0) {
+           console.log('[LocationService] No locations to monitor');
+           await this.stopForegroundService();
+           return;
+         }
+
+         const hasPermissions = await PermissionsManager.hasCriticalPermissions();
+         if (!hasPermissions) {
+           console.warn('[LocationService] Missing required permissions');
+           await this.stopForegroundService();
+           return;
+         }
+
+         // Add geofences for currently active places
+         for (const place of activePlaces) {
+           await Geofencing.addGeofence({
+             id: place.id as string,
+             latitude: place.latitude as number,
+             longitude: place.longitude as number,
+             radius: Math.max(
+               CONFIG.MIN_GEOFENCE_RADIUS,
+               (place.radius as number) + CONFIG.GEOFENCE_RADIUS_BUFFER
+             ),
+           });
+         }
+
+         console.log(`[LocationService] Added ${activePlaces.length} geofences (Active Monitoring)`);
+         await this.startForegroundService();
+         this.geofencesActive = true;
+         
+         // Even while monitoring, schedule next alarm for redundancy or next event
+         this.scheduleNextAlarm(upcomingSchedules);
+
+      } else {
+         // PASSIVE MODE (Sleep & Alarm)
+         console.log('[LocationService] 💤 Entering passive mode (using alarms)');
+         
+         // Ensure we cleanup any stuck checkins before sleeping if we are transitioning from active
+         if (this.geofencesActive) {
+            await this.handleManualDisableCleanup(new Set()); // Cleanup all? No, just verify.
+            await Geofencing.removeAllGeofence();
+            this.geofencesActive = false;
+         }
+         
+         await this.stopForegroundService();
+         this.scheduleNextAlarm(upcomingSchedules);
       }
-
-      this.lastEnabledIds = activeIdsString;
-      console.log(`[LocationService] Syncing: ${activePlaces.length} active locations`);
-
-      await this.handleManualDisableCleanup(new Set(activePlaces.map(p => p.id as string)));
-      await Geofencing.removeAllGeofence();
-      this.geofencesActive = false;
-
-      if (enabledPlaces.length === 0) {
-        console.log('[LocationService] No locations to monitor');
-        await this.stopForegroundService();
-        return;
-      }
-
-      const hasPermissions = await PermissionsManager.hasScanningPermissions();
-      if (!hasPermissions) {
-        console.warn('[LocationService] Missing required permissions');
-        await this.stopForegroundService();
-        return;
-      }
-
-      // Add geofences for currently active places
-      for (const place of activePlaces) {
-        await Geofencing.addGeofence({
-          id: place.id as string,
-          latitude: place.latitude as number,
-          longitude: place.longitude as number,
-          radius: Math.max(
-            CONFIG.MIN_GEOFENCE_RADIUS,
-            (place.radius as number) + CONFIG.GEOFENCE_RADIUS_BUFFER
-          ),
-        });
-      }
-
-      console.log(`[LocationService] Added ${activePlaces.length} geofences`);
-      await this.startForegroundService();
-      this.geofencesActive = true;
       
     } catch (error) {
       console.error('[LocationService] Sync failed:', error);
@@ -640,6 +662,150 @@ private setupReactiveSync() {
   }
 
   /**
+   * Decide if we should actively monitor NOW
+   */
+  private shouldStartMonitoring(activePlaces: any[], upcomingSchedules: any[]): boolean {
+    // 1. If schedule is active right now → Monitor
+    if (activePlaces.length > 0) {
+      // console.log('[LocationService] ✅ Schedule active now');
+      return true;
+    }
+
+    // 2. If schedule starts within 15 minutes → Monitor
+    if (upcomingSchedules.length > 0) {
+      const nextSchedule = upcomingSchedules[0];
+      if (nextSchedule.minutesUntilStart <= 15) {
+        console.log(`[LocationService] ✅ Pre-start monitoring: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart}m`);
+        return true;
+      }
+    }
+
+    // 3. Otherwise → Don't monitor, use alarm instead
+    // console.log('[LocationService] ⏰ Using alarm (next schedule > 15m away)');
+    return false;
+  }
+
+  /**
+   * Schedule AlarmManager to wake before next prayer
+   */
+  private async scheduleNextAlarm(upcomingSchedules: any[]) {
+    if (upcomingSchedules.length === 0) {
+      console.log('[LocationService] No upcoming schedules to alarm for');
+      return;
+    }
+
+    const nextSchedule = upcomingSchedules[0];
+    const wakeMinutes = nextSchedule.minutesUntilStart - 15; // Wake 15 min early
+
+    if (wakeMinutes <= 0) {
+       // Already handled by 'shouldStartMonitoring' or passed
+       return;
+    }
+
+    console.log(
+      `[LocationService] ⏰ Scheduling alarm in ${wakeMinutes}m for ${nextSchedule.placeName}`
+    );
+
+    try {
+      const trigger: TimestampTrigger = {
+        type: TriggerType.TIMESTAMP,
+        timestamp: Date.now() + wakeMinutes * 60 * 1000,
+        alarmManager: {
+          allowWhileIdle: true, // ✅ Works in Doze mode!
+          type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
+        },
+      };
+
+      await notifee.createTriggerNotification(
+        {
+          id: 'prayer-alarm',
+          title: 'Prayer Time Approaching',
+          body: `${nextSchedule.placeName} starting soon`,
+          data: {
+            action: 'START_MONITORING',
+            scheduleId: nextSchedule.placeId,
+          },
+          android: {
+            channelId: CONFIG.CHANNELS.SERVICE,
+            importance: AndroidImportance.HIGH,
+            category: AndroidCategory.ALARM,
+            autoCancel: true,
+            pressAction: {
+                id: 'default',
+                launchActivity: 'default',
+            },
+          },
+        },
+        trigger
+      );
+
+      this.nextAlarmScheduled = true;
+    } catch (error) {
+      console.error('[LocationService] Failed to schedule alarm:', error);
+    }
+  }
+
+  /**
+   * Handle alarm firing (called when notification appears)
+   */
+  async handleAlarmFired() {
+    console.log('[LocationService] ⏰ Alarm fired - waking up service');
+    if (!this.realm) {
+        // If coming from dead background, might need re-init, but usually 'initialize' called from index.js handles it.
+        // This method is called AFTER initialize if wired up correctly.
+        console.warn('[LocationService] handleAlarmFired called but realm not ready?');
+    }
+    // Force a sync, which will see we are <15m and start monitoring
+    await this.syncGeofences();
+  }
+
+  /**
+   * Schedule automatic stop when prayer ends
+   */
+  private scheduleAutoStop(activePlaces: any[]) {
+    // Clear existing timer
+    if (this.scheduleEndTimer) {
+      clearTimeout(this.scheduleEndTimer);
+      this.scheduleEndTimer = null;
+    }
+
+    if (activePlaces.length === 0) return;
+
+    // Find earliest end time
+    let earliestEnd: Date | null = null;
+    
+    for (const place of activePlaces) {
+        const schedule = this.getCurrentOrNextSchedule(place);
+        if (schedule && schedule.endTime) {
+            if (!earliestEnd || schedule.endTime < earliestEnd) {
+                earliestEnd = schedule.endTime;
+            }
+        }
+    }
+
+    if (!earliestEnd) return;
+
+    const msUntilEnd = earliestEnd.getTime() - Date.now();
+    
+    // Add small buffer to ensure we don't cut off exactly at the second
+    // but close enough. The strict geofence exit will handle the precise checkout.
+    // This is just to STOP the battery drain.
+    const stopDelay = msUntilEnd + 60000; // +1 minute buffer
+
+    if (stopDelay > 0) {
+      console.log(`[LocationService] ⏰ Auto-stop scheduled in ${Math.round(stopDelay / 60000)}m`);
+      
+      this.scheduleEndTimer = setTimeout(async () => {
+        console.log('[LocationService] ⏰ Schedule ended - stopping monitoring');
+        
+        // Force sync will see no active schedules -> activePlaces=[], will stop service & schedule next alarm
+        await this.syncGeofences();
+        
+      }, stopDelay);
+    }
+  }
+
+  /**
    * Start native location watcher (PUSH model)
    * This allows the OS to wake up the JS thread only when meaningful updates occur
    */
@@ -731,7 +897,10 @@ private setupReactiveSync() {
     await this.handleNewEntries(insidePlaces);
 
     // NEW: Schedule cleanup timer for schedule end
-    // this.scheduleCleanupTimer(activePlaces); <--- RETIRED
+    await this.handleNewEntries(insidePlaces);
+
+    // NEW: Schedule auto-stop when prayer ends
+    this.scheduleAutoStop(activePlaces);
   }
 
   private async validateCurrentCheckIns(

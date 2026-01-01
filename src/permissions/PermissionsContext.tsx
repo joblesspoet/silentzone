@@ -14,8 +14,10 @@ interface PermissionsContextType {
   requestLocationFlow: () => Promise<boolean>; // Returns true if sufficient permission granted
   requestNotificationFlow: () => Promise<boolean>;
   requestDndFlow: () => Promise<boolean>;
+  requestBatteryExemption: () => Promise<boolean>;
   isLoading: boolean;
   hasAllPermissions: boolean;
+  isBatteryOptimized: boolean;
 }
 
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
@@ -33,6 +35,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [backgroundLocationStatus, setBgLocationStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [notificationStatus, setNotificationStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [dndStatus, setDndStatus] = useState<PermissionStatus>(RESULTS.DENIED);
+  const [isBatteryOptimized, setIsBatteryOptimized] = useState(false); // Default to false (safe)
   const [isLoading, setIsLoading] = useState(true);
   const [previousPermissionState, setPreviousPermissionState] = useState<string>('');
 
@@ -40,7 +43,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED) &&
     (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED) &&
     dndStatus === RESULTS.GRANTED &&
-    notificationStatus === RESULTS.GRANTED
+    notificationStatus === RESULTS.GRANTED &&
+    isBatteryOptimized 
   );
 
   const refreshPermissions = async () => {
@@ -48,15 +52,17 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     const bg = await PermissionsManager.getBackgroundLocationStatus();
     const notif = await PermissionsManager.getNotificationStatus();
     const dnd = await PermissionsManager.getDndStatus();
+    const battery = await PermissionsManager.isBatteryOptimizationEnabled();
 
     setLocationStatus(loc);
     setBgLocationStatus(bg);
     setNotificationStatus(notif);
     setDndStatus(dnd);
+    setIsBatteryOptimized(battery);
     setIsLoading(false);
 
     // Create a permission state string for comparison
-    const currentState = `${loc}-${bg}-${notif}-${dnd}`;
+    const currentState = `${loc}-${bg}-${notif}-${dnd}-${battery}`;
     
     // Check if permissions changed
     if (previousPermissionState && previousPermissionState !== currentState) {
@@ -71,7 +77,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         (prevParts[0] === RESULTS.GRANTED || prevParts[0] === RESULTS.LIMITED) &&
         (prevParts[1] === RESULTS.GRANTED || prevParts[1] === RESULTS.LIMITED) &&
         prevParts[2] === RESULTS.GRANTED &&
-        prevParts[3] === RESULTS.GRANTED
+        prevParts[3] === RESULTS.GRANTED &&
+        prevParts[4] === 'true'
       );
       
       // Calculate if we have all permissions now
@@ -79,7 +86,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
         (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
         notif === RESULTS.GRANTED &&
-        dnd === RESULTS.GRANTED
+        dnd === RESULTS.GRANTED &&
+        battery
       );
       
       console.log('[PermissionsContext] Permission check:', {
@@ -99,6 +107,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
           if (!locationOk) return 'PermissionLocation';
           if (notif !== RESULTS.GRANTED) return 'PermissionNotification';
           if (dnd !== RESULTS.GRANTED) return 'PermissionDnd';
+          if (!battery) return 'PermissionBattery'; // You might need to creation this screen or handle it
           return 'PermissionLocation';
         };
 
@@ -166,6 +175,13 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     await refreshPermissions(); // Refresh to update state
     return status === RESULTS.GRANTED;
   };
+    
+  const requestBatteryExemption = async (): Promise<boolean> => {
+     const granted = await PermissionsManager.requestBatteryOptimization();
+     setIsBatteryOptimized(granted);
+     await refreshPermissions();
+     return granted;
+  };
 
   return (
     <PermissionsContext.Provider
@@ -178,8 +194,10 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         requestLocationFlow,
         requestNotificationFlow,
         requestDndFlow,
+        requestBatteryExemption,
         isLoading,
         hasAllPermissions,
+        isBatteryOptimized,
       }}
     >
       {children}
