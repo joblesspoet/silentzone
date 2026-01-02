@@ -212,24 +212,29 @@ class LocationService {
       const inScheduleWindow = this.isInScheduleWindow;
       const nextSchedule = this.upcomingSchedules[0];
 
-      let body = `Monitoring ${enabledCount} location${enabledCount !== 1 ? 's' : ''}`;
+      let title = '🛡️ Silent Zone Running';
+      let body = `Monitoring ${enabledCount} active location${enabledCount !== 1 ? 's' : ''}`;
+      
       if (inScheduleWindow && nextSchedule) {
-        body = `Active: ${nextSchedule.placeName}`;
+        title = '🔕 Silent Zone Active';
+        body = `📍 Inside ${nextSchedule.placeName}`;
       } else if (nextSchedule && nextSchedule.minutesUntilStart <= 15) {
-        body = `Upcoming: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart}m`;
+        title = '⏱️ Preparing to Silence';
+        body = `🔜 ${nextSchedule.placeName} starts in ${nextSchedule.minutesUntilStart} min`;
       }
 
       await notifee.displayNotification({
         id: 'location-tracking-service',
-        title: 'Silent Zone Active',
+        title,
         body,
         android: {
           channelId: CONFIG.CHANNELS.SERVICE,
           asForegroundService: true,
-          color: '#3B82F6',
-          ongoing: true, // Can't be swiped away
-          autoCancel: false, // Stays until manually stopped
+          color: '#8B5CF6', // Purple-500
+          ongoing: true,
+          autoCancel: false,
           colorized: true,
+          largeIcon: 'ic_launcher',
           foregroundServiceTypes: [
             AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION,
           ],
@@ -598,21 +603,34 @@ private setupReactiveSync() {
 
           // Calculate minutes until start
           let minutesUntilStart: number;
-          if (currentTimeMinutes < startTimeMinutes) {
+          let isOvernightActive = false;
+
+          if (isOvernight && currentTimeMinutes < startTimeMinutes) {
+             // We are in the "Next Day" part of the overnight schedule
+             minutesUntilStart = 0; 
+             isOvernightActive = true;
+          } else if (currentTimeMinutes < startTimeMinutes) {
             minutesUntilStart = startTimeMinutes - currentTimeMinutes;
           } else if (currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes) {
             minutesUntilStart = 0; // Already in scheduled time
           } else {
-            minutesUntilStart = 0; // In grace period
+            // Should be covered by isInEffectiveWindow check, but fallback
+             minutesUntilStart = 0;
           }
 
           // Create schedule object
           const scheduleStart = new Date(now);
           scheduleStart.setHours(startHours, startMins, 0, 0);
           
+          if (isOvernightActive) {
+             // If we are in the early morning part, the start time was YESTERDAY
+             scheduleStart.setDate(scheduleStart.getDate() - 1);
+          }
+          
           const scheduleEnd = new Date(now);
           scheduleEnd.setHours(endHours, endMins, 0, 0);
-          if (isOvernight && endTimeMinutes < startTimeMinutes) {
+          if (isOvernight && endTimeMinutes < startTimeMinutes && !isOvernightActive) {
+            // If we are in the evening part, end time is TOMORROW
             scheduleEnd.setDate(scheduleEnd.getDate() + 1);
           }
 
@@ -1164,8 +1182,8 @@ private setupReactiveSync() {
     } else {
       await this.saveAndSilencePhone(place.id);
       await this.showNotification(
-        'Silent Zone Active',
-        `Entered ${place.name}. Phone silenced.`,
+        'Phone Silenced 🔕',
+        `Entered ${place.name}`,
         'check-in'
       );
     }
@@ -1195,8 +1213,8 @@ private setupReactiveSync() {
       await this.restoreRingerMode(thisLog.id as string);
       CheckInService.logCheckOut(this.realm, thisLog.id as string);
       await this.showNotification(
-        'Silent Zone Deactivated',
-        `Left ${place?.name || 'location'}. Sound restored.`,
+        'Sound Restored 🔔',
+        `You have left ${place?.name || 'the silent zone'}`,
         'check-out'
       );
     } else {
@@ -1329,8 +1347,9 @@ private setupReactiveSync() {
         body,
         android: {
           channelId: CONFIG.CHANNELS.ALERTS,
-          smallIcon: 'ic_launcher',
-          color: '#3B82F6',
+          smallIcon: 'ic_launcher', // Make sure this is a transparent alpha icon if possible, otherwise use default
+          largeIcon: 'ic_launcher',
+          color: '#8B5CF6', // Purple-500 (Silent Zone Theme)
           pressAction: {
             id: 'default',
           },
