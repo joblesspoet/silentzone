@@ -20,6 +20,7 @@ interface Props {
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RealmWriteHelper } from '../database/helpers/RealmWriteHelper';
+import { CheckInService } from '../database/services/CheckInService';
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
@@ -194,6 +195,7 @@ useEffect(() => {
 
   const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' });
   const maxPlaces = 3;
+  
   const canAddPlace = places.length < maxPlaces;
 
   // Render Empty State
