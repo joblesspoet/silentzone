@@ -553,6 +553,12 @@ private setupReactiveSync() {
    * SCHEDULE-AWARE CATEGORIZATION
    * Returns places that are currently active or will be active soon
    * Works for ANY scheduled location (mosque, office, gym, etc.)
+   * 
+   * CRITICAL: Returns TWO separate lists:
+   * 1. activePlaces: Places within monitoring window (for location checking)
+   * 2. upcomingSchedules: ALL future schedules (for alarm scheduling)
+   * 
+   * UPDATED: Now checks TOMORROW's schedules too for seamless overnight transition
    */
   private categorizeBySchedule(enabledPlaces: any[]): {
     activePlaces: any[];
@@ -560,7 +566,8 @@ private setupReactiveSync() {
   } {
     const now = new Date();
     const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
-    const currentDay = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
+    const currentDayIndex = now.getDay();
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
     const activePlaces: any[] = [];
     const upcomingSchedules: UpcomingSchedule[] = [];
@@ -572,94 +579,123 @@ private setupReactiveSync() {
         continue;
       }
 
-      // Check each schedule
-      for (const schedule of place.schedules) {
-        // Day check
-        if (schedule.days.length > 0 && !schedule.days.includes(currentDay)) {
-          // console.log(`[LocationService] ${place.name}: Day mismatch (${currentDay} not in [${schedule.days}])`);
-          continue;
-        }
+      // Check each schedule for TODAY and TOMORROW
+      // offset 0 = Today, offset 1 = Tomorrow
+      for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+         const targetDayIndex = (currentDayIndex + dayOffset) % 7;
+         const targetDayName = days[targetDayIndex];
 
-        const [startHours, startMins] = schedule.startTime.split(':').map(Number);
-        const [endHours, endMins] = schedule.endTime.split(':').map(Number);
-        const startTimeMinutes = startHours * 60 + startMins;
-        const endTimeMinutes = endHours * 60 + endMins;
+         for (const schedule of place.schedules) {
+            // Day check
+            if (schedule.days.length > 0 && !schedule.days.includes(targetDayName)) {
+               continue;
+            }
 
-        // Calculate with activation window and grace period
-        const preActivationMinutes = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
-        const postGraceMinutes = CONFIG.SCHEDULE.POST_GRACE_MINUTES;
-        
-        const effectiveStartMinutes = startTimeMinutes - preActivationMinutes;
-        const effectiveEndMinutes = endTimeMinutes + postGraceMinutes;
+            const [startHours, startMins] = schedule.startTime.split(':').map(Number);
+            const [endHours, endMins] = schedule.endTime.split(':').map(Number);
+            
+            // Basic minutes in the target day
+            let startTimeMinutes = startHours * 60 + startMins;
+            let endTimeMinutes = endHours * 60 + endMins;
 
-        // Handle overnight schedules (e.g., night shift 22:00 - 06:00)
-        const isOvernight = startTimeMinutes > endTimeMinutes;
-        let isInEffectiveWindow = false;
+            // If checking TOMORROW, shift times forward by 24 hours (1440 minutes)
+            if (dayOffset === 1) {
+               startTimeMinutes += 1440;
+               endTimeMinutes += 1440;
+            }
 
-        if (!isOvernight) {
-          isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes && 
-                                currentTimeMinutes <= effectiveEndMinutes;
-        } else {
-          isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes || 
-                                currentTimeMinutes <= effectiveEndMinutes;
-        }
+            // Calculate with activation window and grace period
+            const preActivationMinutes = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
+            const postGraceMinutes = CONFIG.SCHEDULE.POST_GRACE_MINUTES;
+            
+            const effectiveStartMinutes = startTimeMinutes - preActivationMinutes;
+            const effectiveEndMinutes = endTimeMinutes + postGraceMinutes;
 
-        /*
-        // Debug logging
-        console.log(
-          `[LocationService] Schedule Check for ${place.name}: \n` +
-          `  Current: ${currentTimeMinutes} (${Math.floor(currentTimeMinutes/60)}:${currentTimeMinutes%60})\n` +
-          `  Window: ${effectiveStartMinutes} - ${effectiveEndMinutes}\n` +
-          `  Match: ${isInEffectiveWindow}`
-        );
-        */
+            // Handle overnight schedules (e.g., night shift 22:00 - 06:00)
+            const isOvernight = (startHours * 60 + startMins) > (endHours * 60 + endMins);
+            
+            // Note: Even for overnight, if we are checking TOMORROW with +1440 offset,
+            // standard comparison works nicely because we linearize time.
+            let isInEffectiveWindow = false;
 
-        if (isInEffectiveWindow) {
-          if (!activePlaces.find(p => p.id === place.id)) {
-            activePlaces.push(place);
-          }
+            if (dayOffset === 0 && isOvernight) {
+               // Special handling for overnight ON THE SAME DAY vs NEXT DAY wrap is tricky with linear time.
+               // But standard overnight logic applies to "Today" specifically.
+               isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes || 
+                                     currentTimeMinutes <= effectiveEndMinutes;
+               
+               // Fix: If checking TODAY and it's overnight starting yesterday (e.g. 02:00 < 22:00), 
+               // effectiveStartMinutes is 22:00-15m.
+               // This standard check works.
+            } else {
+               // Standard linear check (works for Today non-overnight AND Tomorrow shifted)
+               isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes && 
+                                     currentTimeMinutes <= effectiveEndMinutes;
+            }
 
-          // Calculate minutes until start
-          let minutesUntilStart: number;
-          let isOvernightActive = false;
+            // Add to activePlaces if in monitoring window
+            if (isInEffectiveWindow) {
+               if (!activePlaces.find(p => p.id === place.id)) {
+                  activePlaces.push(place);
+               }
+            }
 
-          if (isOvernight && currentTimeMinutes < startTimeMinutes) {
-             // We are in the "Next Day" part of the overnight schedule
-             minutesUntilStart = 0; 
-             isOvernightActive = true;
-          } else if (currentTimeMinutes < startTimeMinutes) {
-            minutesUntilStart = startTimeMinutes - currentTimeMinutes;
-          } else if (currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes) {
-            minutesUntilStart = 0; // Already in scheduled time
-          } else {
-            // Should be covered by isInEffectiveWindow check, but fallback
-             minutesUntilStart = 0;
-          }
+            // FUTURE SCHEDULE CHECK
+            let isFutureSchedule = false;
+            let minutesUntilStart: number = 0;
+            let isOvernightActive = false;
 
-          // Create schedule object
-          const scheduleStart = new Date(now);
-          scheduleStart.setHours(startHours, startMins, 0, 0);
-          
-          if (isOvernightActive) {
-             // If we are in the early morning part, the start time was YESTERDAY
-             scheduleStart.setDate(scheduleStart.getDate() - 1);
-          }
-          
-          const scheduleEnd = new Date(now);
-          scheduleEnd.setHours(endHours, endMins, 0, 0);
-          if (isOvernight && endTimeMinutes < startTimeMinutes && !isOvernightActive) {
-            // If we are in the evening part, end time is TOMORROW
-            scheduleEnd.setDate(scheduleEnd.getDate() + 1);
-          }
+            if (dayOffset === 0 && isOvernight && currentTimeMinutes < (startHours * 60 + startMins)) {
+               // Overnight part 2 (early morning of next day schedule started yesterday)
+               // ACTUALLY: If isOvernight is true (e.g. 22:00-06:00), and now is 02:00.
+               // 02:00 < 22:00.
+               // We are in the "active" part.
+               minutesUntilStart = 0;
+               isOvernightActive = true;
+               isFutureSchedule = false;
+            } else if (currentTimeMinutes < startTimeMinutes) {
+               // Future schedule (not started yet)
+               // This works for Today (10:00 < 12:00) AND Tomorrow (23:00 < 24:05)
+               minutesUntilStart = startTimeMinutes - currentTimeMinutes;
+               isFutureSchedule = true;
+            } else if (currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes) {
+               // Currently active
+               minutesUntilStart = 0;
+               isFutureSchedule = false;
+            } else {
+               // Schedule has passed
+               continue;
+            }
 
-          upcomingSchedules.push({
-            placeId: place.id,
-            placeName: place.name,
-            startTime: scheduleStart,
-            endTime: scheduleEnd,
-            minutesUntilStart,
-          });
-        }
+            // Add to upcomingSchedules if it's in the effective window OR a future schedule
+            // Only add unique schedules based on calculated start time to avoid dupes if logic overlaps
+            // (But offset 1 ensures uniqueness from offset 0 usually)
+            if (isInEffectiveWindow || isFutureSchedule) {
+               // Create schedule object
+               const scheduleStart = new Date(now);
+               scheduleStart.setHours(startHours, startMins, 0, 0);
+               
+               // Adjust date based on offset
+               scheduleStart.setDate(scheduleStart.getDate() + dayOffset);
+
+               if (isOvernightActive && dayOffset === 0) {
+                  // If we are in the early morning part of an overnight schedule, it started yesterday
+                  scheduleStart.setDate(scheduleStart.getDate() - 1);
+               }
+               
+               const scheduleEnd = new Date(scheduleStart);
+               const durationMinutes = (endHours * 60 + endMins) - (startHours * 60 + startMins) + (isOvernight ? 1440 : 0);
+               scheduleEnd.setMinutes(scheduleEnd.getMinutes() + durationMinutes);
+
+               upcomingSchedules.push({
+                  placeId: place.id,
+                  placeName: place.name,
+                  startTime: scheduleStart,
+                  endTime: scheduleEnd,
+                  minutesUntilStart,
+               });
+            }
+         }
       }
     }
 
@@ -719,10 +755,15 @@ private setupReactiveSync() {
     }
 
     // 2. If schedule starts within 15 minutes → Monitor
+    // CRITICAL FIX: Added 5-minute safety buffer.
+    // If schedule is < 20 mins away, the alarm would be < 5 mins away.
+    // Short alarms are unreliable, so just start monitoring immediately.
     if (upcomingSchedules.length > 0) {
       const nextSchedule = upcomingSchedules[0];
-      if (nextSchedule.minutesUntilStart <= 15) {
-        console.log(`[LocationService] ✅ Pre-start monitoring: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart}m`);
+      const safetyThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES + 5; // 20 minutes
+      
+      if (nextSchedule.minutesUntilStart <= safetyThreshold) {
+        console.log(`[LocationService] ✅ Pre-start monitoring: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart}m (within ${safetyThreshold}m threshold)`);
         return true;
       }
     }
@@ -734,6 +775,7 @@ private setupReactiveSync() {
 
   /**
    * Schedule AlarmManager to wake before next prayer
+   * CRITICAL: Must schedule for the NEXT future schedule, not the current one
    */
   private async scheduleNextAlarm(upcomingSchedules: any[]) {
     if (upcomingSchedules.length === 0) {
@@ -741,17 +783,34 @@ private setupReactiveSync() {
       return;
     }
 
+    // Find the NEXT schedule
+    // CRITICAL: We look at ALL upcoming schedules. 
+    // If the first one is within the 15-min window, we STILL schedule a backup alarm for it
+    // just in case the service dies while monitoring.
+    if (upcomingSchedules.length === 0) {
+      console.log('[LocationService] No upcoming schedules to alarm for');
+      return;
+    }
+    
+    // We want to alarm for the very first upcoming schedule, 
+    // even if we are already monitoring it (redundancy).
     const nextSchedule = upcomingSchedules[0];
-    const wakeMinutes = nextSchedule.minutesUntilStart - 15; // Wake 15 min early
+
+    // Calculate wake time:
+    // Standard: 15 mins before start
+    // If already within 15 mins: 2 mins before start (Backup)
+    let wakeMinutes = nextSchedule.minutesUntilStart - CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
 
     if (wakeMinutes <= 0) {
-       // Already handled by 'shouldStartMonitoring' or passed
-       return;
+       // We are in the pre-activation window. 
+       // Schedule backup alarm for 1 minute before start (or 1 min from now if very close)
+       wakeMinutes = Math.max(1, nextSchedule.minutesUntilStart - 1);
+       console.log(`[LocationService] ⚠️ Within monitoring window. Scheduling BACKUP alarm in ${wakeMinutes}m`);
+    } else {
+       console.log(
+        `[LocationService] ⏰ Scheduling alarm in ${wakeMinutes}m for ${nextSchedule.placeName} (starts at ${nextSchedule.startTime.toLocaleTimeString()})`
+      );
     }
-
-    console.log(
-      `[LocationService] ⏰ Scheduling alarm in ${wakeMinutes}m for ${nextSchedule.placeName}`
-    );
 
     try {
       const trigger: TimestampTrigger = {
@@ -787,6 +846,7 @@ private setupReactiveSync() {
       );
 
       this.nextAlarmScheduled = true;
+      console.log(`[LocationService] ✅ Alarm set for ${new Date(trigger.timestamp).toLocaleTimeString()}`);
     } catch (error) {
       console.error('[LocationService] Failed to schedule alarm:', error);
     }
@@ -932,18 +992,27 @@ private setupReactiveSync() {
     }
 
     const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
-    const { activePlaces } = this.categorizeBySchedule(enabledPlaces);
+    const { activePlaces, upcomingSchedules } = this.categorizeBySchedule(enabledPlaces);
 
-    console.log(`[LocationService] Checking ${activePlaces.length} active locations`);
+    // Filter upcoming schedules that are in the "pre-start" window
+    const relevantUpcomingPlaces = upcomingSchedules
+        .filter(s => s.minutesUntilStart <= CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES)
+        .map(s => enabledPlaces.find(p => p.id === s.placeId))
+        .filter(p => p !== undefined);
+
+    const placesToCheck = [...activePlaces, ...relevantUpcomingPlaces];
+    // Remove duplicates
+    const uniquePlacesToCheck = Array.from(new Set(placesToCheck.map(p => p.id)))
+        .map(id => placesToCheck.find(p => p.id === id));
+
+    console.log(`[LocationService] Checking ${activePlaces.length} active + ${relevantUpcomingPlaces.length} upcoming locations`);
 
     await this.validateCurrentCheckIns(latitude, longitude, accuracy, activePlaces);
     
-    const insidePlaces = this.determineInsidePlaces(latitude, longitude, accuracy, activePlaces);
+    // Check against ALL relevant places (Active + Upcoming)
+    const insidePlaces = this.determineInsidePlaces(latitude, longitude, accuracy, uniquePlacesToCheck);
     
     await this.handleScheduleCleanup(activePlaces);
-    await this.handleNewEntries(insidePlaces);
-
-    // NEW: Schedule cleanup timer for schedule end
     await this.handleNewEntries(insidePlaces);
 
     // NEW: Schedule auto-stop when prayer ends
@@ -959,6 +1028,10 @@ private setupReactiveSync() {
     if (!this.realm) return;
 
     const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+    // We only force exit if it's NOT active AND NOT upcoming (i.e. completely finished)
+    // But validateCurrentCheckIns is mostly about "Are we still physically inside?"
+    // If the schedule ended, handleScheduleCleanup handles it.
+    
     const activePlaceIds = new Set(activePlaces.map(p => p.id));
 
     for (const log of activeLogs) {

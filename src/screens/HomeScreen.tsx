@@ -186,7 +186,10 @@ useEffect(() => {
 
   // Determine if specific place is "Current Location" (active)
   const isInsidePlace = (place: any) => {
-    return place.isInside;
+    // REAL-TIME CHECK: querying CheckInService directly is more reliable 
+    // than relying on place.isInside which might be stale or reflect monitoring state.
+    const activeCheckIns = CheckInService.getActiveCheckIns(realm);
+    return activeCheckIns.some(c => c.placeId === place.id);
   };
 
   const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' });
