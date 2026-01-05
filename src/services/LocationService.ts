@@ -186,9 +186,7 @@ class LocationService {
       return;
     }
 
-    // Check if we have background location permission
     // Check for CRITICAL background location permission (Loc + Bg + Notif)
-    // We do NOT block on DND here. If missing, we'll prompt when entering zone.
     const hasPermission = await PermissionsManager.hasCriticalPermissions();
     if (!hasPermission) {
       console.error('[LocationService] Missing critical permissions (Loc/Bg/Notif)!');
@@ -203,24 +201,35 @@ class LocationService {
 
     try {
       // Small delay to ensure notifee is fully ready
-     await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
 
       const enabledCount = this.realm 
         ? PlaceService.getEnabledPlaces(this.realm).length 
         : 0;
 
-      const inScheduleWindow = this.isInScheduleWindow;
       const nextSchedule = this.upcomingSchedules[0];
 
+      // Default state
       let title = '🛡️ Silent Zone Running';
       let body = `Monitoring ${enabledCount} active location${enabledCount !== 1 ? 's' : ''}`;
       
-      if (inScheduleWindow && nextSchedule) {
+      // Check if we are ACTUALLY inside (checked in)
+      const activeCheckIns = this.realm ? CheckInService.getActiveCheckIns(this.realm) : [];
+      
+      if (activeCheckIns.length > 0) {
+        // We are INSIDE
+        const placeId = activeCheckIns[0].placeId;
+        const place = this.realm ? PlaceService.getPlaceById(this.realm, placeId as string) : null;
         title = '🔕 Silent Zone Active';
-        body = `📍 Inside ${nextSchedule.placeName}`;
+        body = `📍 Inside ${place ? place.name : 'Unknown Location'}`;
       } else if (nextSchedule && nextSchedule.minutesUntilStart <= 15) {
+        // Approaching
         title = '⏱️ Preparing to Silence';
         body = `🔜 ${nextSchedule.placeName} starts in ${nextSchedule.minutesUntilStart} min`;
+      } else if (this.isInScheduleWindow && nextSchedule) {
+        // In schedule window but NOT validated as inside yet (or outside geofence)
+        title = '🛡️ Silent Zone Monitoring';
+        body = `Targeting ${nextSchedule.placeName}`;
       }
 
       await notifee.displayNotification({
@@ -411,6 +420,15 @@ private setupReactiveSync() {
       }
 
       this.syncGeofences();
+    }
+  });
+
+  // Listen for CheckInLog changes to update notification
+  const checkIns = this.realm.objects('CheckInLog');
+  checkIns.addListener((collection, changes) => {
+    if (changes.insertions.length > 0 || changes.deletions.length > 0) {
+      console.log('[LocationService] CheckIns changed, updating notification');
+      this.startForegroundService();
     }
   });
 
