@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import Realm from 'realm';
-import { schema, SCHEMA_VERSION } from './schemas';
+import { schemas, SCHEMA_VERSION } from './schemas';
 import { migrateFromAsyncStorage } from './migration';
 
 const RealmContext = createContext<Realm | null>(null);
@@ -21,7 +21,7 @@ export const RealmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const initRealm = async () => {
       try {
         const realmInstance = await Realm.open({
-          schema: schema,
+          schema: schemas,
           schemaVersion: SCHEMA_VERSION,
         });
         

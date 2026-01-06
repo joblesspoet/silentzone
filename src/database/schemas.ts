@@ -62,5 +62,14 @@ export const PreferencesSchema: Realm.ObjectSchema = {
   },
 };
 
-export const schema = [PlaceSchema, CheckInLogSchema, PreferencesSchema, ScheduleSchema];
+import { SystemLogSchema } from './schemas/SystemLog';
+
+// Add to schema list
+export const schemas = [
+  PlaceSchema,
+  ScheduleSchema,
+  CheckInLogSchema,
+  PreferencesSchema,
+  SystemLogSchema,
+];
 export const SCHEMA_VERSION = 6;

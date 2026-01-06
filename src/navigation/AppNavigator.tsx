@@ -12,6 +12,7 @@ import { PermissionLocationScreen } from '../screens/PermissionLocationScreen';
 import { PermissionNotificationScreen } from '../screens/PermissionNotificationScreen';
 import { PermissionDndScreen } from '../screens/PermissionDndScreen';
 import { PermissionBatteryScreen } from '../screens/PermissionBatteryScreen';
+import { LogViewerScreen } from '../screens/LogViewerScreen';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -26,6 +27,7 @@ export type RootStackParamList = {
   AddPlace: undefined;
   PlaceDetail: { placeId: string };
   EditPlace: { placeId: string };
+  Logs: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -57,6 +59,7 @@ export const AppNavigator = () => {
       />
       <Stack.Screen name="PlaceDetail" component={PlaceDetailScreen} />
       <Stack.Screen name="EditPlace" component={EditPlaceScreen} />
+      <Stack.Screen name="Logs" component={LogViewerScreen} />
     </Stack.Navigator>
   );
 };

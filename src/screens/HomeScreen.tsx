@@ -250,11 +250,14 @@ useEffect(() => {
               styles.pauseButtonText,
               activeCount === 0 && styles.pauseButtonTextDisabled
             ]}>
-              {!trackingEnabled ? "RESUME TRACKING" : "PAUSE TRACKING"}
+              {!trackingEnabled ? "Resume Tracking" : "Pause Tracking"}
             </Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.appTitle}>Silent Zone</Text>
+        <Text 
+          style={styles.appTitle}
+          onLongPress={() => navigation.navigate('Logs')}
+        >Silent Zone</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

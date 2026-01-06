@@ -16,6 +16,7 @@ import Geolocation from '@react-native-community/geolocation';
 import RingerMode, { RINGER_MODE } from '../modules/RingerMode';
 import { PermissionsManager } from '../permissions/PermissionsManager';
 import { NativeModules } from 'react-native';
+import { Logger } from './Logger';
 
 /**
  * UNIVERSAL LOCATION SERVICE
@@ -30,59 +31,7 @@ import { NativeModules } from 'react-native';
  * - Gym (45m radius, workout schedule)
  * - Any other location!
  */
-const CONFIG = {
-  // Debouncing
-  DEBOUNCE_TIME: 8000, // 8 seconds
-  
-  // Accuracy thresholds
-  MIN_ACCURACY_THRESHOLD: 50,  // Good for small radius (30m+)
-  ACTIVE_MIN_ACCURACY: 80,     // For already active places
-  MAX_ACCEPTABLE_ACCURACY: 100,
-  
-  // GPS settings
-  GPS_TIMEOUT: 30000,           // 30 seconds
-  GPS_MAXIMUM_AGE: 5000,        // 5 seconds - fresh readings
-  
-  // Check intervals - ADAPTIVE
-  INTERVALS: {
-    SCHEDULE_ACTIVE: 10000,        // 10 seconds - during scheduled time
-    SCHEDULE_APPROACHING: 20000,   // 20 seconds - before scheduled time
-    
-    // Distance-based (for always-active places)
-    VERY_CLOSE: 15000,    // 15 seconds - within 100m
-    CLOSE: 45000,         // 45 seconds - within 500m
-    NEAR: 3 * 60 * 1000,  // 3 minutes - within 2km
-    FAR: 5 * 60 * 1000,   // 5 minutes - beyond 2km
-    
-    // Deep sleep (no active or upcoming schedules)
-    DEEP_SLEEP: 30 * 60 * 1000, // 30 minutes max
-  },
-  
-  // Distance thresholds
-  DISTANCE: {
-    VERY_CLOSE: 100,   // meters
-    CLOSE: 500,        // meters
-    NEAR: 2000,        // meters
-  },
-  
-  // Schedule settings
-  SCHEDULE: {
-    PRE_ACTIVATION_MINUTES: 15,  // Start checking 15 min before schedule
-    POST_GRACE_MINUTES: 0,        // Strict end time (was 5)
-    SMALL_RADIUS_THRESHOLD: 60,  // Consider "small" if under this
-  },
-  
-  // Geofence settings
-  GEOFENCE_RADIUS_BUFFER: 15,    // meters to add
-  MIN_GEOFENCE_RADIUS: 25,       // minimum radius
-  EXIT_BUFFER_MULTIPLIER: 1.15,  // 15% buffer for exit
-  
-  // Notification channels
-  CHANNELS: {
-    SERVICE: 'location-tracking-service',
-    ALERTS: 'location-alerts',
-  },
-};
+import { CONFIG } from '../config/config';
 
 interface LocationState {
   latitude: number;
@@ -131,7 +80,7 @@ class LocationService {
    */
   async initialize(realmInstance: Realm) {
     if (this.isReady) {
-      console.log('[LocationService] Already initialized');
+      Logger.info('[LocationService] Already initialized');
       return;
     }
 
@@ -148,7 +97,7 @@ class LocationService {
     this.setupServiceRestart();
 
     this.isReady = true;
-    console.log('[LocationService] ✅ Service initialized');
+    Logger.info('[LocationService] ✅ Service initialized');
   }
 
   /**
@@ -171,9 +120,9 @@ class LocationService {
         sound: 'default',
       });
       
-      console.log('[LocationService] Notification channels created');
+      Logger.info('[LocationService] Notification channels created');
     } catch (error) {
-      console.error('[LocationService] Failed to create channels:', error);
+      Logger.error('[LocationService] Failed to create channels:', error);
     }
   }
 
@@ -189,7 +138,7 @@ class LocationService {
     // Check for CRITICAL background location permission (Loc + Bg + Notif)
     const hasPermission = await PermissionsManager.hasCriticalPermissions();
     if (!hasPermission) {
-      console.error('[LocationService] Missing critical permissions (Loc/Bg/Notif)!');
+      Logger.error('[LocationService] Missing critical permissions (Loc/Bg/Notif)!');
       // Show notification to user
       await this.showNotification(
         'Permission Required',
@@ -255,9 +204,9 @@ class LocationService {
       });
 
       this.startGeofenceMonitoring();
-      console.log('[LocationService] Foreground service started');
+      Logger.info('[LocationService] Foreground service started');
     } catch (error) {
-      console.error('[LocationService] Failed to start service:', error);
+      Logger.error('[LocationService] Failed to start service:', error);
     }
   }
 
@@ -271,7 +220,7 @@ class LocationService {
     if (!this.realm || this.realm.isClosed) return;
 
     const activeLogs = CheckInService.getActiveCheckIns(this.realm);
-    console.log(`[LocationService] Restoring timers for ${activeLogs.length} active sessions`);
+    Logger.info(`[LocationService] Restoring timers for ${activeLogs.length} active sessions`);
 
     for (const log of activeLogs) {
       const placeId = log.placeId as string;
@@ -288,7 +237,7 @@ class LocationService {
         
         if (now >= endTime) {
            // Should have ended!
-           console.log(`[LocationService] Found expired session for ${place.name}, ending now`);
+           Logger.info(`[LocationService] Found expired session for ${place.name}, ending now`);
            await this.handleGeofenceExit(placeId, true);
         } else {
            const delay = endTime - now;
@@ -307,7 +256,7 @@ class LocationService {
     // Set up restart on kill
     const restartInterval = setInterval(() => {
       if (this.watchId === null && this.geofencesActive) {
-        console.log('[LocationService] ⚠️ Service appears stopped, restarting');
+        Logger.info('[LocationService] ⚠️ Service appears stopped, restarting');
         this.startGeofenceMonitoring();
       }
     }, 60000); // Check every minute
@@ -324,9 +273,9 @@ class LocationService {
       try {
         await notifee.stopForegroundService();
         await notifee.cancelNotification('location-tracking-service');
-        console.log('[LocationService] Service stopped');
+        Logger.info('[LocationService] Service stopped');
       } catch (error) {
-        console.error('[LocationService] Error stopping service:', error);
+        Logger.error('[LocationService] Error stopping service:', error);
       }
     }
     this.stopGeofenceMonitoring();
@@ -336,7 +285,7 @@ class LocationService {
    * Emergency cleanup for crashes
    */
   async cleanupOnCrash() {
-    console.log('[LocationService] Emergency cleanup triggered');
+    Logger.info('[LocationService] Emergency cleanup triggered');
     
     try {
       if (!this.realm || this.realm.isClosed) return;
@@ -344,19 +293,19 @@ class LocationService {
       const activeLogs = CheckInService.getActiveCheckIns(this.realm);
       
       if (activeLogs.length > 0) {
-        console.log(`[LocationService] Restoring sound for ${activeLogs.length} active locations`);
+        Logger.info(`[LocationService] Restoring sound for ${activeLogs.length} active locations`);
         
         for (const log of activeLogs) {
           try {
             await this.restoreRingerMode(log.id as string);
             CheckInService.logCheckOut(this.realm, log.id as string);
           } catch (error) {
-            console.error('[LocationService] Failed to restore:', error);
+            Logger.error('[LocationService] Failed to restore:', error);
           }
         }
       }
     } catch (error) {
-      console.error('[LocationService] Emergency cleanup failed:', error);
+      Logger.error('[LocationService] Emergency cleanup failed:', error);
     } finally {
       await this.stopForegroundService();
     }
@@ -383,7 +332,7 @@ private setupReactiveSync() {
       changes.deletions.length > 0 ||
       changes.newModifications.length > 0
     ) {
-      console.log('[LocationService] Places changed, syncing');
+      Logger.info('[LocationService] Places changed, syncing');
       
       // Check if we should auto-enable tracking
       const enabledPlaces = Array.from(collection).filter((p: any) => p.isEnabled);
@@ -391,7 +340,7 @@ private setupReactiveSync() {
       if (enabledPlaces.length > 0) {
         const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
         if (prefs && !prefs.trackingEnabled) {
-          console.log('[LocationService] ✅ Auto-enabling tracking (places added)');
+          Logger.info('[LocationService] ✅ Auto-enabling tracking (places added)');
           
           // Enable tracking and wait for it to complete
           this.realm!.write(() => {
@@ -400,7 +349,7 @@ private setupReactiveSync() {
           
           // Wait longer for all listeners to process
           setTimeout(() => {
-            console.log('[LocationService] Syncing after tracking enabled');
+            Logger.info('[LocationService] Syncing after tracking enabled');
             this.syncGeofences();
           }, 300);
           
@@ -412,7 +361,7 @@ private setupReactiveSync() {
       if (enabledPlaces.length === 0) {
         const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
         if (prefs && prefs.trackingEnabled) {
-          console.log('[LocationService] ❌ Auto-disabling tracking (no enabled places)');
+          Logger.info('[LocationService] ❌ Auto-disabling tracking (no enabled places)');
           this.realm!.write(() => {
             prefs.trackingEnabled = false;
           });
@@ -427,7 +376,7 @@ private setupReactiveSync() {
   const checkIns = this.realm.objects('CheckInLog');
   checkIns.addListener((collection, changes) => {
     if (changes.insertions.length > 0 || changes.deletions.length > 0) {
-      console.log('[LocationService] CheckIns changed, updating notification');
+      Logger.info('[LocationService] CheckIns changed, updating notification');
       this.startForegroundService();
     }
   });
@@ -435,7 +384,7 @@ private setupReactiveSync() {
   const prefs = this.realm.objectForPrimaryKey<Preferences>('Preferences', 'USER_PREFS');
   if (prefs) {
     prefs.addListener(() => {
-      console.log('[LocationService] Preferences changed, syncing');
+      Logger.info('[LocationService] Preferences changed, syncing');
       this.syncGeofences();
     });
   }
@@ -453,7 +402,7 @@ private setupReactiveSync() {
       const trackingEnabled = this.isPreferenceTrackingEnabled();
       
       if (!trackingEnabled) {
-        console.log('[LocationService] Tracking disabled');
+        Logger.info('[LocationService] Tracking disabled');
         await this.stopForegroundService();
         await Geofencing.removeAllGeofence();
         this.geofencesActive = false;
@@ -472,7 +421,7 @@ private setupReactiveSync() {
       // Log next schedule if any
       if (upcomingSchedules.length > 0) {
         const next = upcomingSchedules[0];
-        console.log(
+        Logger.info(
           `[LocationService] Next schedule: ${next.placeName} in ${next.minutesUntilStart} minutes`
         );
       }
@@ -484,14 +433,14 @@ private setupReactiveSync() {
          this.geofencesActive = false;
 
          if (enabledPlaces.length === 0) {
-           console.log('[LocationService] No locations to monitor');
+           Logger.info('[LocationService] No locations to monitor');
            await this.stopForegroundService();
            return;
          }
 
          const hasPermissions = await PermissionsManager.hasCriticalPermissions();
          if (!hasPermissions) {
-           console.warn('[LocationService] Missing required permissions');
+           Logger.warn('[LocationService] Missing required permissions');
            await this.stopForegroundService();
            return;
          }
@@ -520,7 +469,7 @@ private setupReactiveSync() {
            });
          }
 
-         console.log(`[LocationService] Added ${placesToMonitor.size} geofences (Active + Upcoming)`);
+         Logger.info(`[LocationService] Added ${placesToMonitor.size} geofences (Active + Upcoming)`);
          await this.startForegroundService();
          this.geofencesActive = true;
          
@@ -529,7 +478,7 @@ private setupReactiveSync() {
 
       } else {
          // PASSIVE MODE (Sleep & Alarm)
-         console.log('[LocationService] 💤 Entering passive mode (using alarms)');
+         Logger.info('[LocationService] 💤 Entering passive mode (using alarms)');
          
          // Ensure we cleanup any stuck checkins before sleeping if we are transitioning from active
          if (this.geofencesActive) {
@@ -543,7 +492,7 @@ private setupReactiveSync() {
       }
       
     } catch (error) {
-      console.error('[LocationService] Sync failed:', error);
+      Logger.error('[LocationService] Sync failed:', error);
     } finally {
       this.isSyncing = false;
     }
@@ -712,7 +661,7 @@ private setupReactiveSync() {
     
     for (const log of activeLogs) {
       if (!enabledIdsSet.has(log.placeId as string)) {
-        console.log(`[LocationService] Force checkout: ${log.placeId}`);
+        Logger.info(`[LocationService] Force checkout: ${log.placeId}`);
         await this.handleGeofenceExit(log.placeId as string, true);
       }
     }
@@ -750,7 +699,7 @@ private setupReactiveSync() {
   private shouldStartMonitoring(activePlaces: any[], upcomingSchedules: any[]): boolean {
     // 1. If schedule is active right now → Monitor
     if (activePlaces.length > 0) {
-      // console.log('[LocationService] ✅ Schedule active now');
+      // Logger.info('[LocationService] ✅ Schedule active now');
       return true;
     }
 
@@ -763,13 +712,13 @@ private setupReactiveSync() {
       const safetyThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES + 5; // 20 minutes
       
       if (nextSchedule.minutesUntilStart <= safetyThreshold) {
-        console.log(`[LocationService] ✅ Pre-start monitoring: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart}m (within ${safetyThreshold}m threshold)`);
+        Logger.info(`[LocationService] ✅ Pre-start monitoring: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart}m (within ${safetyThreshold}m threshold)`);
         return true;
       }
     }
 
     // 3. Otherwise → Don't monitor, use alarm instead
-    // console.log('[LocationService] ⏰ Using alarm (next schedule > 15m away)');
+    // Logger.info('[LocationService] ⏰ Using alarm (next schedule > 15m away)');
     return false;
   }
 
@@ -779,7 +728,7 @@ private setupReactiveSync() {
    */
   private async scheduleNextAlarm(upcomingSchedules: any[]) {
     if (upcomingSchedules.length === 0) {
-      console.log('[LocationService] No upcoming schedules to alarm for');
+      Logger.info('[LocationService] No upcoming schedules to alarm for');
       return;
     }
 
@@ -788,7 +737,7 @@ private setupReactiveSync() {
     // If the first one is within the 15-min window, we STILL schedule a backup alarm for it
     // just in case the service dies while monitoring.
     if (upcomingSchedules.length === 0) {
-      console.log('[LocationService] No upcoming schedules to alarm for');
+      Logger.info('[LocationService] No upcoming schedules to alarm for');
       return;
     }
     
@@ -805,9 +754,9 @@ private setupReactiveSync() {
        // We are in the pre-activation window. 
        // Schedule backup alarm for 1 minute before start (or 1 min from now if very close)
        wakeMinutes = Math.max(1, nextSchedule.minutesUntilStart - 1);
-       console.log(`[LocationService] ⚠️ Within monitoring window. Scheduling BACKUP alarm in ${wakeMinutes}m`);
+       Logger.info(`[LocationService] ⚠️ Within monitoring window. Scheduling BACKUP alarm in ${wakeMinutes}m`);
     } else {
-       console.log(
+       Logger.info(
         `[LocationService] ⏰ Scheduling alarm in ${wakeMinutes}m for ${nextSchedule.placeName} (starts at ${nextSchedule.startTime.toLocaleTimeString()})`
       );
     }
@@ -825,7 +774,7 @@ private setupReactiveSync() {
       await notifee.createTriggerNotification(
         {
           id: 'prayer-alarm',
-          title: 'Prayer Time Approaching',
+          title: 'Schedule Approaching',
           body: `${nextSchedule.placeName} starting soon`,
           data: {
             action: 'START_MONITORING',
@@ -846,9 +795,9 @@ private setupReactiveSync() {
       );
 
       this.nextAlarmScheduled = true;
-      console.log(`[LocationService] ✅ Alarm set for ${new Date(trigger.timestamp).toLocaleTimeString()}`);
+      Logger.info(`[LocationService] ✅ Alarm set for ${new Date(trigger.timestamp).toLocaleTimeString()}`);
     } catch (error) {
-      console.error('[LocationService] Failed to schedule alarm:', error);
+      Logger.error('[LocationService] Failed to schedule alarm:', error);
     }
   }
 
@@ -856,11 +805,11 @@ private setupReactiveSync() {
    * Handle alarm firing (called when notification appears)
    */
   async handleAlarmFired() {
-    console.log('[LocationService] ⏰ Alarm fired - waking up service');
+    Logger.info('[LocationService] ⏰ Alarm fired - waking up service');
     if (!this.realm) {
         // If coming from dead background, might need re-init, but usually 'initialize' called from index.js handles it.
         // This method is called AFTER initialize if wired up correctly.
-        console.warn('[LocationService] handleAlarmFired called but realm not ready?');
+        Logger.warn('[LocationService] handleAlarmFired called but realm not ready?');
     }
     // Force a sync, which will see we are <15m and start monitoring
     await this.syncGeofences();
@@ -900,10 +849,10 @@ private setupReactiveSync() {
     const stopDelay = msUntilEnd + 60000; // +1 minute buffer
 
     if (stopDelay > 0) {
-      console.log(`[LocationService] ⏰ Auto-stop scheduled in ${Math.round(stopDelay / 60000)}m`);
+      Logger.info(`[LocationService] ⏰ Auto-stop scheduled in ${Math.round(stopDelay / 60000)}m`);
       
       this.scheduleEndTimer = setTimeout(async () => {
-        console.log('[LocationService] ⏰ Schedule ended - stopping monitoring');
+        Logger.info('[LocationService] ⏰ Schedule ended - stopping monitoring');
         
         // Force sync will see no active schedules -> activePlaces=[], will stop service & schedule next alarm
         await this.syncGeofences();
@@ -923,15 +872,15 @@ private setupReactiveSync() {
     Geolocation.getCurrentPosition(
       async (position) => {
         try {  // ← Add this
-          console.log('[LocationService] Initial location acquired');
+          Logger.info('[LocationService] Initial location acquired');
           await this.processLocationUpdate(position);
           // Restore timers after initial location check
           await this.restoreActiveTimers();
         } catch (error) {  // ← Add this
-          console.error('[LocationService] Processing error:', error);
+          Logger.error('[LocationService] Processing error:', error);
         }
       },
-      (error) => console.error('[LocationService] Initial location error:', error),
+      (error) => Logger.error('[LocationService] Initial location error:', error),
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
 
@@ -945,18 +894,18 @@ private setupReactiveSync() {
       forceRequestLocation: true, // Force check
     };
 
-    console.log('[LocationService] Starting native watcher');
+    Logger.info('[LocationService] Starting native watcher');
 
     this.watchId = Geolocation.watchPosition(
       async (position) => {
         try {
           await this.processLocationUpdate(position);
         } catch (error) {
-          console.error('[LocationService] Processing error:', error);
+          Logger.error('[LocationService] Processing error:', error);
         }
       },
       (error) => {
-        console.error('[LocationService] Watch error:', error);
+        Logger.error('[LocationService] Watch error:', error);
         // If error is timeout or position unavailable, retrying is handled by the OS/Library usually
         // But if completely failed, we might want to restart watcher after delay
       },
@@ -980,13 +929,13 @@ private setupReactiveSync() {
       timestamp: Date.now(),
     };
 
-    console.log(
+    Logger.info(
       `[LocationService] Location: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}, ` +
       `accuracy: ${accuracy.toFixed(1)}m`
     );
 
     if (accuracy > CONFIG.MAX_ACCEPTABLE_ACCURACY) {
-      console.warn(`[LocationService] Poor GPS accuracy (${accuracy.toFixed(0)}m)`);
+      Logger.warn(`[LocationService] Poor GPS accuracy (${accuracy.toFixed(0)}m)`);
       // We still process it, but maybe with caution?
       // For now, let's proceed but just warn.
     }
@@ -1005,7 +954,7 @@ private setupReactiveSync() {
     const uniquePlacesToCheck = Array.from(new Set(placesToCheck.map(p => p.id)))
         .map(id => placesToCheck.find(p => p.id === id));
 
-    console.log(`[LocationService] Checking ${activePlaces.length} active + ${relevantUpcomingPlaces.length} upcoming locations`);
+    Logger.info(`[LocationService] Checking ${activePlaces.length} active + ${relevantUpcomingPlaces.length} upcoming locations`);
 
     await this.validateCurrentCheckIns(latitude, longitude, accuracy, activePlaces);
     
@@ -1058,7 +1007,7 @@ private setupReactiveSync() {
                             (accuracy < 50 && distance > effectiveThreshold);
 
       if (confidenceExit) {
-        console.log(
+        Logger.info(
           `[LocationService] EXIT: ${place.name} (dist: ${Math.round(distance)}m)`
         );
         await this.handleGeofenceExit(placeId);
@@ -1092,7 +1041,7 @@ private setupReactiveSync() {
       if (isSmallRadius) {
         if (accuracy < 20) {
           const isInside = distance <= radius + 8;
-          console.log(
+          Logger.info(
             `[LocationService] ${place.name} (PRECISE): dist=${Math.round(distance)}m, inside=${isInside}`
           );
           return isInside;
@@ -1101,7 +1050,7 @@ private setupReactiveSync() {
         if (accuracy < 50) {
           const effectiveDistance = Math.max(0, distance - accuracy * 0.6);
           const isInside = effectiveDistance <= radius + 12;
-          console.log(
+          Logger.info(
             `[LocationService] ${place.name} (MODERATE): dist=${Math.round(distance)}m, inside=${isInside}`
           );
           return isInside;
@@ -1112,14 +1061,14 @@ private setupReactiveSync() {
           const maybeInside = distance <= radius + accuracy * 0.5;
           const isInside = isVeryClose || maybeInside || isActive;
           
-          console.log(
+          Logger.info(
             `[LocationService] ${place.name} (POOR ACC): inside=${isInside}`
           );
           return isInside;
         }
 
         if (isActive) {
-          console.log(`[LocationService] ${place.name}: Maintaining active state`);
+          Logger.info(`[LocationService] ${place.name}: Maintaining active state`);
           return true;
         }
 
@@ -1131,7 +1080,7 @@ private setupReactiveSync() {
       const effectiveDistance = Math.max(0, distance - accuracy);
       const isInside = effectiveDistance <= radiusWithBuffer || distance <= radius + 10;
 
-      console.log(
+      Logger.info(
         `[LocationService] ${place.name}: dist=${Math.round(distance)}m, inside=${isInside}`
       );
 
@@ -1150,7 +1099,7 @@ private setupReactiveSync() {
       if (!activePlaceIds.has(log.placeId as string)) {
         // Double check time just to be safe? 
         // categorizeBySchedule already checks time, so if it's not in activePlaces, it's out of time.
-        console.log(`[LocationService] Schedule ended (Detected by Poll): ${log.placeId}`);
+        Logger.info(`[LocationService] Schedule ended (Detected by Poll): ${log.placeId}`);
         await this.handleGeofenceExit(log.placeId as string, true);
       }
     }
@@ -1161,7 +1110,7 @@ private setupReactiveSync() {
 
     for (const place of insidePlaces) {
       if (!CheckInService.isPlaceActive(this.realm, place.id as string)) {
-        console.log(`[LocationService] ENTRY: ${place.name}`);
+        Logger.info(`[LocationService] ENTRY: ${place.name}`);
         await this.handleGeofenceEntry(place.id as string);
       }
     }
@@ -1190,7 +1139,7 @@ private setupReactiveSync() {
 
     // Debounce only if very recent (to avoid rapid toggling)
     if (now - lastTime < CONFIG.DEBOUNCE_TIME) {
-      console.log(`[LocationService] Debouncing entry: ${placeId}`);
+      Logger.info(`[LocationService] Debouncing entry: ${placeId}`);
       return;
     }
     this.lastTriggerTime[placeId] = now;
@@ -1215,7 +1164,7 @@ private setupReactiveSync() {
     // 1. EARLY ARRIVAL CHECK
     if (now < startTime) {
       const msUntilStart = startTime - now;
-      console.log(`[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`);
+      Logger.info(`[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`);
       
       // Notify user they are being monitored but not yet silenced
       // Optional: Could rely on existing "Upcoming" foreground notification
@@ -1227,7 +1176,7 @@ private setupReactiveSync() {
 
     // 2. LATE ARRIVAL / ALREADY ENDED CHECK
     if (now >= endTime) {
-      console.log(`[LocationService] Schedule ended for ${place.name}, ignoring entry`);
+      Logger.info(`[LocationService] Schedule ended for ${place.name}, ignoring entry`);
       return;
     }
 
@@ -1285,7 +1234,7 @@ private setupReactiveSync() {
     const lastTime = this.lastTriggerTime[placeId] || 0;
 
     if (!force && now - lastTime < CONFIG.DEBOUNCE_TIME) {
-      console.log(`[LocationService] Debouncing exit: ${placeId}`);
+      Logger.info(`[LocationService] Debouncing exit: ${placeId}`);
       return;
     }
     this.lastTriggerTime[placeId] = now;
@@ -1325,7 +1274,7 @@ private setupReactiveSync() {
       const hasPermission = await RingerMode.checkDndPermission();
 
       if (!hasPermission) {
-        console.warn('[LocationService] No DND permission');
+        Logger.warn('[LocationService] No DND permission');
         await this.showNotification(
           'Permission Required',
           'Grant "Do Not Disturb" access in settings for automatic silencing',
@@ -1338,24 +1287,24 @@ private setupReactiveSync() {
       const currentMode = await RingerMode.getRingerMode();
       const currentMediaVolume = await RingerMode.getStreamVolume(RingerMode.STREAM_TYPES.MUSIC);
 
-      console.log(`[LocationService] Saving: mode=${currentMode}, volume=${currentMediaVolume}`);
+      Logger.info(`[LocationService] Saving: mode=${currentMode}, volume=${currentMediaVolume}`);
 
       CheckInService.logCheckIn(this.realm!, placeId, currentMode, currentMediaVolume);
 
       try {
         await RingerMode.setRingerMode(RINGER_MODE.silent);
         await RingerMode.setStreamVolume(RingerMode.STREAM_TYPES.MUSIC, 0);
-        console.log('[LocationService] Phone silenced');
+        Logger.info('[LocationService] Phone silenced');
       } catch (error: any) {
         if (error.code === 'NO_PERMISSION') {
-          console.warn('[LocationService] DND permission revoked');
+          Logger.warn('[LocationService] DND permission revoked');
           await RingerMode.requestDndPermission();
         } else {
-          console.error('[LocationService] Failed to silence:', error);
+          Logger.error('[LocationService] Failed to silence:', error);
         }
       }
     } catch (error) {
-      console.error('[LocationService] Save and silence failed:', error);
+      Logger.error('[LocationService] Save and silence failed:', error);
       CheckInService.logCheckIn(this.realm!, placeId);
     }
   }
@@ -1371,20 +1320,20 @@ private setupReactiveSync() {
       const savedMediaVolume = log.savedMediaVolume;
 
       if (savedMode !== null && savedMode !== undefined) {
-        console.log(`[LocationService] Restoring mode: ${savedMode}`);
+        Logger.info(`[LocationService] Restoring mode: ${savedMode}`);
         await RingerMode.setRingerMode(savedMode);
       } else {
         await RingerMode.setRingerMode(RINGER_MODE.normal);
       }
 
       if (savedMediaVolume !== null && savedMediaVolume !== undefined) {
-        console.log(`[LocationService] Restoring volume: ${savedMediaVolume}`);
+        Logger.info(`[LocationService] Restoring volume: ${savedMediaVolume}`);
         await RingerMode.setStreamVolume(RingerMode.STREAM_TYPES.MUSIC, savedMediaVolume);
       }
 
-      console.log('[LocationService] Sound restored');
+      Logger.info('[LocationService] Sound restored');
     } catch (error) {
-      console.error('[LocationService] Failed to restore:', error);
+      Logger.error('[LocationService] Failed to restore:', error);
     }
   }
 
@@ -1397,10 +1346,10 @@ private setupReactiveSync() {
       clearTimeout(this.startTimers[placeId]);
     }
 
-    console.log(`[LocationService] Scheduled START timer for ${placeId} in ${Math.round(delay / 1000)}s`);
+    Logger.info(`[LocationService] Scheduled START timer for ${placeId} in ${Math.round(delay / 1000)}s`);
 
     this.startTimers[placeId] = setTimeout(async () => {
-      console.log(`[LocationService] ⏰ Start time arrived for ${placeId}`);
+      Logger.info(`[LocationService] ⏰ Start time arrived for ${placeId}`);
       delete this.startTimers[placeId];
       
       // Re-verify if we are still here? 
@@ -1419,10 +1368,10 @@ private setupReactiveSync() {
       clearTimeout(this.endTimers[placeId]);
     }
 
-    console.log(`[LocationService] Scheduled END timer for ${placeId} in ${Math.round(delay / 1000)}s`);
+    Logger.info(`[LocationService] Scheduled END timer for ${placeId} in ${Math.round(delay / 1000)}s`);
 
     this.endTimers[placeId] = setTimeout(async () => {
-      console.log(`[LocationService] ⏰ End time arrived for ${placeId}`);
+      Logger.info(`[LocationService] ⏰ End time arrived for ${placeId}`);
       delete this.endTimers[placeId];
       
       // Force checkout
@@ -1454,12 +1403,12 @@ private setupReactiveSync() {
         },
       });
     } catch (error) {
-      console.error('[LocationService] Notification failed:', error);
+      Logger.error('[LocationService] Notification failed:', error);
     }
   }
 
   destroy() {
-    console.log('[LocationService] Destroying service');
+    Logger.info('[LocationService] Destroying service');
     this.stopGeofenceMonitoring();
     
     // Cleanup restart interval
