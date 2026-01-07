@@ -70,7 +70,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     
     // Fetch History
     const history = CheckInService.getCheckInsForPlace(realm, placeId);
-    setCheckIns([...history]);
+    setCheckIns(history.slice(0, 10));
 
     // isInside is now a reactive property on the place object itself!
     setIsCurrentlyActive(!!p.isInside);
@@ -213,7 +213,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
 
         {/* Schedule Display */}
         <View style={styles.historySection}>
-            <Text style={styles.sectionTitle}>Active Schedule</Text>
+            <Text style={styles.sectionTitle}>Schedules</Text>
             {(!place.schedules || place.schedules.length === 0) ? (
                 <View style={styles.scheduleRow}>
                     <MaterialIcon name="schedule" size={20} color={theme.colors.success} />
