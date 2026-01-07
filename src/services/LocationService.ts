@@ -33,6 +33,10 @@ import { Logger } from './Logger';
  */
 import { CONFIG } from '../config/config';
 
+const ALARM_ID_PRIMARY = 'schedule-alarm-primary';
+const ALARM_ID_SECONDARY = 'schedule-alarm-secondary';
+
+
 interface LocationState {
   latitude: number;
   longitude: number;
@@ -722,43 +726,63 @@ private setupReactiveSync() {
     return false;
   }
 
+
+
   /**
    * Schedule AlarmManager to wake before next prayer
-   * CRITICAL: Must schedule for the NEXT future schedule, not the current one
+   * CRITICAL: Using Dual-Alarm System for Reliability using PRIMARY and SECONDARY alarms.
    */
-  private async scheduleNextAlarm(upcomingSchedules: any[]) {
+  private async scheduleNextAlarm(upcomingSchedules: UpcomingSchedule[]) {
     if (upcomingSchedules.length === 0) {
       Logger.info('[LocationService] No upcoming schedules to alarm for');
+      await notifee.cancelNotification(ALARM_ID_PRIMARY);
+      await notifee.cancelNotification(ALARM_ID_SECONDARY);
       return;
     }
 
-    // Find the NEXT schedule
-    // CRITICAL: We look at ALL upcoming schedules. 
-    // If the first one is within the 15-min window, we STILL schedule a backup alarm for it
-    // just in case the service dies while monitoring.
-    if (upcomingSchedules.length === 0) {
-      Logger.info('[LocationService] No upcoming schedules to alarm for');
-      return;
-    }
-    
-    // We want to alarm for the very first upcoming schedule, 
+    // --- 1. PRIMARY ALARM (Immediate Next) ---
+    // We want to alarm for the very first upcoming schedule,
     // even if we are already monitoring it (redundancy).
     const nextSchedule = upcomingSchedules[0];
+    await this.scheduleSingleAlarm(nextSchedule, ALARM_ID_PRIMARY);
 
+    // --- 2. SECONDARY ALARM (Next + 1) ---
+    // If the app dies checking schedule #1, alarm #2 is already safe in the OS.
+    if (upcomingSchedules.length > 1) {
+       const secondarySchedule = upcomingSchedules[1];
+       await this.scheduleSingleAlarm(secondarySchedule, ALARM_ID_SECONDARY);
+    } else {
+       // Clear secondary if no longer needed to avoid ghost alarms
+       await notifee.cancelNotification(ALARM_ID_SECONDARY); 
+    }
+  }
+
+  /**
+   * Helper to schedule a single alarm
+   */
+  private async scheduleSingleAlarm(schedule: UpcomingSchedule, alarmId: string) {
     // Calculate wake time:
     // Standard: 15 mins before start
     // If already within 15 mins: 2 mins before start (Backup)
-    let wakeMinutes = nextSchedule.minutesUntilStart - CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
+    let wakeMinutes = schedule.minutesUntilStart - CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
 
     if (wakeMinutes <= 0) {
-       // We are in the pre-activation window. 
+       // We are in the pre-activation window.
        // Schedule backup alarm for 1 minute before start (or 1 min from now if very close)
-       wakeMinutes = Math.max(1, nextSchedule.minutesUntilStart - 1);
-       Logger.info(`[LocationService] ⚠️ Within monitoring window. Scheduling BACKUP alarm in ${wakeMinutes}m`);
+       wakeMinutes = Math.max(1, schedule.minutesUntilStart - 1);
+       if (alarmId === ALARM_ID_PRIMARY) {
+           Logger.info(`[LocationService] ⚠️ Within monitoring window. Scheduling BACKUP alarm (Primary) in ${wakeMinutes}m`);
+       }
     } else {
-       Logger.info(
-        `[LocationService] ⏰ Scheduling alarm in ${wakeMinutes}m for ${nextSchedule.placeName} (starts at ${nextSchedule.startTime.toLocaleTimeString()})`
-      );
+       if (alarmId === ALARM_ID_PRIMARY) {
+           Logger.info(
+            `[LocationService] ⏰ Scheduling Primary alarm in ${wakeMinutes}m for ${schedule.placeName} (starts at ${schedule.startTime.toLocaleTimeString()})`
+          );
+       } else {
+            Logger.info(
+            `[LocationService] 🛡️ Scheduling Secondary alarm in ${wakeMinutes}m for ${schedule.placeName} (starts at ${schedule.startTime.toLocaleTimeString()})`
+          );
+       }
     }
 
     try {
@@ -773,12 +797,13 @@ private setupReactiveSync() {
 
       await notifee.createTriggerNotification(
         {
-          id: 'prayer-alarm',
+          id: alarmId,
           title: 'Schedule Approaching',
-          body: `${nextSchedule.placeName} starting soon`,
+          body: `${schedule.placeName} starting soon`,
           data: {
             action: 'START_MONITORING',
-            scheduleId: nextSchedule.placeId,
+            scheduleId: schedule.placeId,
+            alarmType: alarmId // Track which alarm fired
           },
           android: {
             channelId: CONFIG.CHANNELS.SERVICE,
@@ -794,10 +819,10 @@ private setupReactiveSync() {
         trigger
       );
 
-      this.nextAlarmScheduled = true;
-      Logger.info(`[LocationService] ✅ Alarm set for ${new Date(trigger.timestamp).toLocaleTimeString()}`);
+      if (alarmId === ALARM_ID_PRIMARY) this.nextAlarmScheduled = true;
+      Logger.info(`[LocationService] ✅ ${alarmId === ALARM_ID_PRIMARY ? 'Primary' : 'Secondary'} Alarm set for ${new Date(trigger.timestamp).toLocaleTimeString()}`);
     } catch (error) {
-      Logger.error('[LocationService] Failed to schedule alarm:', error);
+      Logger.error(`[LocationService] Failed to schedule ${alarmId}:`, error);
     }
   }
 

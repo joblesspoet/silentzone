@@ -320,13 +320,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                <MaterialIcon name="location-pin" size={36} color={theme.colors.error} />
             </View>
 
-            {/* Locate Me Button Overlay */}
-            <TouchableOpacity 
-                style={styles.mapLocateButton}
-                onPress={handleGetCurrentLocation}
-            >
-                <MaterialIcon name="my-location" size={20} color={theme.colors.primary} />
-            </TouchableOpacity>
+
           </View>
 
           {/* Form Content */}

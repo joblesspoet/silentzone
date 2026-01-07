@@ -156,8 +156,8 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               initialRegion={{
                 latitude: place.latitude as number,
                 longitude: place.longitude as number,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
+                latitudeDelta: Math.max(0.002, (place.radius * 2 * 2.2) / 111320),
+                longitudeDelta: Math.max(0.002, (place.radius * 2 * 2.2) / (111320 * Math.cos(place.latitude * (Math.PI / 180)))),
               }}
               scrollEnabled={false}
               zoomEnabled={false}

@@ -281,13 +281,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                <MaterialIcon name="location-pin" size={36} color={theme.colors.error} />
             </View>
 
-            {/* Locate Me absolute button on map */}
-             <TouchableOpacity 
-                style={styles.mapLocateButton}
-                onPress={handleGetCurrentLocation}
-              >
-                <MaterialIcon name="my-location" size={20} color={theme.colors.primary} />
-            </TouchableOpacity>
+
           </View>
 
           {/* Form Content */}

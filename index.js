@@ -19,7 +19,8 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
   // Handle AlarmManager Trigger
   if (type === EventType.DELIVERED && notification?.data?.action === 'START_MONITORING') {
-      console.log('[Background] ⏰ Alarm received via Notifee');
+      const alarmType = notification.data.alarmType || 'unknown';
+      console.log(`[Background] ⏰ Alarm received via Notifee (${alarmType})`);
       await locationService.handleAlarmFired();
   }
 
