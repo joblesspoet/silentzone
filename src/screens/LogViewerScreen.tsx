@@ -2,12 +2,31 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, Alert } from 'react-native';
 import { theme } from '../theme';
 import { MaterialIcon } from '../components/MaterialIcon';
+import { ToggleSwitch } from '../components/ToggleSwitch';
+import { SettingsService } from '../services/SettingsService';
 import { Logger } from '../services/Logger';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const LogViewerScreen = ({ navigation }: any) => {
   const insets = useSafeAreaInsets();
   const [logs, setLogs] = useState<any[]>([]);
+  const [isLoggingEnabled, setIsLoggingEnabled] = useState(false);
+
+  useEffect(() => {
+    // Load initial setting
+    const init = async () => {
+        const enabled = await SettingsService.getLoggingEnabled();
+        setIsLoggingEnabled(enabled);
+    };
+    init();
+    loadLogs();
+  }, []);
+
+  const handleToggleLogging = async (enabled: boolean) => {
+      setIsLoggingEnabled(enabled);
+      Logger.setEnabled(enabled);
+      await SettingsService.setLoggingEnabled(enabled);
+  };
 
   const loadLogs = () => {
     const activeLogs = Logger.getLogs(500); // Get last 500 logs
@@ -65,11 +84,25 @@ export const LogViewerScreen = ({ navigation }: any) => {
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-           <MaterialIcon name="arrow-back-ios" size={20} color={theme.colors.text.primary.light} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>System Logs</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
+               <MaterialIcon name="arrow-back-ios" size={20} color={theme.colors.text.primary.light} />
+            </TouchableOpacity>
+            <View>
+                <Text style={styles.headerTitle}>System Logs</Text>
+                <Text style={{ fontSize: 10, color: isLoggingEnabled ? theme.colors.success : theme.colors.text.disabled }}>
+                    {isLoggingEnabled ? '● Recording' : '○ Paused'}
+                </Text>
+            </View>
+        </View>
+
         <View style={styles.headerActions}>
+            <View style={{ marginRight: 8, transform: [{ scale: 0.8 }] }}>
+                <ToggleSwitch 
+                    value={isLoggingEnabled} 
+                    onValueChange={handleToggleLogging} 
+                />
+            </View>
             <TouchableOpacity onPress={handleClear} style={styles.actionBtn}>
                 <MaterialIcon name="delete-sweep" size={24} color={theme.colors.error} />
             </TouchableOpacity>
@@ -116,6 +149,7 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 16,
   },
   iconBtn: {

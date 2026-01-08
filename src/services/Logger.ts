@@ -6,9 +6,20 @@ const MAX_LOGS = 1000;
 
 export class Logger {
   private static realmInstance: Realm | null = null;
+  private static isEnabled = false;
+
+  static setEnabled(value: boolean) {
+    this.isEnabled = value;
+    // Log state change for debugging (always to console)
+    console.log(`[Logger] Persistence set to: ${value}`);
+  }
 
   static setRealm(realm: Realm) {
     this.realmInstance = realm;
+  }
+
+  static getEnabled(): boolean {
+    return this.isEnabled;
   }
 
   private static write(level: 'INFO' | 'WARN' | 'ERROR', message: string, details?: any) {
@@ -25,7 +36,7 @@ export class Logger {
     }
 
     // Write to DB if enabled
-    if (CONFIG.LOGGING_ENABLED && this.realmInstance) {
+    if (this.isEnabled && this.realmInstance) {
       try {
         this.realmInstance.write(() => {
           this.realmInstance?.create('SystemLog', {

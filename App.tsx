@@ -8,6 +8,8 @@ import { theme } from './src/theme';
 import { RealmProvider, useRealm } from './src/database/RealmProvider';
 import { PermissionsProvider } from './src/permissions/PermissionsContext';
 import { locationService } from './src/services/LocationService';
+import { Logger } from './src/services/Logger';
+import { SettingsService } from './src/services/SettingsService';
 
 const AppContent = () => {
     const realm = useRealm();
