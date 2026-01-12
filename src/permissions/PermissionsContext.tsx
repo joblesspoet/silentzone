@@ -18,6 +18,7 @@ interface PermissionsContextType {
   isLoading: boolean;
   hasAllPermissions: boolean;
   isBatteryOptimized: boolean;
+  exactAlarmStatus: boolean;
 }
 
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
@@ -36,6 +37,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [notificationStatus, setNotificationStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [dndStatus, setDndStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [isBatteryOptimized, setIsBatteryOptimized] = useState(false); // Default to false (safe)
+  const [exactAlarmStatus, setExactAlarmStatus] = useState(true); // Default to true (safe assumption for old android)
   const [isLoading, setIsLoading] = useState(true);
   const [previousPermissionState, setPreviousPermissionState] = useState<string>('');
 
@@ -44,7 +46,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED) &&
     dndStatus === RESULTS.GRANTED &&
     notificationStatus === RESULTS.GRANTED &&
-    isBatteryOptimized 
+    isBatteryOptimized &&
+    exactAlarmStatus
   );
 
   const refreshPermissions = async () => {
@@ -53,16 +56,18 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     const notif = await PermissionsManager.getNotificationStatus();
     const dnd = await PermissionsManager.getDndStatus();
     const battery = await PermissionsManager.isBatteryOptimizationEnabled();
+    const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
 
     setLocationStatus(loc);
     setBgLocationStatus(bg);
     setNotificationStatus(notif);
     setDndStatus(dnd);
     setIsBatteryOptimized(battery);
+    setExactAlarmStatus(exactAlarm);
     setIsLoading(false);
 
     // Create a permission state string for comparison
-    const currentState = `${loc}-${bg}-${notif}-${dnd}-${battery}`;
+    const currentState = `${loc}-${bg}-${notif}-${dnd}-${battery}-${exactAlarm}`;
     
     // Check if permissions changed
     if (previousPermissionState && previousPermissionState !== currentState) {
@@ -78,7 +83,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         (prevParts[1] === RESULTS.GRANTED || prevParts[1] === RESULTS.LIMITED) &&
         prevParts[2] === RESULTS.GRANTED &&
         prevParts[3] === RESULTS.GRANTED &&
-        prevParts[4] === 'true'
+        prevParts[4] === 'true' &&
+        prevParts[5] === 'true'
       );
       
       // Calculate if we have all permissions now
@@ -87,7 +93,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
         notif === RESULTS.GRANTED &&
         dnd === RESULTS.GRANTED &&
-        battery
+        battery &&
+        exactAlarm
       );
       
       console.log('[PermissionsContext] Permission check:', {
@@ -198,6 +205,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         isLoading,
         hasAllPermissions,
         isBatteryOptimized,
+        exactAlarmStatus,
       }}
     >
       {children}

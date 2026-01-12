@@ -1,10 +1,9 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, AppState, Platform } from 'react-native';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
 import { CustomButton } from '../components/CustomButton';
-import { usePermissions } from '../permissions/PermissionsContext';
-import { RESULTS } from 'react-native-permissions';
+import { PermissionsManager } from '../permissions/PermissionsManager';
 
 interface Props {
   navigation: any;
@@ -12,17 +11,46 @@ interface Props {
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
-  const { requestLocationFlow, locationStatus } = usePermissions();
+export const PermissionAlarmScreen: React.FC<Props> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
+  const [isGranted, setIsGranted] = useState(false);
+
+  useEffect(() => {
+    checkStatus();
+    const sub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') checkStatus();
+    });
+    return () => sub.remove();
+  }, []);
+
+  const checkStatus = async () => {
+      const granted = await PermissionsManager.checkExactAlarmPermission();
+      console.log('Exact alarm permission granted:1234 ', granted);
+      setIsGranted(granted);
+      if (granted) {
+          navigation.replace('PermissionNotification');
+      }
+  };
 
   const handleGrant = async () => {
-    await requestLocationFlow();
-    navigation.replace('PermissionAlarm');
+    // Live check first
+    const granted = await PermissionsManager.checkExactAlarmPermission();
+    console.log('Exact alarm permission granted:', granted);
+    if (granted) {
+        setIsGranted(true);
+        navigation.replace('PermissionNotification');
+        return;
+    }
+
+    if (Platform.OS === 'android' && Platform.Version >= 31) {
+        await PermissionsManager.requestExactAlarmPermission();
+    } else {
+        navigation.replace('PermissionNotification');
+    }
   };
 
   const handleSkip = () => {
-    navigation.replace('PermissionAlarm');
+    navigation.replace('PermissionNotification');
   };
 
   return (
@@ -30,52 +58,47 @@ export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.imageContainer}>
           <View style={styles.iconCircle}>
-            <MaterialIcon name="location-pin" size={48} color={theme.colors.primary} />
+            <MaterialIcon name="alarm" size={48} color={theme.colors.primary} />
           </View>
-          {/* Pulsing rings could go here */}
           <View style={[styles.ring, styles.ring1]} />
-          <View style={[styles.ring, styles.ring2]} />
         </View>
 
-        <Text style={styles.title}>Enable Location Access</Text>
+        <Text style={styles.title}>Exact Alarms</Text>
         <Text style={styles.description}>
-          Silent Zone uses your location to automatically silence your phone when you are in your saved places.
+          To ensure your schedules activate exactly on time (especially for prayers), Silent Zone needs permission to set exact alarms.
         </Text>
 
         <View style={styles.infoBox}>
           <View style={styles.infoRow}>
-            <MaterialIcon name="my-location" size={20} color={theme.colors.text.secondary.light} />
-            <Text style={styles.infoText}>Detects when you enter/exit zones</Text>
+            <MaterialIcon name="schedule" size={20} color={theme.colors.text.secondary.light} />
+            <Text style={styles.infoText}>Guarantees precise start/end times</Text>
           </View>
           <View style={styles.infoRow}>
-            <MaterialIcon name="battery-std" size={20} color={theme.colors.text.secondary.light} />
-            <Text style={styles.infoText}>Optimized for minimal battery usage</Text>
-          </View>
-          <View style={styles.infoRow}>
-            <MaterialIcon name="lock" size={20} color={theme.colors.text.secondary.light} />
-            <Text style={styles.infoText}>Location data never leaves your device</Text>
+            <MaterialIcon name="restore" size={20} color={theme.colors.text.secondary.light} />
+            <Text style={styles.infoText}>Reliable even after device restart</Text>
           </View>
         </View>
 
         <Text style={styles.note}>
-          {Platform.OS === 'ios' ? 
-            "Please select 'Allow While Using App' first. Later, for automatic background silencing, you can upgrade to 'Always'." : 
-            "For full automatic functionality, please choose 'Allow all the time' in settings if prompted."}
+          This permission might be under "Alarms & reminders" in Settings.
         </Text>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, theme.spacing.xl) }]}>
         <CustomButton 
-          title="Grant Location Access" 
+          title={isGranted ? "Continue" : "Allow Alarms & Reminders"} 
           onPress={handleGrant} 
           fullWidth 
           style={styles.grantButton}
+          variant={isGranted ? "primary" : "primary"}
         />
-        <CustomButton 
-          title="Maybe Later" 
-          onPress={handleSkip} 
-          variant="link"
-        />
+        {!isGranted && (
+            <CustomButton 
+                title="Maybe Later" 
+                onPress={handleSkip} 
+                variant="link"
+            />
+        )}
       </View>
     </View>
   );
@@ -113,10 +136,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: theme.colors.primary + '33', // 20%
+    borderColor: theme.colors.primary + '33',
   },
   ring1: { width: 120, height: 120 },
-  ring2: { width: 160, height: 160, opacity: 0.5 },
   
   title: {
     fontFamily: theme.typography.primary,
@@ -163,7 +185,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: theme.spacing.xl,
-    paddingBottom: theme.spacing.xl, // Will be overridden in component
     backgroundColor: theme.colors.white,
   },
   grantButton: {

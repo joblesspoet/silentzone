@@ -17,11 +17,11 @@ export const PermissionNotificationScreen: React.FC<Props> = ({ navigation }) =>
 
   const handleGrant = async () => {
     await requestNotificationFlow();
-    navigation.replace('PermissionDnd');
+    navigation.replace('PermissionBattery');
   };
 
   const handleSkip = () => {
-    navigation.replace('PermissionDnd');
+    navigation.replace('PermissionBattery');
   };
 
   return (

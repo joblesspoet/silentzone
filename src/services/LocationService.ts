@@ -33,8 +33,8 @@ import { Logger } from './Logger';
  */
 import { CONFIG } from '../config/config';
 
-const ALARM_ID_PRIMARY = 'schedule-alarm-primary';
-const ALARM_ID_SECONDARY = 'schedule-alarm-secondary';
+// Removed dual-alarm system - now using individual alarms per schedule
+// Alarm IDs format: place-{placeId}-schedule-{index}
 
 
 interface LocationState {
@@ -83,12 +83,16 @@ class LocationService {
    * Initialize the location service
    */
   async initialize(realmInstance: Realm) {
+    // CRITICAL: Always update the realm instance
+    // Background alarms open a new realm, so we must update it even if already initialized
+    this.realm = realmInstance;
+    
     if (this.isReady) {
-      Logger.info('[LocationService] Already initialized');
+      Logger.info('[LocationService] Re-initializing with new realm instance');
+      // Re-sync with the new realm data to pick up any schedule changes
+      await this.syncGeofences();
       return;
     }
-
-    this.realm = realmInstance;
 
     if (Platform.OS === 'android') {
       await this.createNotificationChannels();
@@ -426,8 +430,10 @@ private setupReactiveSync() {
       if (upcomingSchedules.length > 0) {
         const next = upcomingSchedules[0];
         Logger.info(
-          `[LocationService] Next schedule: ${next.placeName} in ${next.minutesUntilStart} minutes`
+          `[LocationService] Next schedule: ${next.placeName} in ${next.minutesUntilStart} minutes (Starts at ${next.startTime.toLocaleTimeString()})`
         );
+      } else {
+        Logger.info('[LocationService] No upcoming schedules found in categorization');
       }
 
       if (shouldMonitor) {
@@ -478,21 +484,34 @@ private setupReactiveSync() {
          this.geofencesActive = true;
          
          // Even while monitoring, schedule next alarm for redundancy or next event
-         this.scheduleNextAlarm(upcomingSchedules);
+          // Schedule individual alarms for all enabled places
+          for (const place of enabledPlaces) {
+            if (place.isEnabled) {
+              await this.cancelAlarmsForPlace(place.id as string);
+              await this.scheduleAlarmsForPlace(place);
+            }
+          }
 
       } else {
          // PASSIVE MODE (Sleep & Alarm)
          Logger.info('[LocationService] 💤 Entering passive mode (using alarms)');
          
          // Ensure we cleanup any stuck checkins before sleeping if we are transitioning from active
-         if (this.geofencesActive) {
-            await this.handleManualDisableCleanup(new Set()); // Cleanup all? No, just verify.
-            await Geofencing.removeAllGeofence();
-            this.geofencesActive = false;
-         }
-         
-         await this.stopForegroundService();
-         this.scheduleNextAlarm(upcomingSchedules);
+          if (this.geofencesActive) {
+             await this.handleManualDisableCleanup(new Set());
+             await Geofencing.removeAllGeofence();
+             this.geofencesActive = false;
+          }
+          
+          await this.stopForegroundService();
+          
+          // Schedule individual alarms for all enabled places
+          for (const place of enabledPlaces) {
+            if (place.isEnabled) {
+              await this.cancelAlarmsForPlace(place.id as string);
+              await this.scheduleAlarmsForPlace(place);
+            }
+          }
       }
       
     } catch (error) {
@@ -729,102 +748,109 @@ private setupReactiveSync() {
 
 
   /**
-   * Schedule AlarmManager to wake before next prayer
-   * CRITICAL: Using Dual-Alarm System for Reliability using PRIMARY and SECONDARY alarms.
+   * Schedule individual alarms for all schedules in a place
+   * Each schedule gets its own alarm - more reliable than dual-alarm system
    */
-  private async scheduleNextAlarm(upcomingSchedules: UpcomingSchedule[]) {
-    if (upcomingSchedules.length === 0) {
-      Logger.info('[LocationService] No upcoming schedules to alarm for');
-      await notifee.cancelNotification(ALARM_ID_PRIMARY);
-      await notifee.cancelNotification(ALARM_ID_SECONDARY);
+  /**
+   * Schedule individual alarms for all schedules in a place (Today + Tomorrow)
+   */
+  private async scheduleAlarmsForPlace(place: any) {
+    if (!place.schedules || place.schedules.length === 0) {
+      Logger.info(`[LocationService] No schedules for ${place.name}, skipping alarm setup`);
       return;
     }
 
-    // --- 1. PRIMARY ALARM (Immediate Next) ---
-    // We want to alarm for the very first upcoming schedule,
-    // even if we are already monitoring it (redundancy).
-    const nextSchedule = upcomingSchedules[0];
-    await this.scheduleSingleAlarm(nextSchedule, ALARM_ID_PRIMARY);
+    let alarmsScheduled = 0;
+    const now = new Date();
 
-    // --- 2. SECONDARY ALARM (Next + 1) ---
-    // If the app dies checking schedule #1, alarm #2 is already safe in the OS.
-    if (upcomingSchedules.length > 1) {
-       const secondarySchedule = upcomingSchedules[1];
-       await this.scheduleSingleAlarm(secondarySchedule, ALARM_ID_SECONDARY);
-    } else {
-       // Clear secondary if no longer needed to avoid ghost alarms
-       await notifee.cancelNotification(ALARM_ID_SECONDARY); 
+    // Loop through each user-defined schedule (e.g., 5 prayers)
+    for (let i = 0; i < place.schedules.length; i++) {
+      const schedule = place.schedules[i];
+      const [startHour, startMin] = schedule.startTime.split(':').map(Number);
+      
+      // We schedule alarms for TODAY and TOMORROW to ensure continuity (365 days coverage)
+      // Day Offset 0 = Today, 1 = Tomorrow
+      for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+        // Construct target start time
+        const targetTime = new Date(now);
+        targetTime.setHours(startHour, startMin, 0, 0);
+        
+        if (dayOffset === 1) {
+            targetTime.setDate(targetTime.getDate() + 1);
+        }
+
+        // Calculate alarm time (15 mins before start)
+        const preActivationMillis = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
+        const alarmTime = targetTime.getTime() - preActivationMillis;
+
+        // Skip if alarm time is in the past
+        if (alarmTime <= Date.now()) {
+            continue;
+        }
+
+        // Deterministic ID: place-{id}-sched-{index}-day-{offset}
+        const alarmId = `place-${place.id}-sched-${i}-day-${dayOffset}`;
+
+        try {
+            await notifee.createTriggerNotification(
+            {
+                id: alarmId,
+                title: 'Schedule Approaching',
+                body: `${place.name} starting soon`,
+                data: {
+                action: 'START_MONITORING',
+                placeId: place.id,
+                scheduledTime: targetTime.toISOString(),
+                },
+                android: {
+                channelId: CONFIG.CHANNELS.SERVICE,
+                importance: AndroidImportance.HIGH,
+                category: AndroidCategory.ALARM,
+                autoCancel: true,
+                pressAction: {
+                    id: 'default',
+                    launchActivity: 'default',
+                },
+                },
+            },
+            {
+                type: TriggerType.TIMESTAMP,
+                timestamp: alarmTime,
+                alarmManager: {
+                allowWhileIdle: true,
+                type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
+                },
+            }
+            );
+
+            alarmsScheduled++;
+            Logger.info(
+            `[LocationService] ✅ Alarm set: ${place.name} [Day ${dayOffset}] @ ${new Date(alarmTime).toLocaleTimeString()} (ID: ${alarmId})`
+            );
+        } catch (error) {
+            Logger.error(`[LocationService] Failed to schedule alarm ${alarmId}:`, error);
+        }
+      }
     }
+
+    Logger.info(`[LocationService] Scheduled ${alarmsScheduled} alarms for ${place.name}`);
   }
 
   /**
-   * Helper to schedule a single alarm
+   * Cancel all alarms for a specific place
    */
-  private async scheduleSingleAlarm(schedule: UpcomingSchedule, alarmId: string) {
-    // Calculate wake time:
-    // Standard: 15 mins before start
-    // If already within 15 mins: 2 mins before start (Backup)
-    let wakeMinutes = schedule.minutesUntilStart - CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
-
-    if (wakeMinutes <= 0) {
-       // We are in the pre-activation window.
-       // Schedule backup alarm for 1 minute before start (or 1 min from now if very close)
-       wakeMinutes = Math.max(1, schedule.minutesUntilStart - 1);
-       if (alarmId === ALARM_ID_PRIMARY) {
-           Logger.info(`[LocationService] ⚠️ Within monitoring window. Scheduling BACKUP alarm (Primary) in ${wakeMinutes}m`);
-       }
-    } else {
-       if (alarmId === ALARM_ID_PRIMARY) {
-           Logger.info(
-            `[LocationService] ⏰ Scheduling Primary alarm in ${wakeMinutes}m for ${schedule.placeName} (starts at ${schedule.startTime.toLocaleTimeString()})`
-          );
-       } else {
-            Logger.info(
-            `[LocationService] 🛡️ Scheduling Secondary alarm in ${wakeMinutes}m for ${schedule.placeName} (starts at ${schedule.startTime.toLocaleTimeString()})`
-          );
-       }
+  private async cancelAlarmsForPlace(placeId: string, scheduleCount: number = 10) {
+    // Cancel alarms for today (day-0) and tomorrow (day-1) for each schedule index
+    for (let i = 0; i < scheduleCount; i++) {
+      const idDay0 = `place-${placeId}-sched-${i}-day-0`;
+      const idDay1 = `place-${placeId}-sched-${i}-day-1`;
+      
+      try { await notifee.cancelTriggerNotification(idDay0); } catch (e) {}
+      try { await notifee.cancelTriggerNotification(idDay1); } catch (e) {}
     }
-
-    try {
-      const trigger: TimestampTrigger = {
-        type: TriggerType.TIMESTAMP,
-        timestamp: Date.now() + wakeMinutes * 60 * 1000,
-        alarmManager: {
-          allowWhileIdle: true, // ✅ Works in Doze mode!
-          type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
-        },
-      };
-
-      await notifee.createTriggerNotification(
-        {
-          id: alarmId,
-          title: 'Schedule Approaching',
-          body: `${schedule.placeName} starting soon`,
-          data: {
-            action: 'START_MONITORING',
-            scheduleId: schedule.placeId,
-            alarmType: alarmId // Track which alarm fired
-          },
-          android: {
-            channelId: CONFIG.CHANNELS.SERVICE,
-            importance: AndroidImportance.HIGH,
-            category: AndroidCategory.ALARM,
-            autoCancel: true,
-            pressAction: {
-                id: 'default',
-                launchActivity: 'default',
-            },
-          },
-        },
-        trigger
-      );
-
-      if (alarmId === ALARM_ID_PRIMARY) this.nextAlarmScheduled = true;
-      Logger.info(`[LocationService] ✅ ${alarmId === ALARM_ID_PRIMARY ? 'Primary' : 'Secondary'} Alarm set for ${new Date(trigger.timestamp).toLocaleTimeString()}`);
-    } catch (error) {
-      Logger.error(`[LocationService] Failed to schedule ${alarmId}:`, error);
-    }
+    Logger.info(`[LocationService] Cancelled alarms for place ${placeId}`);
   }
+
 
   /**
    * Handle alarm firing (called when notification appears)
@@ -832,11 +858,15 @@ private setupReactiveSync() {
   async handleAlarmFired() {
     Logger.info('[LocationService] ⏰ Alarm fired - waking up service');
     if (!this.realm) {
-        // If coming from dead background, might need re-init, but usually 'initialize' called from index.js handles it.
-        // This method is called AFTER initialize if wired up correctly.
-        Logger.warn('[LocationService] handleAlarmFired called but realm not ready?');
+        Logger.warn('[LocationService] ❌ handleAlarmFired called but realm not ready!');
+        return; // Safety exit
     }
-    // Force a sync, which will see we are <15m and start monitoring
+    
+    // Log currently loaded places for confirmation
+    const enabledCount = PlaceService.getEnabledPlaces(this.realm).length;
+    Logger.info(`[LocationService] Alarm context: ${enabledCount} enabled places found in database`);
+
+    // Force a sync, which will evaluate schedules and start monitoring if needed
     await this.syncGeofences();
   }
 

@@ -1,4 +1,5 @@
-import { Platform, Linking, Alert, NativeModules } from 'react-native';
+import { Platform, Linking, Alert, NativeModules, PermissionsAndroid } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import RingerMode from '../modules/RingerMode';
 import { 
   check, 
@@ -11,7 +12,17 @@ import {
 } from 'react-native-permissions';
 import Geolocation from '@react-native-community/geolocation';
 
-const { BatteryOptimization } = NativeModules;
+const { BatteryOptimization, ExactAlarmModule } = NativeModules;
+
+// ...
+
+// Android 12+ Exact Alarm Permission
+// Use REQUEST_SCHEDULE_EXACT_ALARM for apps that need user approval
+// SCHEDULE_EXACT_ALARM is for alarm/calendar apps only (auto-granted)
+const CHECK_EXACT_ALARM_PERMISSION = Platform.select({
+  android: 'android.permission.REQUEST_SCHEDULE_EXACT_ALARM',
+  default: undefined,
+});
 
 export const PermissionsManager = {
   // Check strict type for status to avoid string mismatch issues
@@ -170,12 +181,14 @@ export const PermissionsManager = {
     const bg = await PermissionsManager.getBackgroundLocationStatus();
     const dnd = await PermissionsManager.getDndStatus();
     const notif = await PermissionsManager.getNotificationStatus();
+    const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
     
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
       (dnd === RESULTS.GRANTED) &&
-      (notif === RESULTS.GRANTED)
+      (notif === RESULTS.GRANTED) &&
+      exactAlarm
     );
   },
 
@@ -184,12 +197,60 @@ export const PermissionsManager = {
     const loc = await PermissionsManager.getLocationStatus();
     const bg = await PermissionsManager.getBackgroundLocationStatus();
     const notif = await PermissionsManager.getNotificationStatus();
+    const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
     
     // We allow DND to be missing (we just won't silence, but we WILL track)
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
-      (notif === RESULTS.GRANTED)
+      (notif === RESULTS.GRANTED) &&
+      exactAlarm
     );
+  },
+
+  checkExactAlarmPermission: async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+    
+    // Use new native module if available
+    if (ExactAlarmModule?.canScheduleExactAlarms) {
+        try {
+            const hasPermission = await ExactAlarmModule.canScheduleExactAlarms();
+            console.log('Exact alarm permission status (native module):', hasPermission);
+            return hasPermission;
+        } catch (error) {
+            console.error('Error using ExactAlarmModule:', error);
+        }
+    }
+
+    if (Platform.Version < 31) return true;
+    
+    return false;
+  },
+
+  requestExactAlarmPermission: async (): Promise<PermissionStatus> => {
+    if (Platform.OS !== 'android' || Platform.Version < 31) return RESULTS.GRANTED;
+    
+    try {
+        if (ExactAlarmModule?.openExactAlarmSettings) {
+             await ExactAlarmModule.openExactAlarmSettings();
+             return RESULTS.DENIED; // waiting for user
+        }
+        
+        // Fallback
+        Linking.openSettings();
+        return RESULTS.DENIED;
+    } catch (error) {
+       console.error('Error requesting exact alarm permission:', error);
+       Linking.openSettings();
+       return RESULTS.DENIED;
+    }
+  },
+
+  setExactAlarmManuallyGranted: async (granted: boolean): Promise<void> => {
+    try {
+      await AsyncStorage.setItem('EXACT_ALARM_OVERRIDE', granted ? 'true' : 'false');
+    } catch (e) {
+      console.error('Failed to set alarm override', e);
+    }
   }
 };

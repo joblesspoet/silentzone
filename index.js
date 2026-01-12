@@ -13,6 +13,16 @@ crashHandler.initialize();
 
 const { locationService } = require('./src/services/LocationService');
 
+// NEW: Helper to get realm in background
+const getRealm = async () => {
+    const Realm = require('realm');
+    const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
+    return await Realm.open({
+        schema: schemas,
+        schemaVersion: SCHEMA_VERSION,
+    });
+};
+
 // Handle background events (required for Foreground Service)
 notifee.onBackgroundEvent(async ({ type, detail }) => {
   const { notification, pressAction } = detail;
@@ -21,7 +31,19 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
   if (type === EventType.DELIVERED && notification?.data?.action === 'START_MONITORING') {
       const alarmType = notification.data.alarmType || 'unknown';
       console.log(`[Background] ⏰ Alarm received via Notifee (${alarmType})`);
-      await locationService.handleAlarmFired();
+      
+      try {
+          // 1. Open Realm (required for LocationService)
+          const realm = await getRealm();
+          
+          // 2. Initialize Service with the realm
+          await locationService.initialize(realm);
+          
+          // 3. Handle the alarm
+          await locationService.handleAlarmFired();
+      } catch (err) {
+          console.error('[Background] Failed to init background components:', err);
+      }
   }
 
   // Check if the user has pressed the notification

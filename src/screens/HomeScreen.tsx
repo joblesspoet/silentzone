@@ -25,7 +25,13 @@ import { CheckInService } from '../database/services/CheckInService';
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
   const insets = useSafeAreaInsets();
-  const { locationStatus, backgroundLocationStatus, dndStatus, notificationStatus } = usePermissions();
+  const { 
+    locationStatus, 
+    backgroundLocationStatus, 
+    dndStatus, 
+    notificationStatus,
+    hasAllPermissions // Use centralized logic
+  } = usePermissions();
 
   const [places, setPlaces] = useState<any[]>([]);
   const [trackingEnabled, setTrackingEnabled] = useState(true);
@@ -33,12 +39,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
 
-  const hasFullPermissions = (
-    (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED) &&
-    (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED) &&
-    dndStatus === RESULTS.GRANTED &&
-    notificationStatus === RESULTS.GRANTED
-  );
+  // Deprecated manual check - mapped to context property for compatibility with existing code
+  const hasFullPermissions = hasAllPermissions;
 
   //  Fetch places and set up listener - NO WRITES IN LISTENER
 useEffect(() => {

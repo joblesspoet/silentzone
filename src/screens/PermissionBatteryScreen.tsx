@@ -34,10 +34,7 @@ export const PermissionBatteryScreen: React.FC<Props> = ({ navigation }) => {
     // If it's a blocking check from Context, we return to Home.
     
     // For now, assume it's the final check or blocking check
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Home' }],
-    });
+    navigation.replace('PermissionDnd');
   };
 
   const handleGrant = async () => {
