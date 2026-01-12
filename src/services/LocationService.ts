@@ -179,12 +179,12 @@ class LocationService {
         const place = this.realm ? PlaceService.getPlaceById(this.realm, placeId as string) : null;
         title = '🔕 Silent Zone Active';
         body = `📍 Inside ${place ? place.name : 'Unknown Location'}`;
-      } else if (nextSchedule && nextSchedule.minutesUntilStart <= 15) {
-        // Approaching
+      } else if (nextSchedule && nextSchedule.minutesUntilStart > 0 && nextSchedule.minutesUntilStart <= 15) {
+        // Approaching (Only if > 0 minutes)
         title = '⏱️ Preparing to Silence';
         body = `🔜 ${nextSchedule.placeName} starts in ${nextSchedule.minutesUntilStart} min`;
       } else if (this.isInScheduleWindow && nextSchedule) {
-        // In schedule window but NOT validated as inside yet (or outside geofence)
+        // In schedule window but NOT validated as inside yet (Active or 0 min)
         title = '🛡️ Silent Zone Monitoring';
         body = `Targeting ${nextSchedule.placeName}`;
       }
