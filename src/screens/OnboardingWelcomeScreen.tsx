@@ -41,11 +41,13 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.illustrationContainer}>
           <View style={styles.decorativeBlob} />
           
-          <Image
-            source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBLoUFCyPJJb6RljhzckGUZPloj6FFMQNVG8CCTA1VMbFIM91zfl2PzR_h2JjWLVt999Doqub2nDmHSEyA_8693EGSqf9C5s0JEOOGjHBXXVjoxQqnsNzqZM6akRZl4qHDnM8JUJDmjAMdnckrSJLkmPN4lIXF3oLx2AI3ae2C5HdgJF4rxg4T_MrHTCdnGL6VcNM7QrQDop_2tgE_akWHjA9biq9Y9colC_oCwyn9Qryo4qQiB2I12FgyS8BoRYlqZ9VpsdCyOjhKM' }}
-            style={styles.illustration}
-            resizeMode="contain"
-          />
+          <View style={styles.illustrationCircle}>
+            <Image
+              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBLoUFCyPJJb6RljhzckGUZPloj6FFMQNVG8CCTA1VMbFIM91zfl2PzR_h2JjWLVt999Doqub2nDmHSEyA_8693EGSqf9C5s0JEOOGjHBXXVjoxQqnsNzqZM6akRZl4qHDnM8JUJDmjAMdnckrSJLkmPN4lIXF3oLx2AI3ae2C5HdgJF4rxg4T_MrHTCdnGL6VcNM7QrQDop_2tgE_akWHjA9biq9Y9colC_oCwyn9Qryo4qQiB2I12FgyS8BoRYlqZ9VpsdCyOjhKM' }}
+              style={styles.illustration}
+              resizeMode="contain"
+            />
+          </View>
           
           {/* Floating Icons */}
           <View style={[styles.floatingIcon, styles.iconTopRight]}>
@@ -137,6 +139,17 @@ const styles = StyleSheet.create({
     borderRadius: 9999,
     transform: [{ scale: 0.9 }],
     opacity: 0.6,
+  },
+  illustrationCircle: {
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.surface.light,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   illustration: {
     width: '100%',

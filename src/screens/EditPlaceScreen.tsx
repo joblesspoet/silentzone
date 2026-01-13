@@ -13,14 +13,10 @@ import { PermissionsManager } from '../permissions/PermissionsManager';
 import { RESULTS } from 'react-native-permissions';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { sortSchedules, validateLimit, findOverlappingSchedules, findInvalidTimeRanges, ScheduleSlot as UtilScheduleSlot } from '../utils/ScheduleUtils';
 
-interface ScheduleSlot {
-  id: string;
-  startTime: string;
-  endTime: string;
-  days: string[];
-  label: string;
-}
+// Use shared interface or map to it
+interface ScheduleSlot extends UtilScheduleSlot {}
 
 interface Props {
   navigation: any;
@@ -57,6 +53,32 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
   const [showPicker, setShowPicker] = useState<{ index: number, type: 'start' | 'end' } | null>(null);
   const [scheduleError, setScheduleError] = useState<boolean>(false);
+  const [overlappingIds, setOverlappingIds] = useState<string[]>([]);
+  const [invalidTimeIds, setInvalidTimeIds] = useState<string[]>([]);
+  const [limitError, setLimitError] = useState<boolean>(false);
+
+  // Auto-sort and validate whenever schedules change
+  useEffect(() => {
+    if (schedules.length > 0) {
+        const sorted = sortSchedules(schedules);
+        // Only update if order changed to avoid infinite loop
+        if (JSON.stringify(sorted) !== JSON.stringify(schedules)) {
+            setSchedules(sorted);
+        }
+        
+        const overlaps = findOverlappingSchedules(schedules);
+        setOverlappingIds(overlaps);
+
+        const invalidTimes = findInvalidTimeRanges(schedules);
+        setInvalidTimeIds(invalidTimes);
+
+        setLimitError(!validateLimit(schedules, 5));
+    } else {
+        setOverlappingIds([]);
+        setInvalidTimeIds([]);
+        setLimitError(false);
+    }
+  }, [schedules]);
 
   const CATEGORIES = [
     { id: 'mosque', icon: 'mosque', label: 'Mosque' },
@@ -207,6 +229,19 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         setScheduleError(true);
         hasError = true;
     }
+
+    if (!validateLimit(schedules, 5)) {
+        setLimitError(true);
+        hasError = true;
+    }
+
+    if (overlappingIds.length > 0) {
+        hasError = true;
+    }
+
+    if (invalidTimeIds.length > 0) {
+        hasError = true;
+    } 
 
     if (hasError) return;
 
@@ -441,13 +476,17 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
             <View style={styles.scheduleSection}>
               <View style={styles.sectionHeader}>
                 <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
-                   <Text style={[styles.sectionLabel, scheduleError && {color: theme.colors.error}]}>TIME INTERVALS</Text>
-                   {scheduleError && (
-                        <MaterialIcon name="error-outline" size={16} color={theme.colors.error} />
-                   )}
+                  <Text style={[styles.sectionLabel, (scheduleError || overlappingIds.length > 0 || invalidTimeIds.length > 0) && {color: theme.colors.error}]}>TIME INTERVALS</Text>
+                  {(scheduleError || overlappingIds.length > 0 || invalidTimeIds.length > 0) && (
+                       <MaterialIcon name="error-outline" size={16} color={theme.colors.error} />
+                  )}
                 </View>
                 <TouchableOpacity 
                     onPress={() => {
+                        if (schedules.length >= 5) {
+                            setLimitError(true);
+                            return; 
+                        }
                         const newSlot: ScheduleSlot = {
                             id: Math.random().toString(),
                             startTime: '12:00',
@@ -458,13 +497,30 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                         setSchedules([...schedules, newSlot]);
                         setScheduleError(false);
                     }}
-                    style={styles.addSlotButton}
+                    style={[styles.addSlotButton, schedules.length >= 5 && { opacity: 0.5 }]}
+                    disabled={schedules.length >= 5}
                 >
                     <MaterialIcon name="add" size={18} color={theme.colors.primary} />
                     <Text style={styles.addSlotText}>Add Time</Text>
                 </TouchableOpacity>
               </View>
 
+              {/* Validation Messages */}
+              {limitError && (
+                  <Text style={{color: theme.colors.error, fontSize: 12, marginBottom: 8, marginTop: -8}}>
+                      Maximum 5 time slots allowed.
+                  </Text>
+              )}
+              {overlappingIds.length > 0 && (
+                  <Text style={{color: theme.colors.error, fontSize: 12, marginBottom: 8, marginTop: -4}}>
+                      Time slots overlap on the same day. Please adjust times.
+                  </Text>
+              )}
+              {invalidTimeIds.length > 0 && (
+                  <Text style={{color: theme.colors.error, fontSize: 12, marginBottom: 8, marginTop: -4}}>
+                      End time must be after Start time.
+                  </Text>
+              )}
               {scheduleError && (
                   <Text style={{color: theme.colors.error, fontSize: 12, marginBottom: 8, marginTop: -8}}>
                       Please add at least one time interval below.
@@ -484,8 +540,17 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                       </Text>
                   </View>
               ) : (
-                    schedules.map((slot, index) => (
-                      <View key={slot.id} style={styles.slotCard}>
+                    schedules.map((slot, index) => {
+                      const isOverlapping = overlappingIds.includes(slot.id);
+                      const isInvalidTime = invalidTimeIds.includes(slot.id);
+                      return (
+                      <View 
+                        key={slot.id} 
+                        style={[
+                            styles.slotCard, 
+                            (isOverlapping || isInvalidTime) && { borderColor: theme.colors.error, backgroundColor: theme.colors.error + '08' }
+                        ]}
+                      >
                           {/* Time Row */}
                           <View style={styles.slotMain}>
                               <TouchableOpacity 
@@ -589,7 +654,8 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                               </View>
                           )}
                       </View>
-                    ))
+                    );
+                  })
                 )}
 
                 {showPicker && (

@@ -82,7 +82,7 @@ export const PermissionBatteryScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.infoBox}>
           <View style={styles.infoRow}>
             <MaterialIcon name="check-circle" size={20} color={theme.colors.primary} />
-            <Text style={styles.infoText}>Reliable activation 15 mins before prayers</Text>
+            <Text style={styles.infoText}>Reliable activation 15 mins before time</Text>
           </View>
           <View style={styles.infoRow}>
             <MaterialIcon name="check-circle" size={20} color={theme.colors.primary} />

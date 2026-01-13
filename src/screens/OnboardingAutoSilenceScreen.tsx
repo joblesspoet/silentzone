@@ -43,13 +43,13 @@ export const OnboardingAutoSilenceScreen: React.FC<Props> = ({ navigation }) => 
         <View style={styles.illustrationWrap}>
           <View style={styles.circleOuter} />
           <View style={styles.circleMiddle} />
-          <View style={styles.circleInner} />
-          
-          <Image
-            source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC7ybbHJrwb1dHVi2Mh7LQAQL1o8WIZMuQbmEwwGRfGOo_9ScMS11QXHoJ3hcji1J6Pu_9rJhYkFqy09Y2_RFgwGfXjLYQUbmrbdnyw92fBPhDLhSif8rr3rMCwU6hO7U00hwjQS4Q2VDbjDWOfHWkGofHRU02N32dMvpHr_shvkUG4nAPY_mTae5Nxa9DdoEZF6B60cvR3NBc6NV6w55zCOzxE3SqZUAfCbKDTWpDk6kInIQMnUA9YGCQLXK7TcNYansHSe4ddUu5J' }}
-            style={styles.illustration}
-            resizeMode="contain"
-          />
+          <View style={[styles.circleInner, { overflow: 'hidden' }]}>
+            <Image
+              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuC7ybbHJrwb1dHVi2Mh7LQAQL1o8WIZMuQbmEwwGRfGOo_9ScMS11QXHoJ3hcji1J6Pu_9rJhYkFqy09Y2_RFgwGfXjLYQUbmrbdnyw92fBPhDLhSif8rr3rMCwU6hO7U00hwjQS4Q2VDbjDWOfHWkGofHRU02N32dMvpHr_shvkUG4nAPY_mTae5Nxa9DdoEZF6B60cvR3NBc6NV6w55zCOzxE3SqZUAfCbKDTWpDk6kInIQMnUA9YGCQLXK7TcNYansHSe4ddUu5J' }}
+              style={styles.illustration}
+              resizeMode="contain"
+            />
+          </View>
 
           <View style={styles.iconRight}>
             <MaterialIcon name="notifications-off" size={24} color={theme.colors.primary} />
