@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert, Platform, Modal } from 'react-native';
 import MapView, { Circle, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
 import Geolocation from '@react-native-community/geolocation';
@@ -17,6 +17,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { locationService } from '../services/LocationService';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sortSchedules, validateLimit, findOverlappingSchedules, findInvalidTimeRanges, ScheduleSlot as UtilScheduleSlot } from '../utils/ScheduleUtils';
+import { PrayerTimeService, PrayerConfig } from '../services/PrayerTimeService';
 
 // Use shared interface or map to it
 interface ScheduleSlot extends UtilScheduleSlot {}
@@ -51,6 +52,14 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState({ id: 'mosque', icon: 'mosque', label: 'Mosque' });
   
+  // Prayer Auto-Fill State
+  const [showPrayerConfig, setShowPrayerConfig] = useState(false);
+  const [prayerConfig, setPrayerConfig] = useState<PrayerConfig>({
+      method: 'ISNA',
+      madhab: 'HANAFI',
+      adjustments: [0, 0, 0, 0, 0]
+  });
+
   // Schedule state
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
   const [showPicker, setShowPicker] = useState<{ index: number, type: 'start' | 'end' } | null>(null);
@@ -256,6 +265,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
             days: s.days,
             label: s.label
         })),
+        prayerConfig: selectedCategory.id === 'mosque' ? prayerConfig : undefined,
       });
       
       await locationService.syncGeofences();
@@ -270,6 +280,33 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
       console.error("Failed to save place:", error);
       Alert.alert("Error", "Failed to save place. Please try again.");
     }
+  };
+
+  const handleApplyPrayerTimes = () => {
+      if (!userLocation && !region) {
+          Alert.alert("Location Required", "Please locate the mosque on the map first.");
+          return;
+      }
+
+      const lat = region.latitude;
+      const long = region.longitude;
+
+      if (!lat || !long) return;
+
+      const now = new Date();
+      const times = PrayerTimeService.calculatePrayerTimes(lat, long, now, prayerConfig);
+      
+      if (times) {
+          const newSchedules = PrayerTimeService.generateSchedules(times).map(s => ({
+              ...s,
+              id: Math.random().toString(), // Helper ID for UI
+          }));
+          setSchedules(newSchedules);
+          setShowPrayerConfig(false);
+          setIsSilencingEnabled(true);
+      } else {
+          Alert.alert("Error", "Could not calculate prayer times.");
+      }
   };
 
   const getRadiusText = (r: number) => {
@@ -442,6 +479,17 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                        <MaterialIcon name="error-outline" size={16} color={theme.colors.error} />
                   )}
                 </View>
+                
+                {selectedCategory.id === 'mosque' && (
+                    <TouchableOpacity 
+                        onPress={() => setShowPrayerConfig(true)}
+                        style={[styles.addSlotButton, { marginRight: 16 }]}
+                    >
+                        <MaterialIcon name="auto-awesome" size={18} color={theme.colors.primary} />
+                        <Text style={styles.addSlotText}>Auto-Fill</Text>
+                    </TouchableOpacity>
+                )}
+
                 <TouchableOpacity 
                     onPress={() => {
                         if (schedules.length >= 5) {
@@ -646,6 +694,75 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
             <View style={{ height: 40 }} />
           </View>
       </ScrollView>
+
+      {/* Prayer Config Modal */}
+      <Modal
+        visible={showPrayerConfig}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowPrayerConfig(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Auto-Fill Prayer Times</Text>
+            <Text style={styles.modalSubtitle}>Calculate precise timings based on your location.</Text>
+
+            <View style={styles.modalSection}>
+                <Text style={styles.modalLabel}>Calculation Method</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 8}}>
+                    {['ISNA', 'MWL', 'MAKKAH', 'KARACHI', 'TEHRAN', 'EGYPT'].map(m => (
+                        <TouchableOpacity
+                            key={m}
+                            style={[
+                                styles.chip,
+                                prayerConfig.method === m && styles.chipActive
+                            ]}
+                            onPress={() => setPrayerConfig({...prayerConfig, method: m as any})}
+                        >
+                            <Text style={[styles.chipText, prayerConfig.method === m && styles.chipTextActive]}>{m}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
+
+            <View style={styles.modalSection}>
+                <Text style={styles.modalLabel}>Madhab (Asr Time)</Text>
+                <View style={{flexDirection: 'row', gap: 12}}>
+                    {['HANAFI', 'SHAFII'].map(m => (
+                        <TouchableOpacity
+                            key={m}
+                            style={[
+                                styles.chip,
+                                prayerConfig.madhab === m && styles.chipActive,
+                                {flex: 1, justifyContent: 'center'}
+                            ]}
+                            onPress={() => setPrayerConfig({...prayerConfig, madhab: m as any})}
+                        >
+                            <Text style={[styles.chipText, prayerConfig.madhab === m && styles.chipTextActive]}>{m}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+
+            <View style={styles.modalButtons}>
+                <TouchableOpacity 
+                    style={styles.modalCancelButton}
+                    onPress={() => setShowPrayerConfig(false)}
+                >
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={styles.modalApplyButton}
+                    onPress={handleApplyPrayerTimes}
+                >
+                    <Text style={styles.modalApplyText}>Calculate & Apply</Text>
+                </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 };
@@ -766,4 +883,19 @@ const styles = StyleSheet.create({
   dayToggleActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
   dayToggleText: { fontSize: 12, color: theme.colors.text.secondary.dark, fontWeight: '600' },
   dayToggleTextActive: { color: theme.colors.white },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: theme.colors.background.light, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 40 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: theme.colors.text.primary.light, marginBottom: 8 },
+  modalSubtitle: { fontSize: 14, color: theme.colors.text.secondary.light, marginBottom: 24 },
+  modalSection: { marginBottom: 24 },
+  modalLabel: { fontSize: 12, fontWeight: '700', color: theme.colors.text.secondary.light, marginBottom: 12, textTransform: 'uppercase' },
+  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: theme.colors.surface.light, borderWidth: 1, borderColor: theme.colors.border.light },
+  chipActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  chipText: { fontSize: 13, color: theme.colors.text.primary.light, fontWeight: '500' },
+  chipTextActive: { color: theme.colors.white },
+  modalButtons: { flexDirection: 'row', gap: 16, marginTop: 12 },
+  modalCancelButton: { flex: 1, padding: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  modalCancelText: { fontSize: 16, color: theme.colors.text.secondary.light, fontWeight: '600' },
+  modalApplyButton: { flex: 1, backgroundColor: theme.colors.primary, padding: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 12, ...theme.layout.shadows.soft },
+  modalApplyText: { fontSize: 16, color: theme.colors.white, fontWeight: 'bold' },
 });

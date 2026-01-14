@@ -31,6 +31,7 @@ export const PlaceSchema: Realm.ObjectSchema = {
     totalCheckIns: { type: 'int', default: 0 },
     isInside: { type: 'bool', default: false },
     schedules: 'Schedule[]', // Link to schedules
+    prayerConfig: 'PrayerConfig?', // Embedded object for auto calculation
   },
 };
 
@@ -62,14 +63,25 @@ export const PreferencesSchema: Realm.ObjectSchema = {
   },
 };
 
+export const PrayerConfigSchema: Realm.ObjectSchema = {
+  name: 'PrayerConfig',
+  embedded: true,
+  properties: {
+    method: { type: 'string', default: 'ISNA' },
+    madhab: { type: 'string', default: 'Hanafi' },
+    adjustments: { type: 'list', objectType: 'int', default: [0, 0, 0, 0, 0] },
+  },
+};
+
 import { SystemLogSchema } from './schemas/SystemLog';
 
 // Add to schema list
 export const schemas = [
   PlaceSchema,
   ScheduleSchema,
+  PrayerConfigSchema,
   CheckInLogSchema,
   PreferencesSchema,
   SystemLogSchema,
 ];
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;

@@ -7,7 +7,9 @@
 ### Core Functionality
 - **Location-Based Muting**: Automatically silences your phone when you enter specific geofenced areas.
 - **Auto-Resume**: Automatically restores your ringer volume when you leave the designated area.
-- **Schedule Integration**: Define specific days and time intervals for when the silencing should be active (e.g., "Only silence between 9 AM - 5 PM on Weekdays").
+- [x] **Schedule Integration**: Define specific days and time intervals for when the silencing should be active.
+- [x] **Auto Prayer Times (v2.0)**: Automatically calculates accurate prayer times for Mosques based on GPS location (using `adhan` library).
+- [x] **Smart Schedule Assistant (v2.0)**: Use natural language (e.g., "Gym Mon-Fri 6pm") to auto-fill schedules.
 
 ### Advanced Features
 - **Background Operation**: Runs reliably in the background with a persistent foreground service notification (Android).

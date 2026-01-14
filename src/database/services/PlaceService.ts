@@ -18,6 +18,11 @@ export interface PlaceData {
     days: string[];
     label?: string;
   }>;
+  prayerConfig?: {
+    method: string;
+    madhab: string;
+    adjustments?: number[];
+  };
 }
 
 export const PlaceService = {
@@ -63,6 +68,7 @@ export const PlaceService = {
           totalCheckIns: 0,
           schedules: [],
           isInside: false,
+          prayerConfig: data.prayerConfig, // Add prayer config
         });
 
         // Add schedules if provided
@@ -108,6 +114,7 @@ export const PlaceService = {
         if (data.category !== undefined) place.category = data.category;
         if (data.icon !== undefined) place.icon = data.icon;
         if (data.isEnabled !== undefined) place.isEnabled = data.isEnabled;
+        if (data.prayerConfig !== undefined) place.prayerConfig = data.prayerConfig;
 
         // Handle schedules update
         if (data.schedules) {

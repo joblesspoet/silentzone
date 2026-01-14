@@ -9,6 +9,7 @@ import notifee, {
 } from '@notifee/react-native';
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
+import { PrayerTimeService, PrayerConfig } from './PrayerTimeService';
 import { PreferencesService, Preferences } from '../database/services/PreferencesService';
 import { CheckInService } from '../database/services/CheckInService';
 import { Platform } from 'react-native';
@@ -50,6 +51,7 @@ interface UpcomingSchedule {
   startTime: Date;
   endTime: Date;
   minutesUntilStart: number;
+  scheduleLabel?: string; // e.g., "Asr", "Meeting", "Lunch Break"
 }
 
 class LocationService {
@@ -182,7 +184,9 @@ class LocationService {
       } else if (nextSchedule && nextSchedule.minutesUntilStart > 0 && nextSchedule.minutesUntilStart <= 15) {
         // Approaching (Only if > 0 minutes)
         title = '⏱️ Preparing to Silence';
-        body = `🔜 ${nextSchedule.placeName} starts in ${nextSchedule.minutesUntilStart} min`;
+        // Include schedule label if available (e.g., "Asr", "Meeting")
+        const labelText = nextSchedule.scheduleLabel ? ` - ${nextSchedule.scheduleLabel}` : '';
+        body = `🔜 ${nextSchedule.placeName}${labelText} starts in ${nextSchedule.minutesUntilStart} min`;
       } else if (this.isInScheduleWindow && nextSchedule) {
         // In schedule window but NOT validated as inside yet (Active or 0 min)
         title = '🛡️ Silent Zone Monitoring';
@@ -419,6 +423,9 @@ private setupReactiveSync() {
 
       const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
       
+      // NEW: Auto-sync prayer times for mosques
+      await this.syncPrayerTimes(enabledPlaces);
+
       const { activePlaces, upcomingSchedules } = this.categorizeBySchedule(enabledPlaces);
       this.upcomingSchedules = upcomingSchedules;
       this.isInScheduleWindow = activePlaces.length > 0 && upcomingSchedules.length > 0;
@@ -665,6 +672,7 @@ private setupReactiveSync() {
                   startTime: scheduleStart,
                   endTime: scheduleEnd,
                   minutesUntilStart,
+                  scheduleLabel: schedule.label || undefined, // Include label if available
                });
             }
          }
@@ -675,6 +683,49 @@ private setupReactiveSync() {
     upcomingSchedules.sort((a, b) => a.minutesUntilStart - b.minutesUntilStart);
 
     return { activePlaces, upcomingSchedules };
+  }
+
+  /**
+   * Sync Prayer Times for places with dynamic config
+   * Updates the Realm schedules if they are outdated
+   */
+  private async syncPrayerTimes(places: any[]) {
+    if (!this.realm || this.realm.isClosed) return;
+
+    for (const place of places) {
+      if (!place.prayerConfig) continue;
+
+      const config = place.prayerConfig as PrayerConfig;
+      const now = new Date();
+      
+      // Calculate times for TODAY
+      const prayerTimes = PrayerTimeService.calculatePrayerTimes(
+        place.latitude,
+        place.longitude,
+        now,
+        config
+      );
+
+      if (!prayerTimes) continue;
+
+      const newSchedules = PrayerTimeService.generateSchedules(prayerTimes);
+      
+      // Check if update is needed (compare count and first/last times strings)
+      // This is a rough check to prevent infinite loops, but effective for daily changes
+      const currentSchedules = place.schedules;
+      const needsUpdate = 
+        currentSchedules.length !== newSchedules.length ||
+        (currentSchedules.length > 0 && currentSchedules[0].startTime !== newSchedules[0].startTime);
+
+      if (needsUpdate) {
+        Logger.info(`[LocationService] 🕌 Updating prayer times for ${place.name}`);
+        
+        // We use PlaceService to update, which handles the Write transaction
+         PlaceService.updatePlace(this.realm, place.id, {
+            schedules: newSchedules
+         });
+      }
+    }
   }
 
   private async handleManualDisableCleanup(enabledIdsSet: Set<string>) {
