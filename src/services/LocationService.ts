@@ -410,7 +410,12 @@ private setupReactiveSync() {
       const trackingEnabled = this.isPreferenceTrackingEnabled();
       
       if (!trackingEnabled) {
-        Logger.info('[LocationService] Tracking disabled');
+        Logger.info('[LocationService] Tracking disabled globally');
+        // Cancel alarms for ALL places (since everything is paused)
+        const allPlaces = Array.from(PlaceService.getAllPlaces(this.realm));
+        for (const place of allPlaces) {
+             await this.cancelAlarmsForPlace(place.id as string);
+        }
         await this.stopForegroundService();
         await Geofencing.removeAllGeofence();
         this.geofencesActive = false;
