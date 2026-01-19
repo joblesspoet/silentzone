@@ -417,7 +417,15 @@ private setupReactiveSync() {
         return;
       }
 
-      const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
+      // CRITICAL FIX: Get ALL places first to cleanup disabled ones
+      const allPlaces = Array.from(PlaceService.getAllPlaces(this.realm));
+      const enabledPlaces = allPlaces.filter((p: any) => p.isEnabled);
+
+      // Cleanup alarms for DISABLED places (Paused)
+      const disabledPlaces = allPlaces.filter((p: any) => !p.isEnabled);
+      for (const place of disabledPlaces) {
+          await this.cancelAlarmsForPlace(place.id as string);
+      }
       
       const { activePlaces, upcomingSchedules } = this.categorizeBySchedule(enabledPlaces);
       this.upcomingSchedules = upcomingSchedules;
