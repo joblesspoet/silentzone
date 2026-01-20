@@ -84,7 +84,7 @@ export const PlaceCard: React.FC<PlaceCardProps> = ({
             <Text style={styles.name} numberOfLines={1}>{name}</Text>
             <View style={styles.infoRow}>
               <MaterialIcon 
-                name={(isCurrentLocation && !isPaused) ? "my_location" : "location_on"} 
+                name={(isCurrentLocation && !isPaused) ? "my-location" : "location-on"} 
                 size={14} 
                 color={(isCurrentLocation && !isPaused) ? theme.colors.success : theme.colors.text.secondary.dark} 
               />

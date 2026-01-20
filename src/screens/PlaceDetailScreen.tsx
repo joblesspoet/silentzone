@@ -56,16 +56,32 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const loadPlaceData = () => {
     if (isDeleting.current) return; // Prevent reaction if we are deleting
 
-    const p = PlaceService.getPlaceById(realm, placeId);
+    const p = PlaceService.getPlaceById(realm, placeId) as any;
     if (!p) {
         // Handle deletion case (e.g. from outside)
         navigation.goBack();
         return;
     }
     setPlace({
-        ...p,
-        isEnabled: p.isEnabled, 
-        isInside: !!p.isInside,  
+        id: p.id,
+        name: p.name,
+        latitude: p.latitude,
+        longitude: p.longitude,
+        radius: p.radius,
+        category: p.category,
+        icon: p.icon,
+        isEnabled: p.isEnabled,
+        lastCheckInAt: p.lastCheckInAt,
+        totalCheckIns: p.totalCheckIns,
+        isInside: !!p.isInside,
+        // Explicitly map schedules to plain objects to ensure 'endTime' is captured
+        schedules: p.schedules ? (p.schedules as any[]).map((s: any) => ({
+            id: s.id,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            days: s.days ? Array.from(s.days) : [],
+            label: s.label
+        })) : []
     });
     
     // Fetch History
