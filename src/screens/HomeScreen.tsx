@@ -306,27 +306,24 @@ useEffect(() => {
               );
             })
           )}
+          
+          {places.length > 0 && canAddPlace && (
+            <TouchableOpacity
+              style={styles.addPlaceCard}
+              onPress={() => navigation.navigate('AddPlace')}
+              activeOpacity={0.7}
+            >
+              <MaterialIcon name="add-circle-outline" size={24} color={theme.colors.primary} />
+              <Text style={styles.addPlaceText}>Add New Place</Text>
+            </TouchableOpacity>
+          )}
         </View>
         
         <View style={{ height: 100 }} /> 
       </ScrollView>
 
       {/* FAB */}
-      {places.length > 0 && canAddPlace && hasFullPermissions && (
-        <TouchableOpacity 
-          style={[styles.fab, { bottom: Math.max(insets.bottom, 20) + 20 }]}
-          onPress={() => {
-            if (canAddPlace) {
-              navigation.navigate('AddPlace');
-            } else {
-              Alert.alert("Limit Reached", "You can only add up to 3 places on the free plan.");
-            }
-          }}
-          activeOpacity={canAddPlace ? 0.9 : 1}
-        >
-          <MaterialIcon name="add" size={32} color={theme.colors.white} />
-        </TouchableOpacity>
-      )}
+
     </View>
   );
 };
@@ -419,23 +416,25 @@ const styles = StyleSheet.create({
   placesCountMax: {
     color: theme.colors.warning,
   },
-  fab: {
-    position: 'absolute',
-    // bottom handled inline
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: theme.colors.primary,
+  addPlaceCard: {
+    marginTop: theme.spacing.md,
+    borderRadius: theme.layout.borderRadius.lg,
+    borderWidth: 2,
+    borderColor: theme.colors.primary, // Using primary color for the dashed border
+    borderStyle: 'dashed',
+    backgroundColor: 'transparent',
+    paddingVertical: theme.spacing.lg,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    ...theme.layout.shadows.large,
-    shadowColor: theme.colors.primary,
-    shadowOpacity: 0.4,
+    minHeight: 100, // Consistent with typical card height
   },
-  fabDisabled: {
-    backgroundColor: theme.colors.text.disabled,
-    shadowOpacity: 0.1,
+  addPlaceText: {
+    fontFamily: theme.typography.primary,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.semibold,
+    color: theme.colors.primary,
+    marginLeft: theme.spacing.sm,
   },
   emptyStateContainer: {
     alignItems: 'center',
