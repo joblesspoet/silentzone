@@ -1,4 +1,4 @@
-package com.silentzone
+package com.qybrix.silentzone
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

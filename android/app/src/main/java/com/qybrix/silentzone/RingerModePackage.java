@@ -1,4 +1,4 @@
-package com.silentzone;
+package com.qybrix.silentzone;
 
 import com.facebook.react.ReactPackage;
 import com.facebook.react.bridge.NativeModule;
@@ -9,20 +9,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import androidx.annotation.NonNull;
-
-public class ExactAlarmPackage implements ReactPackage {
-    @NonNull
+public class RingerModePackage implements ReactPackage {
     @Override
-    public List<NativeModule> createNativeModules(@NonNull ReactApplicationContext reactContext) {
+    public List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
         List<NativeModule> modules = new ArrayList<>();
-        modules.add(new ExactAlarmModule(reactContext));
+        modules.add(new RingerModeModule(reactContext));
         return modules;
     }
 
-    @NonNull
     @Override
-    public List<ViewManager> createViewManagers(@NonNull ReactApplicationContext reactContext) {
+    public List<ViewManager> createViewManagers(ReactApplicationContext reactContext) {
         return Collections.emptyList();
     }
 }

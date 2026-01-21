@@ -1,4 +1,4 @@
-package com.silentzone
+package com.qybrix.silentzone
 
 import android.content.Context
 import com.facebook.react.bridge.NativeModule

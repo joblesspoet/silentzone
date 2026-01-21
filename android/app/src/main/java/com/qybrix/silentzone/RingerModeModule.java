@@ -1,4 +1,4 @@
-package com.silentzone;
+package com.qybrix.silentzone;
 
 import android.app.NotificationManager;
 import android.content.Context;

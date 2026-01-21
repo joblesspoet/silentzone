@@ -1,4 +1,4 @@
-package com.silentzone
+package com.qybrix.silentzone
 
 import android.app.Application
 import com.facebook.react.PackageList

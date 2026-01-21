@@ -1,4 +1,4 @@
-package com.silentzone;
+package com.qybrix.silentzone;
 
 import android.app.AlarmManager;
 import android.content.Context;
