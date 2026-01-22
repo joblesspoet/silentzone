@@ -199,6 +199,8 @@ export const PermissionsManager = {
     const notif = await PermissionsManager.getNotificationStatus();
     const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
     
+    console.log(`[PermissionsManager] Check - Loc: ${loc}, Bg: ${bg}, Notif: ${notif}, Alarm: ${exactAlarm}`);
+
     // We allow DND to be missing (we just won't silence, but we WILL track)
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&

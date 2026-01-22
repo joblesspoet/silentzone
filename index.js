@@ -28,8 +28,12 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
   const { notification, pressAction } = detail;
 
   // Handle AlarmManager Trigger
-  if (type === EventType.DELIVERED && notification?.data?.action === 'START_MONITORING') {
-      const alarmType = notification.data.alarmType || 'unknown';
+  const isAlarmAction = notification?.data?.action === 'START_MONITORING' || 
+                        notification?.data?.action === 'START_SILENCE' || 
+                        notification?.data?.action === 'STOP_SILENCE';
+
+  if (type === EventType.DELIVERED && isAlarmAction) {
+      const alarmType = notification.data.action;
       console.log(`[Background] ⏰ Alarm received via Notifee (${alarmType})`);
       
       try {
@@ -40,7 +44,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
           await locationService.initialize(realm);
           
           // 3. Handle the alarm
-          await locationService.handleAlarmFired();
+          await locationService.handleAlarmFired(notification.data);
       } catch (err) {
           console.error('[Background] Failed to init background components:', err);
       }

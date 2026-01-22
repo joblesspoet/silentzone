@@ -145,15 +145,17 @@ class LocationService {
 
     // Check for CRITICAL background location permission (Loc + Bg + Notif)
     const hasPermission = await PermissionsManager.hasCriticalPermissions();
+    Logger.info(`[LocationService] Critical permissions check: ${hasPermission}`);
     if (!hasPermission) {
-      Logger.error('[LocationService] Missing critical permissions (Loc/Bg/Notif)!');
-      // Show notification to user
+      Logger.error('[LocationService] ❌ Aborting start: Missing critical permissions in background');
+      
+      // CRITICAL: Notify user why it failed
       await this.showNotification(
-        'Permission Required',
-        'Enable "Allow all the time" for location to use Silent Zone in background',
-        'permission-warning'
+        'Setup Required',
+        'Silent Zone failed to start. Please open app and check permissions.',
+        'permission-failure'
       );
-      return;
+      return; 
     }
 
     try {
@@ -211,12 +213,14 @@ class LocationService {
         },
       });
 
-      this.startGeofenceMonitoring();
-      Logger.info('[LocationService] Foreground service started');
-    } catch (error) {
-      Logger.error('[LocationService] Failed to start service:', error);
-    }
+    Logger.info('[LocationService] Foreground service started (Notification displayed)');
+  } catch (error) {
+    Logger.error('[LocationService] Failed to start service notification:', error);
+  } finally {
+    // CRITICAL: Always start result watcher, even if notification failed
+    this.startGeofenceMonitoring();
   }
+}
 
   /**
    * Schedule a cleanup check for when current schedule ends
@@ -703,8 +707,14 @@ private setupReactiveSync() {
     }
   }
 
-  private startGeofenceMonitoring() {
+  private async startGeofenceMonitoring() {
     this.stopGeofenceMonitoring();
+    
+    // CRITICAL: Give Notifee time to promote app to Foreground Service
+    // Android "While In Use" permission only applies AFTER the service is fully running.
+    // Without this delay, the location request might loose the race and be denied.
+    await new Promise<void>(resolve => setTimeout(() => resolve(), 2000));
+    
     // Start watching position
     this.startWatcher();
   }
@@ -781,72 +791,123 @@ private setupReactiveSync() {
       const schedule = place.schedules[i];
       const [startHour, startMin] = schedule.startTime.split(':').map(Number);
       
-      // We schedule alarms for TODAY and TOMORROW to ensure continuity (365 days coverage)
-      // Day Offset 0 = Today, 1 = Tomorrow
-      for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
-        // Construct target start time
-        const targetTime = new Date(now);
-        targetTime.setHours(startHour, startMin, 0, 0);
-        
-        if (dayOffset === 1) {
-            targetTime.setDate(targetTime.getDate() + 1);
-        }
+    // We schedule alarms for TODAY and TOMORROW to ensure continuity
+    // Day Offset 0 = Today, 1 = Tomorrow
+    for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
+      // Construct target start time
+      const targetTime = new Date(now);
+      targetTime.setHours(startHour, startMin, 0, 0);
+      
+      if (dayOffset === 1) {
+          targetTime.setDate(targetTime.getDate() + 1);
+      }
 
-        // Calculate alarm time (15 mins before start)
-        const preActivationMillis = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
-        const alarmTime = targetTime.getTime() - preActivationMillis;
+      // --- ALARM 1: MONITORING START (15 mins before) ---
+      const preActivationMillis = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
+      const monitorTime = targetTime.getTime() - preActivationMillis;
 
-        // Skip if alarm time is in the past
-        if (alarmTime <= Date.now()) {
-            continue;
-        }
+      if (monitorTime > Date.now()) {
+          const monitorAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-monitor`;
+          await this.scheduleSingleAlarm(
+              monitorAlarmId,
+              monitorTime,
+              place.id,
+              'START_MONITORING',
+              'Schedule Approaching',
+              `${place.name} starting soon`
+          );
+          alarmsScheduled++;
+      }
 
-        // Deterministic ID: place-{id}-sched-{index}-day-{offset}
-        const alarmId = `place-${place.id}-sched-${i}-day-${dayOffset}`;
+      // --- ALARM 2: ACTIVATE SILENCE (Exact Start) ---
+      const startTime = targetTime.getTime();
+      if (startTime > Date.now()) {
+          const startAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-start`;
+          await this.scheduleSingleAlarm(
+              startAlarmId,
+              startTime,
+              place.id,
+              'START_SILENCE',
+              'Silent Zone Starting',
+              `Activating ${place.name} now`
+          );
+          alarmsScheduled++;
+      }
 
-        try {
-            await notifee.createTriggerNotification(
-            {
-                id: alarmId,
-                title: 'Schedule Approaching',
-                body: `${place.name} starting soon`,
-                data: {
-                action: 'START_MONITORING',
-                placeId: place.id,
-                scheduledTime: targetTime.toISOString(),
-                },
-                android: {
-                channelId: CONFIG.CHANNELS.SERVICE,
-                importance: AndroidImportance.HIGH,
-                category: AndroidCategory.ALARM,
-                autoCancel: true,
-                pressAction: {
-                    id: 'default',
-                    launchActivity: 'default',
-                },
-                },
-            },
-            {
-                type: TriggerType.TIMESTAMP,
-                timestamp: alarmTime,
-                alarmManager: {
-                allowWhileIdle: true,
-                type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
-                },
-            }
-            );
-
-            alarmsScheduled++;
-            Logger.info(
-            `[LocationService] ✅ Alarm set: ${place.name} [Day ${dayOffset}] @ ${new Date(alarmTime).toLocaleTimeString()} (ID: ${alarmId})`
-            );
-        } catch (error) {
-            Logger.error(`[LocationService] Failed to schedule alarm ${alarmId}:`, error);
-        }
+      // --- ALARM 3: DEACTIVATE SILENCE (Exact End) ---
+      // Determine duration
+      const [endHour, endMin] = schedule.endTime.split(':').map(Number);
+      const startTotal = startHour * 60 + startMin;
+      const endTotal = endHour * 60 + endMin;
+      // Handle overnight duration
+      const durationMinutes = endTotal >= startTotal ? (endTotal - startTotal) : (1440 - startTotal + endTotal);
+      
+      const endTime = startTime + (durationMinutes * 60 * 1000);
+      
+      if (endTime > Date.now()) {
+          const endAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-end`;
+          // We schedule this as "STOP_SILENCE" to force wakeup and exit
+          await this.scheduleSingleAlarm(
+              endAlarmId,
+              endTime,
+              place.id,
+              'STOP_SILENCE',
+              'Silent Zone Ending',
+              `Leaving ${place.name}`
+          );
+          alarmsScheduled++;
       }
     }
-
+    }
     Logger.info(`[LocationService] Scheduled ${alarmsScheduled} alarms for ${place.name}`);
+  }
+
+  /**
+   * Helper to schedule a single alarm
+   */
+  private async scheduleSingleAlarm(
+      id: string, 
+      timestamp: number, 
+      placeId: string, 
+      action: string,
+      title: string, 
+      body: string
+  ) {
+      try {
+        await notifee.createTriggerNotification(
+          {
+            id,
+            title,
+            body,
+            data: {
+              action, // START_MONITORING or START_SILENCE
+              placeId,
+              scheduledTime: new Date(timestamp).toISOString(),
+            },
+            android: {
+              channelId: CONFIG.CHANNELS.SERVICE,
+              importance: AndroidImportance.HIGH,
+              category: AndroidCategory.ALARM,
+              autoCancel: true,
+              pressAction: {
+                id: 'default',
+                launchActivity: 'default',
+              },
+            },
+          },
+          {
+            type: TriggerType.TIMESTAMP,
+            timestamp,
+            alarmManager: {
+              allowWhileIdle: true,
+              type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
+            },
+          }
+        );
+        Logger.info(`[LocationService] ✅ Alarm set: ${action} @ ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})`);
+      } catch (error) {
+        Logger.error(`[LocationService] Failed to schedule alarm ${id}:`, error);
+      }
   }
 
   /**
@@ -855,11 +916,13 @@ private setupReactiveSync() {
   private async cancelAlarmsForPlace(placeId: string, scheduleCount: number = 10) {
     // Cancel alarms for today (day-0) and tomorrow (day-1) for each schedule index
     for (let i = 0; i < scheduleCount; i++) {
-      const idDay0 = `place-${placeId}-sched-${i}-day-0`;
-      const idDay1 = `place-${placeId}-sched-${i}-day-1`;
-      
-      try { await notifee.cancelTriggerNotification(idDay0); } catch (e) {}
-      try { await notifee.cancelTriggerNotification(idDay1); } catch (e) {}
+        const types = ['monitor', 'start', 'end'];
+        for (const type of types) {
+             const idDay0 = `place-${placeId}-sched-${i}-day-0-type-${type}`;
+             const idDay1 = `place-${placeId}-sched-${i}-day-1-type-${type}`;
+             try { await notifee.cancelTriggerNotification(idDay0); } catch (e) {}
+             try { await notifee.cancelTriggerNotification(idDay1); } catch (e) {}
+        }
     }
     Logger.info(`[LocationService] Cancelled alarms for place ${placeId}`);
   }
@@ -868,20 +931,33 @@ private setupReactiveSync() {
   /**
    * Handle alarm firing (called when notification appears)
    */
-  async handleAlarmFired() {
-    Logger.info('[LocationService] ⏰ Alarm fired - waking up service');
-    if (!this.realm) {
-        Logger.warn('[LocationService] ❌ handleAlarmFired called but realm not ready!');
-        return; // Safety exit
-    }
-    
-    // Log currently loaded places for confirmation
-    const enabledCount = PlaceService.getEnabledPlaces(this.realm).length;
-    Logger.info(`[LocationService] Alarm context: ${enabledCount} enabled places found in database`);
+ async handleAlarmFired(data?: any) {
+   const action = data?.action || 'UNKNOWN';
+   Logger.info(`[LocationService] ⏰ Alarm fired (${action}) - waking up service`);
+   
+   if (!this.realm) {
+       Logger.warn('[LocationService] ❌ handleAlarmFired called but realm not ready!');
+       return; 
+   }
 
-    // Force a sync, which will evaluate schedules and start monitoring if needed
-    await this.syncGeofences();
-  }
+   if (action === 'START_SILENCE') {
+      // Force IMMEDIATE silence 
+      Logger.info('[LocationService] 🚀 EXACT START TRIGGERED');
+   }
+
+   if (action === 'STOP_SILENCE') {
+      Logger.info('[LocationService] 🛑 EXACT STOP TRIGGERED. Forcing exit check.');
+      // We force an exit check. If time is up, it will unsilenct.
+      if (data?.placeId) {
+          await this.handleGeofenceExit(data.placeId, true); // Force exit
+          return;
+      }
+   }
+   
+   // Default: Force a sync to align state
+   await this.syncGeofences();
+ }
+
 
   /**
    * Schedule automatic stop when prayer ends
@@ -966,6 +1042,7 @@ private setupReactiveSync() {
 
     this.watchId = Geolocation.watchPosition(
       async (position) => {
+        // Logger.info(`[LocationService] 📍 Update received: ${position.coords.latitude}, ${position.coords.longitude}`);
         try {
           await this.processLocationUpdate(position);
         } catch (error) {
@@ -1408,22 +1485,31 @@ private setupReactiveSync() {
   /**
    * Schedule a timer to activate silent zone at strict start time
    */
+  /**
+   * Schedule a timer to activate silent zone at strict start time
+   */
   private scheduleStartTimer(placeId: string, delay: number) {
     // Clear existing if any
     if (this.startTimers[placeId]) {
       clearTimeout(this.startTimers[placeId]);
+      delete this.startTimers[placeId];
+    }
+    
+    // CRITICAL: If delay is too long (> 1 minute), do NOT use setTimeout.
+    // We already have a system alarm set for the EXACT start time ('START_SILENCE').
+    // Using long functionality setTimeout in background is unreliable.
+    if (delay > 60000) {
+        Logger.info(`[LocationService] Start timer delay ${Math.round(delay/1000)}s > 60s. Relying on System Alarm for activation.`);
+        return;
     }
 
-    Logger.info(`[LocationService] Scheduled START timer for ${placeId} in ${Math.round(delay / 1000)}s`);
+    Logger.info(`[LocationService] Scheduled SHORT strict timer for ${placeId} in ${Math.round(delay / 1000)}s`);
 
     this.startTimers[placeId] = setTimeout(async () => {
-      Logger.info(`[LocationService] ⏰ Start time arrived for ${placeId}`);
+      Logger.info(`[LocationService] ⏰ Strict timer fired for ${placeId}`);
       delete this.startTimers[placeId];
       
-      // Re-verify if we are still here? 
-      // User might have left but geofence didn't trigger (rare but possible).
-      // Ideally receiving a 'Start Trigger' calls handleGeofenceEntry again 
-      // which will now fall into "ACTIVE SCHEDULE" block.
+      // Re-trigger entry logic (checks schedules)
       await this.handleGeofenceEntry(placeId);
     }, delay);
   }
