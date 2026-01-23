@@ -101,9 +101,10 @@ android {
     splits {
         abi {
             reset()
-            // Disable splits when building AAB (bundle), only enable for APK builds
-            enable gradle.startParameter.taskNames.any { it.contains("Release") && !it.contains("Bundle") }
-            universalApk true  // Generate a universal APK for easy sharing
+            // Disable splits for release builds (AAB handles multiple architectures)
+            // Only enable for debug builds if needed
+            enable false
+            universalApk false
             include "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
         }
     }

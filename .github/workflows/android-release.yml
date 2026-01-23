@@ -58,6 +58,17 @@ jobs:
         if: ${{ github.event.inputs.build_type == 'bundle' }}
         run: cd android && ./gradlew bundleRelease --no-daemon --stacktrace
 
+      - name: Upload to Google Play Store (Internal Testing)
+        if: ${{ github.event.inputs.build_type == 'bundle' }}
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAYSTORE_SERVICE_ACCOUNT_JSON }}
+          packageName: com.qybrix.silentzone
+          releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
+          track: internal
+          status: completed
+          inAppUpdatePriority: 2
+
       - name: Upload APK artifact
         if: ${{ github.event.inputs.build_type == 'apk' }}
         uses: actions/upload-artifact@v4
