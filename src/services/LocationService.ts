@@ -3,13 +3,12 @@ import notifee, {
   AndroidImportance,
   AndroidForegroundServiceType,
   TriggerType,
-  TimestampTrigger,
   AndroidCategory,
   AlarmType,
 } from '@notifee/react-native';
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
-import { PreferencesService, Preferences } from '../database/services/PreferencesService';
+import {  Preferences } from '../database/services/PreferencesService';
 import { CheckInService } from '../database/services/CheckInService';
 import { Platform } from 'react-native';
 import Geolocation from '@react-native-community/geolocation';
@@ -355,7 +354,7 @@ private setupReactiveSync() {
           Logger.info('[LocationService] ✅ Auto-enabling tracking (places added)');
           
           // Enable tracking and wait for it to complete
-          this.realm!.write(() => {
+         this.realm!.write(() => {
             prefs.trackingEnabled = true;
           });
           

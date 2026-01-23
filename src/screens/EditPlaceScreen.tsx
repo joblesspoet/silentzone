@@ -13,7 +13,11 @@ import { PermissionsManager } from '../permissions/PermissionsManager';
 import { RESULTS } from 'react-native-permissions';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { sortSchedules, validateLimit, findOverlappingSchedules, findInvalidTimeRanges, ScheduleSlot as UtilScheduleSlot } from '../utils/ScheduleUtils';
+import { locationService } from '../services/LocationService';
+import { sortSchedules, validateLimit, findOverlappingSchedules, findInvalidTimeRanges, 
+  ScheduleSlot as UtilScheduleSlot } from '../utils/ScheduleUtils';
+
+import { PreferencesService } from '../database/services/PreferencesService';
 
 // Use shared interface or map to it
 interface ScheduleSlot extends UtilScheduleSlot {}
@@ -211,7 +215,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     setNameError(null);
     setScheduleError(false);
 
@@ -263,6 +267,13 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
       });
 
       if (success) {
+              await locationService.syncGeofences();
+              
+              const prefs = PreferencesService.getPreferences(realm);
+              if (isEnabled && prefs && !(prefs as any).trackingEnabled) {
+                PreferencesService.updatePreferences(realm, { trackingEnabled: true });
+              }
+
           navigation.goBack();
       } else {
           Alert.alert("Error", "Failed to update place.");
