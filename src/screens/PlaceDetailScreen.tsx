@@ -7,6 +7,7 @@ import { PlaceService } from '../database/services/PlaceService';
 import { CheckInService } from '../database/services/CheckInService';
 import { useRealm } from '../database/RealmProvider';
 import { ToggleSwitch } from '../components/ToggleSwitch';
+import { locationService } from '../services/LocationService';
 
 interface Props {
   navigation: any;
@@ -94,8 +95,11 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     setLoading(false);
   };
 
-  const handleToggle = (val: boolean) => {
-    PlaceService.updatePlace(realm, placeId, { isEnabled: val });
+  const handleToggle = async (val: boolean) => {
+    const success = PlaceService.updatePlace(realm, placeId, { isEnabled: val });
+    if (success) {
+      await locationService.syncGeofences();
+    }
   };
 
   const handleDelete = () => {
