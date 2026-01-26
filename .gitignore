@@ -77,3 +77,4 @@ android/silentzone-482509-7e2227dc69be.json
 build-local-apk.sh
 encode-json.sh
 build-local-bundle.sh
+claude-help

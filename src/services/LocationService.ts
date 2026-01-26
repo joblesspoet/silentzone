@@ -81,6 +81,7 @@ class LocationService {
   private nextAlarmScheduled = false;
 
   private restartCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private gpsVerificationTimeout: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * Initialize the location service
@@ -1237,52 +1238,71 @@ private setupReactiveSync() {
   private async processLocationUpdate(position: any) {
     if (!this.realm || this.realm.isClosed) return;
 
-    const { latitude, longitude, accuracy } = position.coords;
-    
-    this.lastKnownLocation = {
-      latitude,
-      longitude,
-      accuracy,
-      timestamp: Date.now(),
-    };
-
-    Logger.info(
-      `[LocationService] Location: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}, ` +
-      `accuracy: ${accuracy.toFixed(1)}m`
-    );
-
-    if (accuracy > CONFIG.MAX_ACCEPTABLE_ACCURACY) {
-      Logger.warn(`[LocationService] Poor GPS accuracy (${accuracy.toFixed(0)}m)`);
-      // We still process it, but maybe with caution?
-      // For now, let's proceed but just warn.
+    // Clear GPS verification timeout on first location (Batch 3 prep)
+    if (this.gpsVerificationTimeout) {
+      clearTimeout(this.gpsVerificationTimeout);
+      this.gpsVerificationTimeout = null;
+      Logger.info('[LocationService] ✅ GPS verified - receiving locations');
     }
 
-    const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
-    const { activePlaces, upcomingSchedules } = this.categorizeBySchedule(enabledPlaces);
+    // Prevent concurrent processing
+    if (this.isChecking) {
+      Logger.info('[LocationService] Already checking location, skipping');
+      return;
+    }
 
-    // Filter upcoming schedules that are in the "pre-start" window
-    const relevantUpcomingPlaces = upcomingSchedules
-        .filter(s => s.minutesUntilStart <= CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES)
-        .map(s => enabledPlaces.find(p => p.id === s.placeId))
-        .filter(p => p !== undefined);
+    this.isChecking = true;
 
-    const placesToCheck = [...activePlaces, ...relevantUpcomingPlaces];
-    // Remove duplicates
-    const uniquePlacesToCheck = Array.from(new Set(placesToCheck.map(p => p.id)))
-        .map(id => placesToCheck.find(p => p.id === id));
+    try {
+      const location: LocationState = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        timestamp: position.timestamp,
+      };
 
-    Logger.info(`[LocationService] Checking ${activePlaces.length} active + ${relevantUpcomingPlaces.length} upcoming locations`);
+      // VALIDATION: Check location quality
+      const quality = this.validateLocationQuality(location);
+      
+      if (!quality.valid) {
+        Logger.warn(`[LocationService] Poor location quality: ${quality.reason}`);
+        return;
+      }
 
-    await this.validateCurrentCheckIns(latitude, longitude, accuracy, activePlaces);
-    
-    // Check against ALL relevant places (Active + Upcoming)
-    const insidePlaces = this.determineInsidePlaces(latitude, longitude, accuracy, uniquePlacesToCheck);
-    
-    await this.handleScheduleCleanup(activePlaces);
-    await this.handleNewEntries(insidePlaces);
+      this.lastKnownLocation = location;
 
-    // NEW: Schedule auto-stop when prayer ends
-    this.scheduleAutoStop(activePlaces);
+      Logger.info(
+        `[LocationService] Location: ${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}, ` +
+        `accuracy: ${location.accuracy.toFixed(1)}m`
+      );
+
+      // Determine inside places using new logic (returns Place IDs)
+      const insidePlaceIds = this.determineInsidePlaces(location);
+      
+      // Resolve IDs to Place objects for legacy handlers
+      const insidePlaces = insidePlaceIds
+        .map(id => PlaceService.getPlaceById(this.realm!, id))
+        .filter(p => p !== null);
+
+      // Get active places for schedule cleanup checks
+      const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
+      const { activePlaces } = this.categorizeBySchedule(enabledPlaces);
+
+      Logger.info(`[LocationService] Inside: ${insidePlaceIds.join(', ') || 'none'}`);
+
+      await this.validateCurrentCheckIns(location.latitude, location.longitude, location.accuracy, activePlaces);
+      
+      await this.handleScheduleCleanup(activePlaces);
+      await this.handleNewEntries(insidePlaces);
+
+      // NEW: Schedule auto-stop when prayer ends
+      this.scheduleAutoStop(activePlaces);
+
+    } catch (error) {
+      Logger.error('[LocationService] Error processing location:', error);
+    } finally {
+      this.isChecking = false;
+    }
   }
 
   private async validateCurrentCheckIns(
@@ -1333,76 +1353,116 @@ private setupReactiveSync() {
   }
 
   /**
-   * Determine which places user is inside
-   * Smart handling for small radius locations
+   * Determine which places user is inside based on GPS location
+   * 
+   * CRITICAL: Accounts for GPS accuracy to prevent false positives
+   * - Requires accuracy < 50% of zone radius
+   * - Calculates "effective distance" accounting for uncertainty
+   * 
+   * Example: 50m radius zone
+   * - Good: 20m distance, 10m accuracy → effective 10m ✅ INSIDE
+   * - Poor: 45m distance, 30m accuracy → effective 15m ✅ INSIDE (barely)
+   * - Bad: 40m distance, 60m accuracy → REJECTED (accuracy too low)
    */
-  private determineInsidePlaces(
-    latitude: number,
-    longitude: number,
-    accuracy: number,
-    places: any[]
-  ): any[] {
-    return places.filter(place => {
+  private determineInsidePlaces(location: LocationState): string[] {
+    const enabledPlaces = this.realm ? PlaceService.getEnabledPlaces(this.realm) : [];
+    const insidePlaces: string[] = [];
+    
+    Logger.info(
+      `[Location] Checking position: ` +
+      `lat=${location.latitude.toFixed(6)}, ` +
+      `lon=${location.longitude.toFixed(6)}, ` +
+      `accuracy=±${Math.round(location.accuracy)}m`
+    );
+    
+    for (const place of enabledPlaces) {
+      const placeId = (place as any).id;
+      const placeName = (place as any).name;
+      const radius = (place as any).radius;
+      
+      // Calculate distance from place center
       const distance = this.calculateDistance(
-        latitude,
-        longitude,
-        place.latitude as number,
-        place.longitude as number
+        location.latitude,
+        location.longitude,
+        (place as any).latitude,
+        (place as any).longitude
       );
-
-      const radius = place.radius as number;
-      const isSmallRadius = radius <= CONFIG.SCHEDULE.SMALL_RADIUS_THRESHOLD;
-      const isActive = CheckInService.isPlaceActive(this.realm!, place.id as string);
-
-      // For small radius, use sophisticated detection
-      if (isSmallRadius) {
-        if (accuracy < 20) {
-          const isInside = distance <= radius + 8;
-          Logger.info(
-            `[LocationService] ${place.name} (PRECISE): dist=${Math.round(distance)}m, inside=${isInside}`
-          );
-          return isInside;
-        }
-
-        if (accuracy < 50) {
-          const effectiveDistance = Math.max(0, distance - accuracy * 0.6);
-          const isInside = effectiveDistance <= radius + 12;
-          Logger.info(
-            `[LocationService] ${place.name} (MODERATE): dist=${Math.round(distance)}m, inside=${isInside}`
-          );
-          return isInside;
-        }
-
-        if (accuracy <= CONFIG.MAX_ACCEPTABLE_ACCURACY) {
-          const isVeryClose = distance <= radius + 20;
-          const maybeInside = distance <= radius + accuracy * 0.5;
-          const isInside = isVeryClose || maybeInside || isActive;
-          
-          Logger.info(
-            `[LocationService] ${place.name} (POOR ACC): inside=${isInside}`
-          );
-          return isInside;
-        }
-
-        if (isActive) {
-          Logger.info(`[LocationService] ${place.name}: Maintaining active state`);
-          return true;
-        }
-
-        return false;
+      
+      // CRITICAL VALIDATION #1: Accuracy must be better than 50% of radius
+      // This prevents using inaccurate GPS for small zones
+      const requiredAccuracy = radius * 0.5;
+      
+      if (location.accuracy > requiredAccuracy) {
+        Logger.warn(
+          `[Location] ⚠️ Skipping ${placeName}: ` +
+          `GPS accuracy too low (${Math.round(location.accuracy)}m > ` +
+          `${Math.round(requiredAccuracy)}m required for ${radius}m radius)`
+        );
+        continue;
       }
+      
+      // CRITICAL CALCULATION #2: Account for GPS uncertainty
+      // effectiveDistance = minimum possible distance (best case)
+      // If effective distance <= radius, we're DEFINITELY inside
+      const effectiveDistance = Math.max(0, distance - location.accuracy);
+      
+      // Check if we're inside (accounting for uncertainty)
+      if (effectiveDistance <= radius) {
+        Logger.info(
+          `[Location] ✅ INSIDE ${placeName}: ` +
+          `distance=${Math.round(distance)}m, ` +
+          `accuracy=±${Math.round(location.accuracy)}m, ` +
+          `effective=${Math.round(effectiveDistance)}m <= ${radius}m radius`
+        );
+        insidePlaces.push(placeId);
+        
+      } else {
+        // Outside the zone
+        Logger.info(
+          `[Location] Outside ${placeName}: ` +
+          `effective distance ${Math.round(effectiveDistance)}m > ${radius}m`
+        );
+      }
+    }
+    
+    if (insidePlaces.length === 0) {
+      Logger.info('[Location] Not inside any enabled zones');
+    }
+    
+    return insidePlaces;
+  }
 
-      // For larger radius, use standard detection
-      const radiusWithBuffer = radius * CONFIG.EXIT_BUFFER_MULTIPLIER;
-      const effectiveDistance = Math.max(0, distance - accuracy);
-      const isInside = effectiveDistance <= radiusWithBuffer || distance <= radius + 10;
-
-      Logger.info(
-        `[LocationService] ${place.name}: dist=${Math.round(distance)}m, inside=${isInside}`
-      );
-
-      return isInside;
-    });
+  /**
+   * Validate if location has sufficient quality for tracking
+   * Returns { valid: boolean, reason: string }
+   */
+  private validateLocationQuality(
+    location: LocationState,
+    requiredAccuracy?: number
+  ): { valid: boolean; reason: string } {
+    
+    // Check age (stale location)
+    const age = Date.now() - location.timestamp;
+    const maxAge = 60000; // 1 minute
+    
+    if (age > maxAge) {
+      return {
+        valid: false,
+        reason: `Location too old (${Math.round(age / 1000)}s > ${maxAge / 1000}s)`
+      };
+    }
+    
+    // Check accuracy
+    const maxAccuracy = requiredAccuracy || 100; // Default 100m
+    
+    if (location.accuracy > maxAccuracy) {
+      return {
+        valid: false,
+        reason: `Accuracy too low (${Math.round(location.accuracy)}m > ${maxAccuracy}m)`
+      };
+    }
+    
+    return { valid: true, reason: 'Location quality acceptable' };
   }
 
   private async handleScheduleCleanup(activePlaces: any[]) {
@@ -1516,75 +1576,233 @@ private setupReactiveSync() {
   }
 
   /**
-   * Activates the silent zone and logs check-in
+   * Activate silent zone - handles both first entry and overlapping zones
+   * 
+   * Key Logic:
+   * - First entry: Save original volume, then silence
+   * - Overlapping: Save current state (already silent), stay silent
+   * 
+   * This ensures when exiting one zone, we check if still in others before restoring
    */
   private async activateSilentZone(place: any) {
-    const activeLogs = CheckInService.getActiveCheckIns(this.realm!);
+    if (!this.realm) {
+      Logger.error('[SilentZone] Cannot activate: realm not available');
+      return;
+    }
 
-    if (activeLogs.length > 0) {
-      const firstLog = activeLogs[0] as any;
-      const missingOriginal = firstLog.savedVolumeLevel == null || firstLog.savedMediaVolume == null;
-
-      if (missingOriginal) {
-        await this.saveAndSilencePhone(place.id);
-      } else {
-        const result = CheckInService.logCheckIn(this.realm!, place.id, firstLog.savedVolumeLevel, firstLog.savedMediaVolume);
+    const placeId = place.id;
+    const placeName = place.name;
+    
+    // Check if we're already in any silent zones
+    const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+    const isOverlapping = activeLogs.length > 0;
+    
+    if (isOverlapping) {
+      // OVERLAPPING ZONE: We're already in another silent zone
+      Logger.info(
+        `[SilentZone] 🔄 Entering ${placeName} ` +
+        `(already in ${activeLogs.length} zone(s))`
+      );
+      
+      // List which zones we're already in
+      activeLogs.forEach((log: any, index: number) => {
+        const existingPlace = PlaceService.getPlaceById(this.realm!, log.placeId);
+        const existingName = existingPlace ? (existingPlace as any).name : 'Unknown';
+        Logger.info(`  └─ Zone ${index + 1}: ${existingName}`);
+      });
+      
+      // CRITICAL FIX: Save CURRENT state (which is already silent)
+      // This way, when we exit THIS zone, we stay silent if still in others
+      try {
+        const currentMode = await RingerMode.getRingerMode();
+        const currentVolume = await RingerMode.getStreamVolume(
+          RingerMode.STREAM_TYPES.MUSIC
+        );
+        
+        Logger.info(
+          `[SilentZone] Saving current state for ${placeName}: ` +
+          `mode=${currentMode} (should be ${RINGER_MODE.silent}), ` +
+          `volume=${currentVolume} (should be 0)`
+        );
+        
+        // Validate that we're actually silent
+        if (currentMode !== RINGER_MODE.silent) {
+          Logger.warn(
+            `[SilentZone] ⚠️ WARNING: Phone not silent in overlapping zone! ` +
+            `Mode=${currentMode}, expected=${RINGER_MODE.silent}`
+          );
+        }
+        
+        // Log check-in with current (silent) state
+        const result = CheckInService.logCheckIn(
+          this.realm, 
+          placeId, 
+          currentMode,     // Current state (should be silent)
+          currentVolume    // Current state (should be 0)
+        );
+        
         if (!result) {
-           Logger.error(`[LocationService] Failed to log check-in (multi) for ${place.id}, aborting notification`);
-           return;
+          Logger.error(`[SilentZone] ❌ Failed to log overlapping check-in for ${placeName}`);
+          return;
+        }
+        
+        // Notify user
+        await this.showNotification(
+          'Multiple Silent Zones',
+          `Entered ${placeName}. Phone remains silent (${activeLogs.length + 1} active zones).`,
+          'check-in-multi'
+        );
+        
+        Logger.info(`[SilentZone] ✅ Overlapping check-in logged for ${placeName}`);
+        
+      } catch (error) {
+        Logger.error('[SilentZone] Failed to save overlapping state:', error);
+        
+        // Fallback: Log check-in without volume data
+        CheckInService.logCheckIn(this.realm, placeId);
+      }
+      
+    } else {
+      // FIRST ENTRY: Save original volume state and silence
+      Logger.info(`[SilentZone] 🔇 First entry into ${placeName}`);
+      
+      try {
+        await this.saveAndSilencePhone(placeId);
+        
+        await this.showNotification(
+          'Phone Silenced 🔕',
+          `Entered ${placeName}`,
+          'check-in'
+        );
+        
+        Logger.info(`[SilentZone] ✅ Phone silenced for ${placeName}`);
+        
+      } catch (error) {
+        Logger.error(`[SilentZone] Failed to silence phone for ${placeName}:`, error);
+      }
+    }
+    
+    // Schedule end timer for this place
+    const schedules = place.schedules || [];
+    if (schedules.length > 0) {
+      // Find which schedule is currently active
+      const now = new Date();
+      for (const schedule of schedules) {
+        if (this.isScheduleActiveNow(schedule, now)) {
+          // Calculate time until end
+          const [endHours, endMinutes] = schedule.endTime.split(':').map(Number);
+          const endTime = new Date(now);
+          endTime.setHours(endHours, endMinutes, 0, 0);
+          
+          // Handle overnight schedules
+          if (endTime < now) {
+            endTime.setDate(endTime.getDate() + 1);
+          }
+          
+          const msUntilEnd = endTime.getTime() - now.getTime();
+          
+          if (msUntilEnd > 0) {
+            this.scheduleEndTimerForPlace(placeId, msUntilEnd);
+            Logger.info(
+              `[SilentZone] Scheduled end timer for ${placeName} ` +
+              `in ${Math.round(msUntilEnd / 60000)} min`
+            );
+          }
+          
+          break;
         }
       }
-
-      await this.showNotification(
-        'Multiple Silent Zones',
-        `Entered ${place.name}. Phone remains silent.`,
-        'check-in-multi'
-      );
-    } else {
-      await this.saveAndSilencePhone(place.id);
-      await this.showNotification(
-        'Phone Silenced 🔕',
-        `Entered ${place.name}`,
-        'check-in'
-      );
     }
   }
 
+  /**
+   * Handle geofence exit with overlapping zone support
+   */
   private async handleGeofenceExit(placeId: string, force: boolean = false) {
     const now = Date.now();
     const lastTime = this.lastTriggerTime[placeId] || 0;
 
+    // Debounce (unless forced)
     if (!force && now - lastTime < CONFIG.DEBOUNCE_TIME) {
       Logger.info(`[LocationService] Debouncing exit: ${placeId}`);
       return;
     }
     this.lastTriggerTime[placeId] = now;
 
-    if (!this.realm) return;
+    if (!this.realm) {
+      Logger.error('[LocationService] Cannot handle exit: realm not available');
+      return;
+    }
 
     const place = PlaceService.getPlaceById(this.realm, placeId);
-    if (!CheckInService.isPlaceActive(this.realm, placeId)) return;
+    const placeName = place ? (place as any).name : 'Unknown';
+    
+    // Check if this place has an active check-in
+    if (!CheckInService.isPlaceActive(this.realm, placeId)) {
+      Logger.info(`[LocationService] No active check-in for ${placeName}, ignoring exit`);
+      return;
+    }
 
+    // Get all active logs and find this one
     const activeLogs = CheckInService.getActiveCheckIns(this.realm);
     const thisLog = activeLogs.find(l => l.placeId === placeId);
 
-    if (!thisLog) return;
+    if (!thisLog) {
+      Logger.warn(`[LocationService] Active check-in for ${placeName} not found`);
+      return;
+    }
 
-    if (activeLogs.length === 1) {
+    const totalActive = activeLogs.length;
+    Logger.info(`[LocationService] 🚪 Exiting ${placeName} (${totalActive} total active zones)`);
+
+    if (totalActive === 1) {
+      // LAST ZONE: Restore sound
+      Logger.info(`[LocationService] Last zone exit - restoring sound`);
+      
       await this.restoreRingerMode(thisLog.id as string);
       CheckInService.logCheckOut(this.realm, thisLog.id as string);
+      
       await this.showNotification(
         'Sound Restored 🔔',
-        `You have left ${place?.name || 'the silent zone'}`,
+        `You have left ${placeName}. Phone sound restored.`,
         'check-out'
       );
+      
+      Logger.info(`[LocationService] ✅ Sound restored after exiting ${placeName}`);
+      
     } else {
+      // OVERLAPPING: Still in other zones, stay silent
+      Logger.info(
+        `[LocationService] Still in ${totalActive - 1} other zone(s), ` +
+        `staying silent`
+      );
+      
+      // Log which zones we're still in
+      activeLogs.forEach((log: any) => {
+        if (log.placeId !== placeId) {
+          const otherPlace = PlaceService.getPlaceById(this.realm!, log.placeId);
+          const otherName = otherPlace ? (otherPlace as any).name : 'Unknown';
+          Logger.info(`  └─ Still in: ${otherName}`);
+        }
+      });
+      
+      // Close this check-in but DON'T restore sound
       CheckInService.logCheckOut(this.realm, thisLog.id as string);
+      
       await this.showNotification(
         'Partial Exit',
-        `Left ${place?.name || 'location'}. Still in other silent zones.`,
+        `Left ${placeName}. Phone stays silent (${totalActive - 1} active zones).`,
         'check-out-partial'
       );
+      
+      Logger.info(`[LocationService] ✅ Partial exit from ${placeName}`);
+    }
+    
+    // Clear end timer for this place
+    if (this.endTimers[placeId]) {
+      clearTimeout(this.endTimers[placeId]);
+      delete this.endTimers[placeId];
+      Logger.info(`[LocationService] Cleared end timer for ${placeName}`);
     }
   }
 
