@@ -780,7 +780,15 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface.light,
     padding: 10,
     borderRadius: 30,
-    ...theme.layout.shadows.medium,
+    zIndex: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
   formContainer: {
     padding: theme.spacing.lg,

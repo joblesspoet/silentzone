@@ -1355,7 +1355,11 @@ private setupReactiveSync() {
       if (missingOriginal) {
         await this.saveAndSilencePhone(place.id);
       } else {
-        CheckInService.logCheckIn(this.realm!, place.id, firstLog.savedVolumeLevel, firstLog.savedMediaVolume);
+        const result = CheckInService.logCheckIn(this.realm!, place.id, firstLog.savedVolumeLevel, firstLog.savedMediaVolume);
+        if (!result) {
+           Logger.error(`[LocationService] Failed to log check-in (multi) for ${place.id}, aborting notification`);
+           return;
+        }
       }
 
       await this.showNotification(
@@ -1433,7 +1437,11 @@ private setupReactiveSync() {
 
       Logger.info(`[LocationService] Saving: mode=${currentMode}, volume=${currentMediaVolume}`);
 
-      CheckInService.logCheckIn(this.realm!, placeId, currentMode, currentMediaVolume);
+      const log = CheckInService.logCheckIn(this.realm!, placeId, currentMode, currentMediaVolume);
+      if (!log) {
+         Logger.error(`[LocationService] Failed to persist check-in for ${placeId}, aborting silence operation`);
+         return; 
+      }
 
       try {
         await RingerMode.setRingerMode(RINGER_MODE.silent);
@@ -1449,6 +1457,7 @@ private setupReactiveSync() {
       }
     } catch (error) {
       Logger.error('[LocationService] Save and silence failed:', error);
+      // Try to log check-in anyway but without volume data (fallback)
       CheckInService.logCheckIn(this.realm!, placeId);
     }
   }

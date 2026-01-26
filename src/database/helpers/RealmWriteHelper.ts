@@ -1,6 +1,7 @@
 // database/helpers/RealmWriteHelper.ts
 
 import { Realm } from 'realm';
+import { Logger } from '../../services/Logger';
 
 /**
  * Safe write transaction wrapper that prevents nested transactions
@@ -18,13 +19,13 @@ export class RealmWriteHelper {
     debugLabel: string = 'unknown'
   ): T | null {
     if (!realm || realm.isClosed) {
-      console.warn(`[RealmWrite:${debugLabel}] Realm is null or closed`);
+      Logger.warn(`[RealmWrite:${debugLabel}] Realm is null or closed`);
       return null;
     }
 
     // If already in transaction, execute directly without nesting
     if (realm.isInTransaction) {
-      console.warn(
+      Logger.warn(
         `[RealmWrite:${debugLabel}] Already in transaction, executing directly`
       );
       return callback();
@@ -38,7 +39,7 @@ export class RealmWriteHelper {
       });
       return result!;
     } catch (error) {
-      console.error(`[RealmWrite:${debugLabel}] Write failed:`, error);
+      Logger.error(`[RealmWrite:${debugLabel}] Write failed:`, error);
       return null;
     }
   }
@@ -71,12 +72,12 @@ export class RealmWriteHelper {
     debugLabel: string = 'batch'
   ): boolean {
     if (!realm || realm.isClosed) {
-      console.warn(`[RealmWrite:${debugLabel}] Realm is null or closed`);
+      Logger.warn(`[RealmWrite:${debugLabel}] Realm is null or closed`);
       return false;
     }
 
     if (realm.isInTransaction) {
-      console.warn(
+      Logger.warn(
         `[RealmWrite:${debugLabel}] Already in transaction, cannot batch`
       );
       return false;
@@ -88,7 +89,7 @@ export class RealmWriteHelper {
           try {
             op.callback();
           } catch (error) {
-            console.error(
+            Logger.error(
               `[RealmWrite:${debugLabel}:${op.label}] Operation failed:`,
               error
             );
@@ -97,7 +98,7 @@ export class RealmWriteHelper {
       });
       return true;
     } catch (error) {
-      console.error(`[RealmWrite:${debugLabel}] Batch write failed:`, error);
+      Logger.error(`[RealmWrite:${debugLabel}] Batch write failed:`, error);
       return false;
     }
   }
