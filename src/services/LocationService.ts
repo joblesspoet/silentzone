@@ -59,6 +59,10 @@ class LocationService {
   private isSyncing = false;
   private geofencesActive = false;
   
+  // Concurrency control
+  private isProcessingAlarm = false;
+  private alarmQueue: any[] = [];
+  
   // Optimization
   private lastTriggerTime: { [key: string]: number } = {};
   private lastEnabledIds: string = '';
@@ -86,6 +90,10 @@ class LocationService {
     // Background alarms open a new realm, so we must update it even if already initialized
     this.realm = realmInstance;
     
+    // CRITICAL: Always restore state from database
+    // This handles process death and alarm wake-ups
+    await this.restoreStateFromDatabase();
+
     if (this.isReady) {
       Logger.info('[LocationService] Re-initializing with new realm instance');
       // Re-sync with the new realm data to pick up any schedule changes
@@ -105,6 +113,90 @@ class LocationService {
 
     this.isReady = true;
     Logger.info('[LocationService] ✅ Service initialized');
+  }
+
+  /**
+   * CRITICAL: Restore runtime state from database
+   * Called on every initialization to handle process death
+   */
+  private async restoreStateFromDatabase() {
+    if (!this.realm || this.realm.isClosed) {
+      Logger.error('[Restore] Cannot restore: realm not available');
+      return;
+    }
+
+    Logger.info('[Restore] 🔄 Restoring state from database...');
+
+    try {
+      // 1. Restore active check-ins
+      const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+      Logger.info(`[Restore] Found ${activeLogs.length} active check-in(s)`);
+
+      // 2. Recalculate upcoming schedules
+      const enabledPlaces = PlaceService.getEnabledPlaces(this.realm);
+      const { upcomingSchedules } = this.categorizeBySchedule(Array.from(enabledPlaces));
+      this.upcomingSchedules = upcomingSchedules;
+      Logger.info(`[Restore] Found ${this.upcomingSchedules.length} upcoming schedule(s)`);
+
+      // 3. Determine if we're currently in a schedule window
+      const now = new Date();
+      
+      let foundActiveWindow = false;
+      for (const place of enabledPlaces) {
+        const schedules = (place as any).schedules || [];
+        for (const schedule of schedules) {
+          const isActive = this.isScheduleActiveNow(schedule, now);
+          if (isActive) {
+            foundActiveWindow = true;
+            Logger.info(`[Restore] ✅ Currently in active window: ${(place as any).name}`);
+            break;
+          }
+        }
+        if (foundActiveWindow) break;
+      }
+      
+      this.isInScheduleWindow = foundActiveWindow;
+
+      // 4. Restore timers for active check-ins (schedule end timers)
+      await this.restoreActiveTimers();
+
+      Logger.info('[Restore] ✅ State restoration complete', {
+        activeCheckIns: activeLogs.length,
+        upcomingSchedules: this.upcomingSchedules.length,
+        isInScheduleWindow: this.isInScheduleWindow
+      });
+
+    } catch (error) {
+      Logger.error('[Restore] Failed to restore state:', error);
+    }
+  }
+
+  /**
+   * Helper: Check if a schedule is active RIGHT NOW
+   */
+  private isScheduleActiveNow(schedule: any, now: Date): boolean {
+    const currentDayIndex = now.getDay();
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const currentDay = days[currentDayIndex];
+    
+    // Check if schedule has days defined and includes today
+    if (schedule.days.length > 0 && !schedule.days.includes(currentDay)) {
+      return false;
+    }
+
+    const [startHours, startMinutes] = schedule.startTime.split(':').map(Number);
+    const [endHours, endMinutes] = schedule.endTime.split(':').map(Number);
+
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    const startMinutesTotal = startHours * 60 + startMinutes;
+    const endMinutesTotal = endHours * 60 + endMinutes;
+
+    // Handle overnight schedules (e.g., 23:00 to 01:00)
+    if (endMinutesTotal < startMinutesTotal) {
+      return nowMinutes >= startMinutesTotal || nowMinutes <= endMinutesTotal;
+    }
+
+    return nowMinutes >= startMinutesTotal && nowMinutes <= endMinutesTotal;
   }
 
   /**
@@ -739,31 +831,58 @@ private setupReactiveSync() {
   }
 
   /**
-   * Decide if we should actively monitor NOW
+   * Determine if we should start monitoring NOW
+   * Checks both current active windows AND upcoming schedules
    */
   private shouldStartMonitoring(activePlaces: any[], upcomingSchedules: any[]): boolean {
-    // 1. If schedule is active right now → Monitor
-    if (activePlaces.length > 0) {
-      // Logger.info('[LocationService] ✅ Schedule active now');
-      return true;
+    if (!this.realm) {
+      Logger.warn('[Monitor Check] Realm not ready');
+      return false;
     }
 
-    // 2. If schedule starts within 15 minutes → Monitor
-    // CRITICAL FIX: Added 5-minute safety buffer.
-    // If schedule is < 20 mins away, the alarm would be < 5 mins away.
-    // Short alarms are unreliable, so just start monitoring immediately.
+    const now = new Date();
+    const enabledPlaces = PlaceService.getEnabledPlaces(this.realm);
+
+    if (enabledPlaces.length === 0) {
+      Logger.info('[Monitor Check] No enabled places');
+      return false;
+    }
+
+    // CRITICAL CHECK #1: Are we CURRENTLY inside an active schedule window?
+    for (const place of enabledPlaces) {
+      const schedules = (place as any).schedules || [];
+      
+      for (const schedule of schedules) {
+        const isActive = this.isScheduleActiveNow(schedule, now);
+        
+        if (isActive) {
+          Logger.info(`[Monitor Check] ✅ ACTIVE NOW: ${(place as any).name}`);
+          return true; // Should monitor
+        }
+      }
+    }
+
+    // CRITICAL CHECK #2: Do we have an upcoming schedule soon?
+    // We can use the passed upcomingSchedules which are already calculated
     if (upcomingSchedules.length > 0) {
       const nextSchedule = upcomingSchedules[0];
       const safetyThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES + 5; // 20 minutes
       
       if (nextSchedule.minutesUntilStart <= safetyThreshold) {
-        Logger.info(`[LocationService] ✅ Pre-start monitoring: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart}m (within ${safetyThreshold}m threshold)`);
+        Logger.info(
+          `[Monitor Check] ✅ UPCOMING: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart} min (<= ${safetyThreshold}m)`
+        );
         return true;
       }
+      
+      Logger.info(
+        `[Monitor Check] ⏸️ WAITING: Next schedule (${nextSchedule.placeName}) ` +
+        `in ${nextSchedule.minutesUntilStart} min (> ${safetyThreshold} min threshold)`
+      );
+    } else {
+      Logger.info('[Monitor Check] No upcoming schedules found');
     }
 
-    // 3. Otherwise → Don't monitor, use alarm instead
-    // Logger.info('[LocationService] ⏰ Using alarm (next schedule > 15m away)');
     return false;
   }
 
@@ -928,34 +1047,88 @@ private setupReactiveSync() {
 
 
   /**
-   * Handle alarm firing (called when notification appears)
+   * Handle alarm fired event - THREAD SAFE with queue
+   * Prevents race conditions from multiple simultaneous alarms
    */
- async handleAlarmFired(data?: any) {
-   const action = data?.action || 'UNKNOWN';
-   Logger.info(`[LocationService] ⏰ Alarm fired (${action}) - waking up service`);
-   
-   if (!this.realm) {
-       Logger.warn('[LocationService] ❌ handleAlarmFired called but realm not ready!');
-       return; 
-   }
+  async handleAlarmFired(data: any) {
+    const alarmId = data?.notification?.id || 'unknown';
+    
+    // Check if already processing an alarm
+    if (this.isProcessingAlarm) {
+      Logger.warn(`[LocationService] Alarm ${alarmId} queued (already processing)`);
+      this.alarmQueue.push(data);
+      return;
+    }
 
-   if (action === 'START_SILENCE') {
-      // Force IMMEDIATE silence 
-      Logger.info('[LocationService] 🚀 EXACT START TRIGGERED');
-   }
-
-   if (action === 'STOP_SILENCE') {
-      Logger.info('[LocationService] 🛑 EXACT STOP TRIGGERED. Forcing exit check.');
-      // We force an exit check. If time is up, it will unsilenct.
-      if (data?.placeId) {
-          await this.handleGeofenceExit(data.placeId, true); // Force exit
-          return;
+    this.isProcessingAlarm = true;
+    
+    try {
+      Logger.info(`[LocationService] 🎯 Processing alarm: ${alarmId}`, data);
+      
+      // Small delay to ensure Realm is fully ready
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+      
+      if (!this.realm || this.realm.isClosed) {
+        Logger.error('[LocationService] Cannot process alarm: realm not ready');
+        return;
       }
-   }
-   
-   // Default: Force a sync to align state
-   await this.syncGeofences();
- }
+
+      const action = data?.notification?.data?.action || data?.action;
+      
+      // Log what triggered us
+      if (action === 'START_MONITORING') {
+        Logger.info('[LocationService] 🟡 Pre-activation alarm (15min before)');
+      } else if (action === 'START_SILENCE') {
+        Logger.info('[LocationService] 🔴 Activation alarm (exact time)');
+      } else if (action === 'STOP_SILENCE') {
+        Logger.info('[LocationService] 🟢 Deactivation alarm (end time)');
+      }
+
+      // Execute sync
+      await this.syncGeofences();
+
+      // If this was a START_SILENCE alarm, immediately check location
+      if (action === 'START_SILENCE') {
+        Logger.info('[LocationService] 🎯 START_SILENCE: Forcing immediate location check');
+        
+        // Get current location immediately
+        Geolocation.getCurrentPosition(
+          (position) => {
+            Logger.info('[LocationService] Got immediate position after START_SILENCE');
+            this.processLocationUpdate(position);
+          },
+          (error) => {
+            Logger.error('[LocationService] Failed to get immediate position:', error);
+          },
+          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+        );
+      }
+
+      // If this was a STOP_SILENCE alarm, force exit
+      if (action === 'STOP_SILENCE') {
+        Logger.info('[LocationService] 🎯 STOP_SILENCE: Forcing check-out of all zones');
+        const placeId = data?.notification?.data?.placeId || data?.placeId;
+        if (placeId) {
+          await this.handleGeofenceExit(placeId, true);
+        }
+      }
+
+      Logger.info(`[LocationService] ✅ Alarm ${alarmId} processed successfully`);
+
+    } catch (error) {
+      Logger.error('[LocationService] Error processing alarm:', error);
+    } finally {
+      this.isProcessingAlarm = false;
+      
+      // Process next queued alarm if any
+      if (this.alarmQueue.length > 0) {
+        const nextAlarm = this.alarmQueue.shift();
+        Logger.info(`[LocationService] Processing queued alarm (${this.alarmQueue.length} remaining)`);
+        // Small delay before processing next
+        setTimeout(() => this.handleAlarmFired(nextAlarm), 1000);
+      }
+    }
+  }
 
 
   /**
