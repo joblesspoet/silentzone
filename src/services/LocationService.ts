@@ -1158,7 +1158,7 @@ private setupReactiveSync() {
     // NEW: Verify alarms were actually scheduled
     if (alarmsScheduled > 0) {
       // Small delay to ensure system has processed the requests
-      await new Promise(resolve => setTimeout(resolve, 500));
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
       
       // Re-generate expected IDs efficiently or scan for place-related IDs
       // To be precise we should have collected IDs during the loop.
