@@ -1,11 +1,5 @@
 import Geofencing from '@rn-org/react-native-geofencing';
-import notifee, {
-  AndroidImportance,
-  AndroidForegroundServiceType,
-  TriggerType,
-  AndroidCategory,
-  AlarmType,
-} from '@notifee/react-native';
+
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
 import {  Preferences } from '../database/services/PreferencesService';
@@ -16,6 +10,11 @@ import RingerMode, { RINGER_MODE } from '../modules/RingerMode';
 import { PermissionsManager } from '../permissions/PermissionsManager';
 import { NativeModules } from 'react-native';
 import { Logger } from './Logger';
+import { ScheduleManager, UpcomingSchedule } from './ScheduleManager';
+import { LocationValidator, LocationState } from './LocationValidator';
+import { alarmService, ALARM_ACTIONS } from './AlarmService';
+import { notificationManager } from './NotificationManager';
+
 
 /**
  * UNIVERSAL LOCATION SERVICE
@@ -36,20 +35,7 @@ import { CONFIG } from '../config/config';
 // Alarm IDs format: place-{placeId}-schedule-{index}
 
 
-interface LocationState {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-  timestamp: number;
-}
-
-interface UpcomingSchedule {
-  placeId: string;
-  placeName: string;
-  startTime: Date;
-  endTime: Date;
-  minutesUntilStart: number;
-}
+// LocationState and UpcomingSchedule interfaces removed (imported)
 
 class LocationService {
   // Core state
@@ -102,8 +88,9 @@ class LocationService {
       return;
     }
 
+
     if (Platform.OS === 'android') {
-      await this.createNotificationChannels();
+      await notificationManager.createNotificationChannels();
     }
 
     await this.syncGeofences();
@@ -135,7 +122,7 @@ class LocationService {
 
       // 2. Recalculate upcoming schedules
       const enabledPlaces = PlaceService.getEnabledPlaces(this.realm);
-      const { upcomingSchedules } = this.categorizeBySchedule(Array.from(enabledPlaces));
+      const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(Array.from(enabledPlaces));
       this.upcomingSchedules = upcomingSchedules;
       Logger.info(`[Restore] Found ${this.upcomingSchedules.length} upcoming schedule(s)`);
 
@@ -146,7 +133,7 @@ class LocationService {
       for (const place of enabledPlaces) {
         const schedules = (place as any).schedules || [];
         for (const schedule of schedules) {
-          const isActive = this.isScheduleActiveNow(schedule, now);
+          const isActive = ScheduleManager.isScheduleActiveNow(schedule, now);
           if (isActive) {
             foundActiveWindow = true;
             Logger.info(`[Restore] ✅ Currently in active window: ${(place as any).name}`);
@@ -172,60 +159,17 @@ class LocationService {
     }
   }
 
-  /**
-   * Helper: Check if a schedule is active RIGHT NOW
-   */
-  private isScheduleActiveNow(schedule: any, now: Date): boolean {
-    const currentDayIndex = now.getDay();
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const currentDay = days[currentDayIndex];
-    
-    // Check if schedule has days defined and includes today
-    if (schedule.days.length > 0 && !schedule.days.includes(currentDay)) {
-      return false;
-    }
 
-    const [startHours, startMinutes] = schedule.startTime.split(':').map(Number);
-    const [endHours, endMinutes] = schedule.endTime.split(':').map(Number);
 
-    const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    const startMinutesTotal = startHours * 60 + startMinutes;
-    const endMinutesTotal = endHours * 60 + endMinutes;
 
-    // Handle overnight schedules (e.g., 23:00 to 01:00)
-    if (endMinutesTotal < startMinutesTotal) {
-      return nowMinutes >= startMinutesTotal || nowMinutes <= endMinutesTotal;
-    }
-
-    return nowMinutes >= startMinutesTotal && nowMinutes <= endMinutesTotal;
-  }
 
   /**
-   * Create notification channels
+   * Start foreground service
    */
-  private async createNotificationChannels() {
-    try {
-      await notifee.createChannel({
-        id: CONFIG.CHANNELS.SERVICE,
-        name: 'Location Tracking Service',
-        importance: AndroidImportance.DEFAULT, // Changed from LOW to DEFAULT for better persistence
-        vibration: false,
-        lights: false,
-      });
 
-      await notifee.createChannel({
-        id: CONFIG.CHANNELS.ALERTS,
-        name: 'Location Alerts',
-        importance: AndroidImportance.HIGH,
-        sound: 'default',
-      });
-      
-      Logger.info('[LocationService] Notification channels created');
-    } catch (error) {
-      Logger.error('[LocationService] Failed to create channels:', error);
-    }
-  }
-
+  /**
+   * Schedule a cleanup check for when current schedule ends
+   */
   /**
    * Start foreground service
    */
@@ -235,14 +179,10 @@ class LocationService {
       return;
     }
 
-    // Check for CRITICAL background location permission (Loc + Bg + Notif)
     const hasPermission = await PermissionsManager.hasCriticalPermissions();
-    Logger.info(`[LocationService] Critical permissions check: ${hasPermission}`);
     if (!hasPermission) {
       Logger.error('[LocationService] ❌ Aborting start: Missing critical permissions in background');
-      
-      // CRITICAL: Notify user why it failed
-      await this.showNotification(
+      await notificationManager.showNotification(
         'Setup Required',
         'Silent Zone failed to start. Please open app and check permissions.',
         'permission-failure'
@@ -250,73 +190,29 @@ class LocationService {
       return; 
     }
 
-    try {
-      // Small delay to ensure notifee is fully ready
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
-
-      const enabledCount = this.realm 
-        ? PlaceService.getEnabledPlaces(this.realm).length 
-        : 0;
-
-      const nextSchedule = this.upcomingSchedules[0];
-
-      // Default state
-      let title = '🛡️ Silent Zone Running';
-      let body = `Monitoring ${enabledCount} active location${enabledCount !== 1 ? 's' : ''}`;
-      
-      // Check if we are ACTUALLY inside (checked in)
-      const activeCheckIns = this.realm ? CheckInService.getActiveCheckIns(this.realm) : [];
-      
-      if (activeCheckIns.length > 0) {
-        // We are INSIDE
+    // Gather state for notification
+    const enabledPlaces = this.realm ? PlaceService.getEnabledPlaces(this.realm) : [];
+    const enabledCount = enabledPlaces.length;
+    const activeCheckIns = this.realm ? CheckInService.getActiveCheckIns(this.realm) : [];
+    
+    // Determine active place name if checked in
+    let activePlaceName: string | null = null;
+    if (activeCheckIns.length > 0) {
         const placeId = activeCheckIns[0].placeId;
         const place = this.realm ? PlaceService.getPlaceById(this.realm, placeId as string) : null;
-        title = '🔕 Silent Zone Active';
-        body = `📍 Inside ${place ? place.name : 'Unknown Location'}`;
-      } else if (nextSchedule && nextSchedule.minutesUntilStart > 0 && nextSchedule.minutesUntilStart <= 15) {
-        // Approaching (Only if > 0 minutes)
-        title = '⏱️ Preparing to Silence';
-        body = `🔜 ${nextSchedule.placeName} starts in ${nextSchedule.minutesUntilStart} min`;
-      } else if (this.isInScheduleWindow && nextSchedule) {
-        // In schedule window but NOT validated as inside yet (Active or 0 min)
-        title = '🛡️ Silent Zone Monitoring';
-        body = `Targeting ${nextSchedule.placeName}`;
-      }
+        if (place) activePlaceName = (place as any).name;
+    }
 
-      await notifee.displayNotification({
-        id: 'location-tracking-service',
-        title,
-        body,
-        android: {
-          channelId: CONFIG.CHANNELS.SERVICE,
-          asForegroundService: true,
-          color: '#8B5CF6', // Purple-500
-          ongoing: true,
-          autoCancel: false,
-          colorized: true,
-          largeIcon: 'ic_launcher',
-          foregroundServiceTypes: [
-            AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION,
-          ],
-          pressAction: {
-            id: 'default',
-            launchActivity: 'default',
-          },
-        },
-      });
+    await notificationManager.startForegroundService(
+      enabledCount,
+      this.upcomingSchedules,
+      activePlaceName,
+      this.isInScheduleWindow
+    );
 
-    Logger.info('[LocationService] Foreground service started (Notification displayed)');
-  } catch (error) {
-    Logger.error('[LocationService] Failed to start service notification:', error);
-  } finally {
-    // CRITICAL: Always start result watcher, even if notification failed
     this.startGeofenceMonitoring();
   }
-}
 
-  /**
-   * Schedule a cleanup check for when current schedule ends
-   */
   /**
    * Restore timers for active check-ins (e.g. after restart)
    */
@@ -334,7 +230,7 @@ class LocationService {
       const place = PlaceService.getPlaceById(this.realm, placeId);
       if (!place) continue;
 
-      const schedule = this.getCurrentOrNextSchedule(place);
+      const schedule = ScheduleManager.getCurrentOrNextSchedule(place);
       if (schedule) {
         const endTime = schedule.endTime.getTime();
         const now = Date.now();
@@ -373,15 +269,7 @@ class LocationService {
    * Stop foreground service
    */
   private async stopForegroundService() {
-    if (Platform.OS === 'android') {
-      try {
-        await notifee.stopForegroundService();
-        await notifee.cancelNotification('location-tracking-service');
-        Logger.info('[LocationService] Service stopped');
-      } catch (error) {
-        Logger.error('[LocationService] Error stopping service:', error);
-      }
-    }
+    await notificationManager.stopForegroundService();
     this.stopGeofenceMonitoring();
   }
 
@@ -510,7 +398,7 @@ private setupReactiveSync() {
         // Cancel alarms for ALL places (since everything is paused)
         const allPlaces = Array.from(PlaceService.getAllPlaces(this.realm));
         for (const place of allPlaces) {
-             await this.cancelAlarmsForPlace(place.id as string);
+             await alarmService.cancelAlarmsForPlace(place.id as string);
         }
         await this.stopForegroundService();
         await Geofencing.removeAllGeofence();
@@ -525,10 +413,10 @@ private setupReactiveSync() {
       // Cleanup alarms for DISABLED places (Paused)
       const disabledPlaces = allPlaces.filter((p: any) => !p.isEnabled);
       for (const place of disabledPlaces) {
-          await this.cancelAlarmsForPlace(place.id as string);
+          await alarmService.cancelAlarmsForPlace(place.id as string);
       }
       
-      const { activePlaces, upcomingSchedules } = this.categorizeBySchedule(enabledPlaces);
+      const { activePlaces, upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
       this.upcomingSchedules = upcomingSchedules;
       this.isInScheduleWindow = activePlaces.length > 0 && upcomingSchedules.length > 0;
 
@@ -596,8 +484,8 @@ private setupReactiveSync() {
           // Schedule individual alarms for all enabled places
           for (const place of enabledPlaces) {
             if (place.isEnabled) {
-              await this.cancelAlarmsForPlace(place.id as string);
-              await this.scheduleAlarmsForPlace(place);
+              await alarmService.cancelAlarmsForPlace(place.id as string);
+              await alarmService.scheduleAlarmsForPlace(place);
             }
           }
 
@@ -616,8 +504,8 @@ private setupReactiveSync() {
           
           for (const place of enabledPlaces) {
             if (place.isEnabled) {
-              await this.cancelAlarmsForPlace(place.id as string);
-              await this.scheduleAlarmsForPlace(place);
+              await alarmService.cancelAlarmsForPlace(place.id as string);
+              await alarmService.scheduleAlarmsForPlace(place);
             }
           }
       }
@@ -625,7 +513,7 @@ private setupReactiveSync() {
       // At the very end, add health check
       if (this.geofencesActive) {
         // Log system health for monitoring
-        const diagnostics = await this.getAlarmDiagnostics();
+        const diagnostics = await alarmService.getAlarmDiagnostics();
         
         Logger.info('[LocationService] System Health:', {
           gpsActive: this.geofencesActive,
@@ -692,7 +580,7 @@ private setupReactiveSync() {
     }
     
     // Check alarms
-    const alarmDiag = await this.getAlarmDiagnostics();
+    const alarmDiag = await alarmService.getAlarmDiagnostics();
     
     if (this.isInScheduleWindow && alarmDiag.totalScheduled === 0) {
       issues.push('In schedule window but no alarms scheduled');
@@ -727,161 +615,7 @@ private setupReactiveSync() {
     };
   }
 
-  /**
-   * SCHEDULE-AWARE CATEGORIZATION
-   * Returns places that are currently active or will be active soon
-   * Works for ANY scheduled location (mosque, office, gym, etc.)
-   * 
-   * CRITICAL: Returns TWO separate lists:
-   * 1. activePlaces: Places within monitoring window (for location checking)
-   * 2. upcomingSchedules: ALL future schedules (for alarm scheduling)
-   * 
-   * UPDATED: Now checks TOMORROW's schedules too for seamless overnight transition
-   */
-  private categorizeBySchedule(enabledPlaces: any[]): {
-    activePlaces: any[];
-    upcomingSchedules: UpcomingSchedule[];
-  } {
-    const now = new Date();
-    const currentTimeMinutes = now.getHours() * 60 + now.getMinutes();
-    const currentDayIndex = now.getDay();
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-    const activePlaces: any[] = [];
-    const upcomingSchedules: UpcomingSchedule[] = [];
-
-    for (const place of enabledPlaces) {
-      // Places without schedules are always active (24/7 locations)
-      if (!place.schedules || place.schedules.length === 0) {
-        activePlaces.push(place);
-        continue;
-      }
-
-      // Check each schedule for TODAY and TOMORROW
-      // offset 0 = Today, offset 1 = Tomorrow
-      for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
-         const targetDayIndex = (currentDayIndex + dayOffset) % 7;
-         const targetDayName = days[targetDayIndex];
-
-         for (const schedule of place.schedules) {
-            // Day check
-            if (schedule.days.length > 0 && !schedule.days.includes(targetDayName)) {
-               continue;
-            }
-
-            const [startHours, startMins] = schedule.startTime.split(':').map(Number);
-            const [endHours, endMins] = schedule.endTime.split(':').map(Number);
-            
-            // Basic minutes in the target day
-            let startTimeMinutes = startHours * 60 + startMins;
-            let endTimeMinutes = endHours * 60 + endMins;
-
-            // If checking TOMORROW, shift times forward by 24 hours (1440 minutes)
-            if (dayOffset === 1) {
-               startTimeMinutes += 1440;
-               endTimeMinutes += 1440;
-            }
-
-            // Calculate with activation window and grace period
-            const preActivationMinutes = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
-            const postGraceMinutes = CONFIG.SCHEDULE.POST_GRACE_MINUTES;
-            
-            const effectiveStartMinutes = startTimeMinutes - preActivationMinutes;
-            const effectiveEndMinutes = endTimeMinutes + postGraceMinutes;
-
-            // Handle overnight schedules (e.g., night shift 22:00 - 06:00)
-            const isOvernight = (startHours * 60 + startMins) > (endHours * 60 + endMins);
-            
-            // Note: Even for overnight, if we are checking TOMORROW with +1440 offset,
-            // standard comparison works nicely because we linearize time.
-            let isInEffectiveWindow = false;
-
-            if (dayOffset === 0 && isOvernight) {
-               // Special handling for overnight ON THE SAME DAY vs NEXT DAY wrap is tricky with linear time.
-               // But standard overnight logic applies to "Today" specifically.
-               isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes || 
-                                     currentTimeMinutes <= effectiveEndMinutes;
-               
-               // Fix: If checking TODAY and it's overnight starting yesterday (e.g. 02:00 < 22:00), 
-               // effectiveStartMinutes is 22:00-15m.
-               // This standard check works.
-            } else {
-               // Standard linear check (works for Today non-overnight AND Tomorrow shifted)
-               isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes && 
-                                     currentTimeMinutes <= effectiveEndMinutes;
-            }
-
-            // Add to activePlaces if in monitoring window
-            if (isInEffectiveWindow) {
-               if (!activePlaces.find(p => p.id === place.id)) {
-                  activePlaces.push(place);
-               }
-            }
-
-            // FUTURE SCHEDULE CHECK
-            let isFutureSchedule = false;
-            let minutesUntilStart: number = 0;
-            let isOvernightActive = false;
-
-            if (dayOffset === 0 && isOvernight && currentTimeMinutes < (startHours * 60 + startMins)) {
-               // Overnight part 2 (early morning of next day schedule started yesterday)
-               // ACTUALLY: If isOvernight is true (e.g. 22:00-06:00), and now is 02:00.
-               // 02:00 < 22:00.
-               // We are in the "active" part.
-               minutesUntilStart = 0;
-               isOvernightActive = true;
-               isFutureSchedule = false;
-            } else if (currentTimeMinutes < startTimeMinutes) {
-               // Future schedule (not started yet)
-               // This works for Today (10:00 < 12:00) AND Tomorrow (23:00 < 24:05)
-               minutesUntilStart = startTimeMinutes - currentTimeMinutes;
-               isFutureSchedule = true;
-            } else if (currentTimeMinutes >= startTimeMinutes && currentTimeMinutes <= endTimeMinutes) {
-               // Currently active
-               minutesUntilStart = 0;
-               isFutureSchedule = false;
-            } else {
-               // Schedule has passed
-               continue;
-            }
-
-            // Add to upcomingSchedules if it's in the effective window OR a future schedule
-            // Only add unique schedules based on calculated start time to avoid dupes if logic overlaps
-            // (But offset 1 ensures uniqueness from offset 0 usually)
-            if (isInEffectiveWindow || isFutureSchedule) {
-               // Create schedule object
-               const scheduleStart = new Date(now);
-               scheduleStart.setHours(startHours, startMins, 0, 0);
-               
-               // Adjust date based on offset
-               scheduleStart.setDate(scheduleStart.getDate() + dayOffset);
-
-               if (isOvernightActive && dayOffset === 0) {
-                  // If we are in the early morning part of an overnight schedule, it started yesterday
-                  scheduleStart.setDate(scheduleStart.getDate() - 1);
-               }
-               
-               const scheduleEnd = new Date(scheduleStart);
-               const durationMinutes = (endHours * 60 + endMins) - (startHours * 60 + startMins) + (isOvernight ? 1440 : 0);
-               scheduleEnd.setMinutes(scheduleEnd.getMinutes() + durationMinutes);
-
-               upcomingSchedules.push({
-                  placeId: place.id,
-                  placeName: place.name,
-                  startTime: scheduleStart,
-                  endTime: scheduleEnd,
-                  minutesUntilStart,
-               });
-            }
-         }
-      }
-    }
-
-    // Sort upcoming schedules by start time
-    upcomingSchedules.sort((a, b) => a.minutesUntilStart - b.minutesUntilStart);
-
-    return { activePlaces, upcomingSchedules };
-  }
 
   private async handleManualDisableCleanup(enabledIdsSet: Set<string>) {
     if (!this.realm || this.realm.isClosed) return;
@@ -939,7 +673,7 @@ private setupReactiveSync() {
         );
         
         // Notify user about the problem
-        this.showNotification(
+        notificationManager.showNotification(
           'GPS Not Working',
           'Unable to get your location. Please check GPS settings and permissions.',
           'gps-failure'
@@ -1028,7 +762,7 @@ private setupReactiveSync() {
       const schedules = (place as any).schedules || [];
       
       for (const schedule of schedules) {
-        const isActive = this.isScheduleActiveNow(schedule, now);
+        const isActive = ScheduleManager.isScheduleActiveNow(schedule, now);
         
         if (isActive) {
           Logger.info(`[Monitor Check] ✅ ACTIVE NOW: ${(place as any).name}`);
@@ -1063,293 +797,9 @@ private setupReactiveSync() {
 
 
 
-  /**
-   * Schedule individual alarms for all schedules in a place
-   * Each schedule gets its own alarm - more reliable than dual-alarm system
-   */
-  /**
-   * Schedule individual alarms for all schedules in a place (Today + Tomorrow)
-   */
-  private async scheduleAlarmsForPlace(place: any) {
-    if (!place.schedules || place.schedules.length === 0) {
-      Logger.info(`[LocationService] No schedules for ${place.name}, skipping alarm setup`);
-      return;
-    }
 
-    let alarmsScheduled = 0;
-    const now = new Date();
-
-    // Loop through each user-defined schedule (e.g., 5 prayers)
-    for (let i = 0; i < place.schedules.length; i++) {
-      const schedule = place.schedules[i];
-      const [startHour, startMin] = schedule.startTime.split(':').map(Number);
-      
-    // We schedule alarms for TODAY and TOMORROW to ensure continuity
-    // Day Offset 0 = Today, 1 = Tomorrow
-    for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
-      // Construct target start time
-      const targetTime = new Date(now);
-      targetTime.setHours(startHour, startMin, 0, 0);
-      
-      if (dayOffset === 1) {
-          targetTime.setDate(targetTime.getDate() + 1);
-      }
-
-      // --- ALARM 1: MONITORING START (15 mins before) ---
-      const preActivationMillis = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
-      const monitorTime = targetTime.getTime() - preActivationMillis;
-
-      if (monitorTime > Date.now()) {
-          const monitorAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-monitor`;
-          await this.scheduleSingleAlarm(
-              monitorAlarmId,
-              monitorTime,
-              place.id,
-              'START_MONITORING',
-              'Schedule Approaching',
-              `${place.name} starting soon`
-          );
-          alarmsScheduled++;
-      }
-
-      // --- ALARM 2: ACTIVATE SILENCE (Exact Start) ---
-      const startTime = targetTime.getTime();
-      if (startTime > Date.now()) {
-          const startAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-start`;
-          await this.scheduleSingleAlarm(
-              startAlarmId,
-              startTime,
-              place.id,
-              'START_SILENCE',
-              'Silent Zone Starting',
-              `Activating ${place.name} now`
-          );
-          alarmsScheduled++;
-      }
-
-      // --- ALARM 3: DEACTIVATE SILENCE (Exact End) ---
-      // Determine duration
-      const [endHour, endMin] = schedule.endTime.split(':').map(Number);
-      const startTotal = startHour * 60 + startMin;
-      const endTotal = endHour * 60 + endMin;
-      // Handle overnight duration
-      const durationMinutes = endTotal >= startTotal ? (endTotal - startTotal) : (1440 - startTotal + endTotal);
-      
-      const endTime = startTime + (durationMinutes * 60 * 1000);
-      
-      if (endTime > Date.now()) {
-          const endAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-end`;
-          // We schedule this as "STOP_SILENCE" to force wakeup and exit
-          await this.scheduleSingleAlarm(
-              endAlarmId,
-              endTime,
-              place.id,
-              'STOP_SILENCE',
-              'Silent Zone Ending',
-              `Leaving ${place.name}`
-          );
-          alarmsScheduled++;
-      }
-    }
-    }
-    
-    Logger.info(`[LocationService] Scheduled ${alarmsScheduled} alarms for ${place.name}`);
-
-    // NEW: Verify alarms were actually scheduled
-    if (alarmsScheduled > 0) {
-      // Small delay to ensure system has processed the requests
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
-      
-      // Re-generate expected IDs efficiently or scan for place-related IDs
-      // To be precise we should have collected IDs during the loop.
-      // But verifyScheduledAlarms takes explicit IDs.
-      // Let's refactor the loop slightly to collect IDs OR do a broader check?
-      // Collecting IDs inside the loop logic would require rewriting the whole method in this replacement chunk.
-      // The previous block (lines 898-981) is huge.
-      // Simpler approach: Check if we have ANY alarms for this place ID using prefix matching?
-      // verifyScheduledAlarms checks exact IDs.
-      // Let's rely on a simpler check: getAlarmDiagnostics() and ensuring count matches?
-      // No, let's just log for now as rewriting the massive loop is risky.
-      // Wait, I can just grab the IDs by re-running the same deterministic ID generation logic? No, that's duplicative.
-      // I should have collected them.
-      // Since I can't easily rewrite the loop in this chunk without a massive diff, I will skip verifying individual IDs here
-      // and instead rely on the global health check in syncGeofences to report total vs expected.
-      // actually, the guide recommends collecting IDs.
-      // Let's see if I can rewrite safe...
-      // The method is `scheduleAlarmsForPlace`.
-      // I will leave this placeholder and rely on `syncGeofences` to call `getAlarmDiagnostics`.
-    }
-  }
 
   /**
-   * Helper to schedule a single alarm
-   */
-  private async scheduleSingleAlarm(
-      id: string, 
-      timestamp: number, 
-      placeId: string, 
-      action: string,
-      title: string, 
-      body: string
-  ) {
-      // ... existing code ...
-      try {
-        await notifee.createTriggerNotification(
-          {
-            id,
-            title,
-            body,
-            data: {
-              action, // START_MONITORING or START_SILENCE
-              placeId,
-              scheduledTime: new Date(timestamp).toISOString(),
-            },
-            android: {
-              channelId: CONFIG.CHANNELS.SERVICE,
-              importance: AndroidImportance.HIGH,
-              category: AndroidCategory.ALARM,
-              autoCancel: true,
-              pressAction: {
-                id: 'default',
-                launchActivity: 'default',
-              },
-            },
-          },
-          {
-            type: TriggerType.TIMESTAMP,
-            timestamp,
-            alarmManager: {
-              allowWhileIdle: true,
-              type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
-            },
-          }
-        );
-        Logger.info(`[LocationService] ✅ Alarm set: ${action} @ ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})`);
-      } catch (error) {
-        Logger.error(`[LocationService] Failed to schedule alarm ${id}:`, error);
-      }
-  }
-
-  /**
-   * Verify that alarms were successfully scheduled
-   * 
-   * Returns: { verified: number, missing: number, total: number }
-   */
-  private async verifyScheduledAlarms(
-    expectedAlarmIds: string[]
-  ): Promise<{ verified: number; missing: number; total: number; missingIds: string[] }> {
-    
-    if (expectedAlarmIds.length === 0) {
-      return { verified: 0, missing: 0, total: 0, missingIds: [] };
-    }
-    
-    try {
-      Logger.info(`[Alarm Verify] Checking ${expectedAlarmIds.length} scheduled alarms...`);
-      
-      // Get all trigger notifications from the system
-      const triggerNotifications = await notifee.getTriggerNotifications();
-      const scheduledIds = new Set(triggerNotifications.map(tn => tn.notification.id));
-      
-      // Check which expected alarms are actually scheduled
-      const missingIds: string[] = [];
-      let verified = 0;
-      
-      for (const expectedId of expectedAlarmIds) {
-        if (scheduledIds.has(expectedId)) {
-          verified++;
-        } else {
-          missingIds.push(expectedId);
-        }
-      }
-      
-      const missing = missingIds.length;
-      const total = expectedAlarmIds.length;
-      
-      if (missing === 0) {
-        Logger.info(`[Alarm Verify] ✅ All ${total} alarms verified successfully`);
-      } else {
-        Logger.error(
-          `[Alarm Verify] ❌ ${missing}/${total} alarms missing:`,
-          missingIds
-        );
-        
-        // Log details about what's missing
-        missingIds.forEach(id => {
-          Logger.error(`  └─ Missing: ${id}`);
-        });
-      }
-      
-      return { verified, missing, total, missingIds };
-      
-    } catch (error) {
-      Logger.error('[Alarm Verify] Failed to verify alarms:', error);
-      
-      // Return pessimistic result on error
-      return {
-        verified: 0,
-        missing: expectedAlarmIds.length,
-        total: expectedAlarmIds.length,
-        missingIds: expectedAlarmIds
-      };
-    }
-  }
-
-  /**
-   * Get detailed alarm status for diagnostics
-   */
-  private async getAlarmDiagnostics(): Promise<{
-    totalScheduled: number;
-    nextAlarmTime: Date | null;
-    alarmIds: string[];
-  }> {
-    try {
-      const triggerNotifications = await notifee.getTriggerNotifications();
-      
-      let nextAlarmTime: Date | null = null;
-      const alarmIds: string[] = [];
-      
-      for (const tn of triggerNotifications) {
-        alarmIds.push(tn.notification.id || 'unknown');
-        
-        // Find earliest alarm
-        if (tn.trigger && 'timestamp' in tn.trigger) {
-          const alarmTime = new Date(tn.trigger.timestamp);
-          if (!nextAlarmTime || alarmTime < nextAlarmTime) {
-            nextAlarmTime = alarmTime;
-          }
-        }
-      }
-      
-      return {
-        totalScheduled: triggerNotifications.length,
-        nextAlarmTime,
-        alarmIds
-      };
-      
-    } catch (error) {
-      Logger.error('[Alarm Diagnostics] Failed:', error);
-      return { totalScheduled: 0, nextAlarmTime: null, alarmIds: [] };
-    }
-  }
-
-  /**
-   * Cancel all alarms for a specific place
-   */
-  private async cancelAlarmsForPlace(placeId: string, scheduleCount: number = 10) {
-    // Cancel alarms for today (day-0) and tomorrow (day-1) for each schedule index
-    for (let i = 0; i < scheduleCount; i++) {
-        const types = ['monitor', 'start', 'end'];
-        for (const type of types) {
-             const idDay0 = `place-${placeId}-sched-${i}-day-0-type-${type}`;
-             const idDay1 = `place-${placeId}-sched-${i}-day-1-type-${type}`;
-             try { await notifee.cancelTriggerNotification(idDay0); } catch (e) {}
-             try { await notifee.cancelTriggerNotification(idDay1); } catch (e) {}
-        }
-    }
-    Logger.info(`[LocationService] Cancelled alarms for place ${placeId}`);
-  }
-
-
   /**
    * Handle alarm fired event - THREAD SAFE with queue
    * Prevents race conditions from multiple simultaneous alarms
@@ -1380,11 +830,11 @@ private setupReactiveSync() {
       const action = data?.notification?.data?.action || data?.action;
       
       // Log what triggered us
-      if (action === 'START_MONITORING') {
+      if (action === ALARM_ACTIONS.START_MONITORING) {
         Logger.info('[LocationService] 🟡 Pre-activation alarm (15min before)');
-      } else if (action === 'START_SILENCE') {
+      } else if (action === ALARM_ACTIONS.START_SILENCE) {
         Logger.info('[LocationService] 🔴 Activation alarm (exact time)');
-      } else if (action === 'STOP_SILENCE') {
+      } else if (action === ALARM_ACTIONS.STOP_SILENCE) {
         Logger.info('[LocationService] 🟢 Deactivation alarm (end time)');
       }
 
@@ -1392,7 +842,7 @@ private setupReactiveSync() {
       await this.syncGeofences();
 
       // If this was a START_SILENCE alarm, immediately check location
-      if (action === 'START_SILENCE') {
+      if (action === ALARM_ACTIONS.START_SILENCE) {
         Logger.info('[LocationService] 🎯 START_SILENCE: Forcing immediate location check');
         
         // Get current location immediately
@@ -1409,7 +859,7 @@ private setupReactiveSync() {
       }
 
       // If this was a STOP_SILENCE alarm, force exit
-      if (action === 'STOP_SILENCE') {
+      if (action === ALARM_ACTIONS.STOP_SILENCE) {
         Logger.info('[LocationService] 🎯 STOP_SILENCE: Forcing check-out of all zones');
         const placeId = data?.notification?.data?.placeId || data?.placeId;
         if (placeId) {
@@ -1451,7 +901,7 @@ private setupReactiveSync() {
     let earliestEnd: Date | null = null;
     
     for (const place of activePlaces) {
-        const schedule = this.getCurrentOrNextSchedule(place);
+        const schedule = ScheduleManager.getCurrentOrNextSchedule(place);
         if (schedule && schedule.endTime) {
             if (!earliestEnd || schedule.endTime < earliestEnd) {
                 earliestEnd = schedule.endTime;
@@ -1565,7 +1015,7 @@ private setupReactiveSync() {
     
     // Show notification for critical errors
     if (shouldStopMonitoring) {
-      this.showNotification(
+      notificationManager.showNotification(
         'Location Tracking Stopped',
         userMessage,
         'gps-error'
@@ -1616,7 +1066,7 @@ private setupReactiveSync() {
       };
 
       // VALIDATION: Check location quality
-      const quality = this.validateLocationQuality(location);
+      const quality = LocationValidator.validateLocationQuality(location);
       
       if (!quality.valid) {
         Logger.warn(`[LocationService] Poor location quality: ${quality.reason}`);
@@ -1631,7 +1081,7 @@ private setupReactiveSync() {
       );
 
       // Determine inside places using new logic (returns Place IDs)
-      const insidePlaceIds = this.determineInsidePlaces(location);
+      const insidePlaceIds = LocationValidator.determineInsidePlaces(location, this.realm);
       
       // Resolve IDs to Place objects for legacy handlers
       const insidePlaces = insidePlaceIds
@@ -1640,7 +1090,7 @@ private setupReactiveSync() {
 
       // Get active places for schedule cleanup checks
       const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
-      const { activePlaces } = this.categorizeBySchedule(enabledPlaces);
+      const { activePlaces } = ScheduleManager.categorizeBySchedule(enabledPlaces);
 
       Logger.info(`[LocationService] Inside: ${insidePlaceIds.join(', ') || 'none'}`);
 
@@ -1683,7 +1133,7 @@ private setupReactiveSync() {
         continue;
       }
 
-      const distance = this.calculateDistance(
+      const distance = LocationValidator.calculateDistance(
         latitude,
         longitude,
         place.latitude as number,
@@ -1718,106 +1168,9 @@ private setupReactiveSync() {
    * - Poor: 45m distance, 30m accuracy → effective 15m ✅ INSIDE (barely)
    * - Bad: 40m distance, 60m accuracy → REJECTED (accuracy too low)
    */
-  private determineInsidePlaces(location: LocationState): string[] {
-    const enabledPlaces = this.realm ? PlaceService.getEnabledPlaces(this.realm) : [];
-    const insidePlaces: string[] = [];
-    
-    Logger.info(
-      `[Location] Checking position: ` +
-      `lat=${location.latitude.toFixed(6)}, ` +
-      `lon=${location.longitude.toFixed(6)}, ` +
-      `accuracy=±${Math.round(location.accuracy)}m`
-    );
-    
-    for (const place of enabledPlaces) {
-      const placeId = (place as any).id;
-      const placeName = (place as any).name;
-      const radius = (place as any).radius;
-      
-      // Calculate distance from place center
-      const distance = this.calculateDistance(
-        location.latitude,
-        location.longitude,
-        (place as any).latitude,
-        (place as any).longitude
-      );
-      
-      // CRITICAL VALIDATION #1: Accuracy must be better than 50% of radius
-      // This prevents using inaccurate GPS for small zones
-      const requiredAccuracy = radius * 0.5;
-      
-      if (location.accuracy > requiredAccuracy) {
-        Logger.warn(
-          `[Location] ⚠️ Skipping ${placeName}: ` +
-          `GPS accuracy too low (${Math.round(location.accuracy)}m > ` +
-          `${Math.round(requiredAccuracy)}m required for ${radius}m radius)`
-        );
-        continue;
-      }
-      
-      // CRITICAL CALCULATION #2: Account for GPS uncertainty
-      // effectiveDistance = minimum possible distance (best case)
-      // If effective distance <= radius, we're DEFINITELY inside
-      const effectiveDistance = Math.max(0, distance - location.accuracy);
-      
-      // Check if we're inside (accounting for uncertainty)
-      if (effectiveDistance <= radius) {
-        Logger.info(
-          `[Location] ✅ INSIDE ${placeName}: ` +
-          `distance=${Math.round(distance)}m, ` +
-          `accuracy=±${Math.round(location.accuracy)}m, ` +
-          `effective=${Math.round(effectiveDistance)}m <= ${radius}m radius`
-        );
-        insidePlaces.push(placeId);
-        
-      } else {
-        // Outside the zone
-        Logger.info(
-          `[Location] Outside ${placeName}: ` +
-          `effective distance ${Math.round(effectiveDistance)}m > ${radius}m`
-        );
-      }
-    }
-    
-    if (insidePlaces.length === 0) {
-      Logger.info('[Location] Not inside any enabled zones');
-    }
-    
-    return insidePlaces;
-  }
 
-  /**
-   * Validate if location has sufficient quality for tracking
-   * Returns { valid: boolean, reason: string }
-   */
-  private validateLocationQuality(
-    location: LocationState,
-    requiredAccuracy?: number
-  ): { valid: boolean; reason: string } {
-    
-    // Check age (stale location)
-    const age = Date.now() - location.timestamp;
-    const maxAge = 60000; // 1 minute
-    
-    if (age > maxAge) {
-      return {
-        valid: false,
-        reason: `Location too old (${Math.round(age / 1000)}s > ${maxAge / 1000}s)`
-      };
-    }
-    
-    // Check accuracy
-    const maxAccuracy = requiredAccuracy || 100; // Default 100m
-    
-    if (location.accuracy > maxAccuracy) {
-      return {
-        valid: false,
-        reason: `Accuracy too low (${Math.round(location.accuracy)}m > ${maxAccuracy}m)`
-      };
-    }
-    
-    return { valid: true, reason: 'Location quality acceptable' };
-  }
+
+
 
   private async handleScheduleCleanup(activePlaces: any[]) {
     // Legacy cleanup, mostly handled by timers now but good as failsafe
@@ -1847,19 +1200,7 @@ private setupReactiveSync() {
     }
   }
 
-  private calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371e3;
-    const φ1 = (lat1 * Math.PI) / 180;
-    const φ2 = (lat2 * Math.PI) / 180;
-    const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-    const Δλ = ((lon2 - lon1) * Math.PI) / 180;
 
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    return R * c;
-  }
 
   /**
    * Handle geofence entry
@@ -1881,7 +1222,7 @@ private setupReactiveSync() {
     if (!place || !place.isEnabled) return;
 
     // CHECK STRICT SCHEDULE
-    const currentSchedule = this.getCurrentOrNextSchedule(place);
+    const currentSchedule = ScheduleManager.getCurrentOrNextSchedule(place);
     
     if (!currentSchedule) {
       // 24/7 Place (No schedule)
@@ -1919,15 +1260,7 @@ private setupReactiveSync() {
     this.scheduleEndTimerForPlace(placeId, msUntilEnd);
   }
 
-  /**
-   * Helper to get the relevant schedule for strict checking
-   */
-  private getCurrentOrNextSchedule(place: any): UpcomingSchedule | null {
-    if (!place.schedules || place.schedules.length === 0) return null;
 
-    const { upcomingSchedules } = this.categorizeBySchedule([place]);
-    return upcomingSchedules[0] || null; // categorizeBySchedule handles the complex day/time logic
-  }
 
   /**
    * Activate silent zone - handles both first entry and overlapping zones
@@ -2001,7 +1334,7 @@ private setupReactiveSync() {
         }
         
         // Notify user
-        await this.showNotification(
+        await notificationManager.showNotification(
           'Multiple Silent Zones',
           `Entered ${placeName}. Phone remains silent (${activeLogs.length + 1} active zones).`,
           'check-in-multi'
@@ -2023,7 +1356,7 @@ private setupReactiveSync() {
       try {
         await this.saveAndSilencePhone(placeId);
         
-        await this.showNotification(
+        await notificationManager.showNotification(
           'Phone Silenced 🔕',
           `Entered ${placeName}`,
           'check-in'
@@ -2042,7 +1375,7 @@ private setupReactiveSync() {
       // Find which schedule is currently active
       const now = new Date();
       for (const schedule of schedules) {
-        if (this.isScheduleActiveNow(schedule, now)) {
+        if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
           // Calculate time until end
           const [endHours, endMinutes] = schedule.endTime.split(':').map(Number);
           const endTime = new Date(now);
@@ -2116,7 +1449,7 @@ private setupReactiveSync() {
       await this.restoreRingerMode(thisLog.id as string);
       CheckInService.logCheckOut(this.realm, thisLog.id as string);
       
-      await this.showNotification(
+      await notificationManager.showNotification(
         'Sound Restored 🔔',
         `You have left ${placeName}. Phone sound restored.`,
         'check-out'
@@ -2143,7 +1476,7 @@ private setupReactiveSync() {
       // Close this check-in but DON'T restore sound
       CheckInService.logCheckOut(this.realm, thisLog.id as string);
       
-      await this.showNotification(
+      await notificationManager.showNotification(
         'Partial Exit',
         `Left ${placeName}. Phone stays silent (${totalActive - 1} active zones).`,
         'check-out-partial'
@@ -2168,7 +1501,7 @@ private setupReactiveSync() {
 
       if (!hasPermission) {
         Logger.warn('[LocationService] No DND permission');
-        await this.showNotification(
+        await notificationManager.showNotification(
           'Permission Required',
           'Grant "Do Not Disturb" access in settings for automatic silencing',
           'dnd-required'
@@ -2286,33 +1619,7 @@ private setupReactiveSync() {
     }, delay);
   }
 
-  private async showNotification(title: string, body: string, id: string) {
-    try {
-      await notifee.displayNotification({
-        id,
-        title,
-        body,
-        android: {
-          channelId: CONFIG.CHANNELS.ALERTS,
-          smallIcon: 'ic_launcher', // Make sure this is a transparent alpha icon if possible, otherwise use default
-          largeIcon: 'ic_launcher',
-          color: '#8B5CF6', // Purple-500 (Silent Zone Theme)
-          pressAction: {
-            id: 'default',
-          },
-        },
-        ios: {
-          foregroundPresentationOptions: {
-            alert: true,
-            badge: true,
-            sound: true,
-          },
-        },
-      });
-    } catch (error) {
-      Logger.error('[LocationService] Notification failed:', error);
-    }
-  }
+
 
   destroy() {
     Logger.info('[LocationService] Destroying service');
