@@ -1238,7 +1238,7 @@ private setupReactiveSync() {
 
       const threshold = (place.radius as number) * CONFIG.EXIT_BUFFER_MULTIPLIER;
       const isSmallRadius = (place.radius as number) < CONFIG.SCHEDULE.SMALL_RADIUS_THRESHOLD;
-      const effectiveThreshold = isSmallRadius ? threshold + 10 : threshold;
+      const effectiveThreshold = isSmallRadius ? threshold + 5 : threshold;
       
       const confidenceExit = distance > effectiveThreshold + accuracy || 
                             (accuracy < 50 && distance > effectiveThreshold);

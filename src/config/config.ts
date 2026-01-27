@@ -49,7 +49,7 @@ export const CONFIG = {
   // Geofence settings
   GEOFENCE_RADIUS_BUFFER: 15,    // meters to add
   MIN_GEOFENCE_RADIUS: 25,       // minimum radius
-  EXIT_BUFFER_MULTIPLIER: 1.15,  // 15% buffer for exit
+  EXIT_BUFFER_MULTIPLIER: 1.08,  // 8% buffer for exit (reduced from 1.15 for better responsiveness)
   
   // Notification channels
   CHANNELS: {
