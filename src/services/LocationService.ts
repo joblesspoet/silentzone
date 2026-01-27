@@ -489,11 +489,43 @@ private setupReactiveSync() {
             }
           }
 
+
           // CRITICAL FIX: If we have active places, verify location immediately
           // This fixes the "Sitting at home" scenario where we don't cross boundary
           if (activePlaces.length > 0) {
+              // Calculate the latest end time of all active schedules
+              // We should retry checking location until this time (if needed)
+              const now = new Date();
+              let maxEndTime = 0;
+              
+              for (const place of activePlaces) {
+                  // Find the active schedule for this place
+                  if (place.schedules) {
+                      for (const schedule of place.schedules) {
+                           if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
+                               const [endHours, endMins] = schedule.endTime.split(':').map(Number);
+                               const scheduleEnd = new Date(now);
+                               scheduleEnd.setHours(endHours, endMins, 0, 0);
+                               
+                               // Handle overnight ending tomorrow (if end time is earlier than now, it might be +1 day, 
+                               // but isScheduleActiveNow handles the logic. 
+                               // Simplified: just ensure if end < now, it's tomorrow)
+                               if (scheduleEnd.getTime() < now.getTime()) {
+                                   scheduleEnd.setDate(scheduleEnd.getDate() + 1);
+                               }
+                               
+                               if (scheduleEnd.getTime() > maxEndTime) {
+                                   maxEndTime = scheduleEnd.getTime();
+                               }
+                           }
+                      }
+                  }
+              }
+
               Logger.info(`[LocationService] Active places detected (${activePlaces.length}) - Checking if already inside...`);
-              await this.forceLocationCheck();
+              Logger.info(`[LocationService] ⏳ Location check deadline: ${new Date(maxEndTime).toLocaleTimeString()}`);
+              
+              await this.forceLocationCheck(1, 3, maxEndTime);
           }
 
       } else {
@@ -642,8 +674,18 @@ private setupReactiveSync() {
    * 
    * CRITICAL: Verifies GPS is actually working within 30 seconds
    * If no location updates arrive, stops monitoring and notifies user
+   * 
+   * @param deadline Optional timestamp. If provided, retries will stop after this time.
    */
-  private async startGeofenceMonitoring() {
+  /**
+   * Start geofence monitoring with GPS verification
+   * 
+   * CRITICAL: Verifies GPS is actually working within 30 seconds
+   * If no location updates arrive, stops monitoring and notifies user
+   * 
+   * @param deadline Optional timestamp. If provided, retries will stop after this time.
+   */
+  private async startGeofenceMonitoring(deadline?: number) {
     if (this.geofencesActive) {
       Logger.info('[LocationService] Geofences already active');
       return;
@@ -662,57 +704,89 @@ private setupReactiveSync() {
     // Start watching position
     this.startWatcher();
     
-    // CRITICAL: Set 30-second verification timeout
+    // CRITICAL: Set verification timeout
     // This ensures GPS is actually providing location updates
-    const verificationDelay = 30000; // 30 seconds
     
-    Logger.info(
-      `[LocationService] 🕒 Starting GPS verification ` +
-      `(${verificationDelay / 1000}s timeout)`
-    );
-    
-    this.gpsVerificationTimeout = setTimeout(() => {
-      // Check if we've received any location updates
-      if (!this.lastKnownLocation) {
-        Logger.error(
-          '[LocationService] ❌ GPS VERIFICATION FAILED - ' +
-          'No location updates after 30 seconds'
-        );
-        
-        // Notify user about the problem
-        notificationManager.showNotification(
-          'GPS Not Working',
-          'Unable to get your location. Please check GPS settings and permissions.',
-          'gps-failure'
-        );
-        
-        // Log diagnostic info
-        Logger.error('[LocationService] GPS Diagnostic Info:', {
-          geofencesActive: this.geofencesActive,
-          watchId: this.watchId,
-          lastKnownLocation: this.lastKnownLocation,
-          isInScheduleWindow: this.isInScheduleWindow
-        });
-        
-        // Stop monitoring since GPS isn't working
-        // This prevents battery drain from a stuck watcher
-        this.stopGeofenceMonitoring();
-        
-        Logger.info('[LocationService] Stopped monitoring due to GPS failure');
-        
-      } else {
-        // GPS is working but took longer than usual
-        const age = Date.now() - this.lastKnownLocation.timestamp;
-        Logger.info(
-          `[LocationService] ✅ GPS verification passed (late arrival) - ` +
-          `location age: ${Math.round(age / 1000)}s`
-        );
+    // Retry Logic: 30s -> 60s -> 60s
+    const verifyGPS = async (attemptNumber: number = 1, maxAttempts: number = 3) => {
+      // CHECK DEADLINE
+      if (deadline && Date.now() > deadline) {
+          Logger.warn('[LocationService] ⏳ GPS verification skipped - Deadline passed (Schedule ended)');
+          return;
       }
       
-      // Clear the timeout reference
-      this.gpsVerificationTimeout = null;
+      const timeoutDuration = attemptNumber === 1 ? 30000 : 60000; // 30s first, then 60s
       
-    }, verificationDelay);
+      Logger.info(
+        `[LocationService] 🕒 GPS verification attempt ${attemptNumber}/${maxAttempts} ` +
+        `(${timeoutDuration / 1000}s timeout)`
+      );
+      
+      this.gpsVerificationTimeout = setTimeout(async () => {
+        // Check if we've received any location updates
+        if (!this.lastKnownLocation) {
+          Logger.warn(
+            `[LocationService] ⚠️ GPS verification attempt ${attemptNumber}/${maxAttempts} failed - ` +
+            'No location updates yet'
+          );
+          
+          // Should we retry?
+          if (attemptNumber < maxAttempts) {
+             // Check deadline again before retrying
+             if (deadline && Date.now() > deadline) {
+                  Logger.warn('[LocationService] ⏳ Stop retrying - Deadline passed');
+                  return;
+             }
+          
+            // YES - Try again
+            Logger.info(`[LocationService] 🔄 Retrying GPS verification (attempt ${attemptNumber + 1}/${maxAttempts})...`);
+            
+            // Clear old timeout
+            this.gpsVerificationTimeout = null;
+            
+            // Retry
+            await verifyGPS(attemptNumber + 1, maxAttempts);
+            
+          } else {
+            // NO - All attempts exhausted
+            // FAIL OPEN: Do NOT stop monitoring. Just warn user.
+            
+            Logger.error(
+              `[LocationService] ❌ GPS VERIFICATION FAILED - ` +
+              `No location updates after ${maxAttempts} attempts`
+            );
+            
+            // Notify user about the problem
+            notificationManager.showNotification(
+              'GPS Struggling',
+              'GPS signal is weak, but we are still scanning for your location.',
+              'gps-slow-start'
+            );
+            
+            // 🔴 CRITICAL CHANGE: DON'T stop monitoring!
+            // Keep trying in background - GPS might work later
+            Logger.warn('[LocationService] ⚠️ GPS slow to start but continuing monitoring in background');
+            
+            // Clear the timeout reference
+            this.gpsVerificationTimeout = null;
+          }
+          
+        } else {
+          // SUCCESS - GPS is working
+          const age = Date.now() - this.lastKnownLocation.timestamp;
+          Logger.info(
+            `[LocationService] ✅ GPS verification passed on attempt ${attemptNumber} - ` +
+            `location age: ${Math.round(age / 1000)}s`
+          );
+          
+          // Clear the timeout reference
+          this.gpsVerificationTimeout = null;
+        }
+      }, timeoutDuration);
+    };
+
+    // Start verification
+    await verifyGPS(1, 3);
     
     Logger.info('[LocationService] Geofence monitoring started with verification');
   }
@@ -850,7 +924,35 @@ private setupReactiveSync() {
       // If this was a START_SILENCE alarm, force immediate check
       // This handles the "User is already here" case
       if (action === ALARM_ACTIONS.START_SILENCE) {
-         await this.forceLocationCheck();
+         // Extract the place ID and calculate the schedule end time
+         const placeId = data?.notification?.data?.placeId || data?.placeId;
+         let deadline: number | undefined;
+         
+         if (placeId) {
+            const place = PlaceService.getPlaceById(this.realm, placeId);
+            if (place && (place as any).schedules) {
+               const now = new Date();
+               // Find the currently active schedule for this place
+               for (const schedule of (place as any).schedules) {
+                  if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
+                     const [endHours, endMins] = schedule.endTime.split(':').map(Number);
+                     const scheduleEnd = new Date(now);
+                     scheduleEnd.setHours(endHours, endMins, 0, 0);
+                     
+                     // Handle overnight schedules (if end time is earlier than now, it's tomorrow)
+                     if (scheduleEnd.getTime() < now.getTime()) {
+                        scheduleEnd.setDate(scheduleEnd.getDate() + 1);
+                     }
+                     
+                     deadline = scheduleEnd.getTime();
+                     Logger.info(`[LocationService] ⏳ Force check deadline: ${scheduleEnd.toLocaleTimeString()}`);
+                     break;
+                  }
+               }
+            }
+         }
+         
+         await this.forceLocationCheck(1, 3, deadline);
       }
 
       // If this was a STOP_SILENCE alarm, force exit
@@ -1601,13 +1703,24 @@ private setupReactiveSync() {
    * 2. When a "Start Silence" alarm fires
    * 3. When service restarts
    */
-  async forceLocationCheck() {
-    Logger.info('[LocationService] ⚡ Forcing immediate location check');
+
+  async forceLocationCheck(attemptNumber: number = 1, maxAttempts: number = 3, deadline?: number): Promise<void> {
+    
+    // CHECK DEADLINE
+    if (deadline && Date.now() > deadline) {
+        Logger.warn('[LocationService] ⏳ Force location check cancelled - Deadline passed');
+        return Promise.resolve();
+    }
+
+    Logger.info(`[LocationService] ⚡ Forcing location check (attempt ${attemptNumber}/${maxAttempts})`);
+    
     return new Promise<void>((resolve) => {
+      const timeout = attemptNumber === 1 ? 15000 : 30000; // 15s first, 30s for retries
+      
       Geolocation.getCurrentPosition(
         async (position) => {
           try {
-            Logger.info('[LocationService] 📍 Forced location acquired');
+            Logger.info(`[LocationService] 📍 Forced location acquired on attempt ${attemptNumber}`);
             await this.processLocationUpdate(position);
             resolve();
           } catch (error) {
@@ -1615,11 +1728,32 @@ private setupReactiveSync() {
             resolve();
           }
         },
-        (error) => {
-          Logger.error('[LocationService] Failed to get forced location:', error);
-          resolve();
+        async (error) => {
+          Logger.error(`[LocationService] Attempt ${attemptNumber} failed:`, error);
+          
+          // Should we retry?
+          if (attemptNumber < maxAttempts) {
+            // Check deadline again
+            if (deadline && Date.now() > deadline) {
+                 Logger.warn('[LocationService] ⏳ Stop retrying forced check - Deadline passed');
+                 resolve();
+                 return;
+            }
+          
+            Logger.info(`[LocationService] 🔄 Retrying location check (attempt ${attemptNumber + 1}/${maxAttempts})...`);
+            
+            // Wait 2 seconds before retry
+            await new Promise<void>(r => setTimeout(() => r(), 2000));
+            
+            // Retry recursively
+            await this.forceLocationCheck(attemptNumber + 1, maxAttempts, deadline);
+            resolve();
+          } else {
+            Logger.error(`[LocationService] ❌ All ${maxAttempts} location check attempts failed`);
+            resolve();
+          }
         },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+        { enableHighAccuracy: true, timeout, maximumAge: 10000 }
       );
     });
   }
