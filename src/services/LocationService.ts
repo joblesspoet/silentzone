@@ -489,6 +489,13 @@ private setupReactiveSync() {
             }
           }
 
+          // CRITICAL FIX: If we have active places, verify location immediately
+          // This fixes the "Sitting at home" scenario where we don't cross boundary
+          if (activePlaces.length > 0) {
+              Logger.info(`[LocationService] Active places detected (${activePlaces.length}) - Checking if already inside...`);
+              await this.forceLocationCheck();
+          }
+
       } else {
          // PASSIVE MODE (Sleep & Alarm)
          Logger.info('[LocationService] 💤 Entering passive mode (using alarms)');
@@ -829,7 +836,6 @@ private setupReactiveSync() {
 
       const action = data?.notification?.data?.action || data?.action;
       
-      // Log what triggered us
       if (action === ALARM_ACTIONS.START_MONITORING) {
         Logger.info('[LocationService] 🟡 Pre-activation alarm (15min before)');
       } else if (action === ALARM_ACTIONS.START_SILENCE) {
@@ -841,21 +847,10 @@ private setupReactiveSync() {
       // Execute sync
       await this.syncGeofences();
 
-      // If this was a START_SILENCE alarm, immediately check location
+      // If this was a START_SILENCE alarm, force immediate check
+      // This handles the "User is already here" case
       if (action === ALARM_ACTIONS.START_SILENCE) {
-        Logger.info('[LocationService] 🎯 START_SILENCE: Forcing immediate location check');
-        
-        // Get current location immediately
-        Geolocation.getCurrentPosition(
-          (position) => {
-            Logger.info('[LocationService] Got immediate position after START_SILENCE');
-            this.processLocationUpdate(position);
-          },
-          (error) => {
-            Logger.error('[LocationService] Failed to get immediate position:', error);
-          },
-          { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-        );
+         await this.forceLocationCheck();
       }
 
       // If this was a STOP_SILENCE alarm, force exit
@@ -878,7 +873,6 @@ private setupReactiveSync() {
       if (this.alarmQueue.length > 0) {
         const nextAlarm = this.alarmQueue.shift();
         Logger.info(`[LocationService] Processing queued alarm (${this.alarmQueue.length} remaining)`);
-        // Small delay before processing next
         setTimeout(() => this.handleAlarmFired(nextAlarm), 1000);
       }
     }
@@ -1598,6 +1592,36 @@ private setupReactiveSync() {
       // Re-trigger entry logic (checks schedules)
       await this.handleGeofenceEntry(placeId);
     }, delay);
+  }
+
+  /**
+   * Force a location check immediately
+   * Critical for:
+   * 1. When a place is edited and becomes active NOW
+   * 2. When a "Start Silence" alarm fires
+   * 3. When service restarts
+   */
+  async forceLocationCheck() {
+    Logger.info('[LocationService] ⚡ Forcing immediate location check');
+    return new Promise<void>((resolve) => {
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            Logger.info('[LocationService] 📍 Forced location acquired');
+            await this.processLocationUpdate(position);
+            resolve();
+          } catch (error) {
+            Logger.error('[LocationService] Error processing forced location:', error);
+            resolve();
+          }
+        },
+        (error) => {
+          Logger.error('[LocationService] Failed to get forced location:', error);
+          resolve();
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      );
+    });
   }
 
   /**
