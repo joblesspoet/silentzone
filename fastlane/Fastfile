@@ -1,0 +1,29 @@
+default_platform(:android)
+
+platform :android do
+  desc "Build the AAB"
+  lane :build do |options|
+    #if options[:bump] != "false"
+    #  increment_version_code(app_project_dir: "android/app")
+    #  increment_version_name(app_project_dir: "android/app", bump_type: "patch")
+    #end
+    gradle(task: "bundleRelease", project_dir: "android")
+  end
+
+  desc "Deploy to Internal Testing"
+  lane :deploy do
+    build
+    upload_to_play_store(
+      track: "internal",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_apk: true
+    )
+  end
+
+  desc "Alias for deploy"
+  lane :beta do
+    deploy
+  end
+end
