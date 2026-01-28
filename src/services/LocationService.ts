@@ -68,6 +68,10 @@ class LocationService {
 
   private restartCheckInterval: ReturnType<typeof setInterval> | null = null;
   private gpsVerificationTimeout: ReturnType<typeof setTimeout> | null = null;
+  
+  // GPS Fallback Polling (activated when verification fails)
+  private gpsFailedPolling: ReturnType<typeof setInterval> | null = null;
+  private pollCount: number = 0;
 
   /**
    * Initialize the location service
@@ -767,6 +771,11 @@ private setupReactiveSync() {
             // Keep trying in background - GPS might work later
             Logger.warn('[LocationService] ⚠️ GPS slow to start but continuing monitoring in background');
             
+            // 🆕 CRITICAL FIX: Start aggressive fallback polling
+            // This ensures we get location even if watchPosition never fires
+            Logger.warn('[LocationService] 🔄 Activating fallback GPS polling');
+            this.startFallbackPolling();
+            
             // Clear the timeout reference
             this.gpsVerificationTimeout = null;
           }
@@ -818,6 +827,91 @@ private setupReactiveSync() {
     
     Object.values(this.endTimers).forEach(t => clearTimeout(t));
     this.endTimers = {};
+    
+    // Clear fallback polling if active
+    this.stopFallbackPolling();
+  }
+
+  /**
+   * Start aggressive fallback GPS polling
+   * 
+   * CRITICAL: Only activated when GPS verification fails
+   * Uses progressive intervals: 15s (fast) → 30s (normal)
+   * 
+   * Why we need this:
+   * - watchPosition() can fail silently in background
+   * - GPS cold starts can take minutes
+   * - Background restrictions can block watcher
+   * 
+   * This ensures we ALWAYS try to get location periodically,
+   * even if the watcher isn't working
+   */
+  private startFallbackPolling() {
+    if (this.gpsFailedPolling) {
+      Logger.info('[LocationService] Fallback polling already active');
+      return;
+    }
+    
+    this.pollCount = 0;
+    const maxFastPolls = 6; // First 6 polls are fast (15s each = 90s total)
+    
+    Logger.info('[LocationService] 🔄 Starting fallback GPS polling (progressive: 15s → 30s)');
+    
+    const pollGPS = async () => {
+      this.pollCount++;
+      const currentInterval = this.pollCount <= maxFastPolls ? 15000 : 30000;
+      
+      Logger.info(
+        `[LocationPoll] 📍 Attempt #${this.pollCount} ` +
+        `(${currentInterval / 1000}s interval, fast polls: ${Math.min(this.pollCount, maxFastPolls)}/${maxFastPolls})`
+      );
+      
+      Geolocation.getCurrentPosition(
+        async (position) => {
+          Logger.info('[LocationPoll] ✅ SUCCESS - GPS recovered!');
+          await this.processLocationUpdate(position);
+          
+          // GPS recovered! Stop polling
+          this.stopFallbackPolling();
+        },
+        (error) => {
+          Logger.warn(`[LocationPoll] ⚠️ Poll #${this.pollCount} failed, will retry...`, error.message);
+          // Continue polling
+        },
+        { 
+          enableHighAccuracy: true, 
+          timeout: 25000, 
+          maximumAge: 5000 
+        }
+      );
+    };
+    
+    // Poll immediately
+    pollGPS();
+    
+    // Start with 15-second polls (more aggressive for GPS cold start)
+    this.gpsFailedPolling = setInterval(() => {
+      // After 6 fast polls (90s), switch to 30s interval
+      if (this.pollCount >= maxFastPolls && this.gpsFailedPolling) {
+        clearInterval(this.gpsFailedPolling);
+        Logger.info('[LocationPoll] 🔄 Switching to slower polling (30s interval)');
+        this.gpsFailedPolling = setInterval(pollGPS, 30000);
+      }
+      pollGPS();
+    }, 15000); // Start with 15s for faster recovery
+  }
+
+  /**
+   * Stop fallback polling
+   * Called when GPS recovers or monitoring stops
+   */
+  private stopFallbackPolling() {
+    if (this.gpsFailedPolling) {
+      clearInterval(this.gpsFailedPolling);
+      this.gpsFailedPolling = null;
+      this.pollCount = 0;
+      Logger.info('[LocationPoll] ✅ Stopped fallback polling');
+    }
   }
 
   /**
@@ -1143,6 +1237,13 @@ private setupReactiveSync() {
         `[LocationService] ✅ GPS verified - receiving locations ` +
         `(first update after ${Math.round(Math.abs(elapsed) / 1000)}s)`
       );
+    }
+    
+    // 🆕 SELF-HEALING: Stop fallback polling if GPS recovered
+    // If we're receiving location updates from watcher, polling is no longer needed
+    if (this.gpsFailedPolling) {
+      Logger.info('[LocationService] ✅ GPS recovered (watcher working) - stopping fallback polling');
+      this.stopFallbackPolling();
     }
 
     // Prevent concurrent processing
