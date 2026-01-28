@@ -274,6 +274,10 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                 PreferencesService.updatePreferences(realm, { trackingEnabled: true });
               }
 
+              // CRITICAL FIX: Immediately check if we are ALREADY inside the place we just edited
+              // This fixes the case where user is stationary at home and adds a schedule
+              await locationService.forceLocationCheck();
+
           navigation.goBack();
       } else {
           Alert.alert("Error", "Failed to update place.");
