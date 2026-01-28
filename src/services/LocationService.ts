@@ -1,5 +1,4 @@
 import Geofencing from '@rn-org/react-native-geofencing';
-
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
 import {  Preferences } from '../database/services/PreferencesService';
