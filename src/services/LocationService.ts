@@ -1,12 +1,4 @@
 import Geofencing from '@rn-org/react-native-geofencing';
-
-import notifee, {
-  AndroidImportance,
-  AndroidForegroundServiceType,
-  TriggerType,
-  AndroidCategory,
-  AlarmType,
-} from '@notifee/react-native';
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
 import {  Preferences } from '../database/services/PreferencesService';
