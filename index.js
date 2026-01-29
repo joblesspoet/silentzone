@@ -57,6 +57,29 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
   }
 });
 
+// Register background handler for Geofencing (Headless JS)
+AppRegistry.registerHeadlessTask('GeofenceTask', () => async (taskData) => {
+  console.log('[Headless] 🌎 Geofence event received:', taskData);
+  
+  try {
+    const realm = await getRealm();
+    await locationService.initialize(realm);
+    
+    // The library passes { event: 'ENTER'|'EXIT', ids: ['place-id'] }
+    if (taskData.event === 'ENTER') {
+      for (const id of taskData.ids) {
+        await locationService.handleGeofenceEntry(id);
+      }
+    } else if (taskData.event === 'EXIT') {
+      for (const id of taskData.ids) {
+        await locationService.handleGeofenceExit(id);
+      }
+    }
+  } catch (error) {
+    console.error('[Headless] Failed to process geofence event:', error);
+  }
+});
+
 // Register foreground service (Required for Android 14+)
 notifee.registerForegroundService((notification) => {
   return new Promise(() => {

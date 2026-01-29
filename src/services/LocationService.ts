@@ -1805,10 +1805,16 @@ private setupReactiveSync() {
    * 3. When service restarts
    */
 
-  async forceLocationCheck(attemptNumber: number = 1, maxAttempts: number = 3, deadline?: number): Promise<void> {
+  async forceLocationCheck(attemptNumber: number = 1, maxAttempts: number = 5, deadline?: number): Promise<void> {
     
-    // CHECK DEADLINE
-    if (deadline && Date.now() > deadline) {
+    // LOG DEADLINE STATUS
+    if (deadline) {
+      const timeUntilDeadline = deadline - Date.now();
+      Logger.info(`[ForceCheck] ⏰ Time until deadline: ${Math.round(timeUntilDeadline / 1000)}s`);
+    }
+
+    // Don't check deadline on first attempt - give GPS time to warm up
+    if (attemptNumber > 1 && deadline && Date.now() > deadline) {
         Logger.warn('[LocationService] ⏳ Force location check cancelled - Deadline passed');
         return Promise.resolve();
     }
@@ -1816,7 +1822,8 @@ private setupReactiveSync() {
     Logger.info(`[LocationService] ⚡ Forcing location check (attempt ${attemptNumber}/${maxAttempts})`);
     
     return new Promise<void>((resolve) => {
-      const timeout = attemptNumber === 1 ? 15000 : 30000; // 15s first, 30s for retries
+      // INCREASED TIMEOUTS for background GPS
+      const timeout = attemptNumber === 1 ? 30000 : 60000; // 30s first, then 60s
       
       Geolocation.getCurrentPosition(
         async (position) => {
@@ -1834,7 +1841,7 @@ private setupReactiveSync() {
           
           // Should we retry?
           if (attemptNumber < maxAttempts) {
-            // Check deadline again
+            // Check deadline again (but only on retries)
             if (deadline && Date.now() > deadline) {
                  Logger.warn('[LocationService] ⏳ Stop retrying forced check - Deadline passed');
                  resolve();
@@ -1843,18 +1850,26 @@ private setupReactiveSync() {
           
             Logger.info(`[LocationService] 🔄 Retrying location check (attempt ${attemptNumber + 1}/${maxAttempts})...`);
             
-            // Wait 2 seconds before retry
-            await new Promise<void>(r => setTimeout(() => r(), 2000));
+            // Short wait between retries
+            await new Promise<void>(r => setTimeout(() => r(), 1000));
             
             // Retry recursively
             await this.forceLocationCheck(attemptNumber + 1, maxAttempts, deadline);
             resolve();
           } else {
             Logger.error(`[LocationService] ❌ All ${maxAttempts} location check attempts failed`);
+            
+             // ⚠️ CRITICAL: Start fallback polling if all attempts fail
+            Logger.warn('[LocationService] 🔄 All location attempts failed - relying on fallback polling');
+            this.startFallbackPolling();
             resolve();
           }
         },
-        { enableHighAccuracy: true, timeout, maximumAge: 10000 }
+        { 
+          enableHighAccuracy: true, 
+          timeout, 
+          maximumAge: 30000 // INCREASED: Accept 30-second cached location
+        }
       );
     });
   }
@@ -1875,6 +1890,10 @@ private setupReactiveSync() {
       
       // Force checkout
       await this.handleGeofenceExit(placeId, true);
+      
+      // CRITICAL: Trigger sync to check if we should stop the service
+      // (If this was the last active schedule, sync will stop monitoring)
+      await this.syncGeofences();
     }, delay);
   }
 

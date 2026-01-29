@@ -70,7 +70,7 @@ class NotificationManager {
         } else if (isInScheduleWindow) {
             // In schedule window but NOT validated as inside yet (Active or 0 min)
             title = '🛡️ Silent Zone Monitoring';
-            body = `Targeting ${nextSchedule.placeName}`;
+            body = 'Monitoring active zone';
         }
       }
 
