@@ -313,78 +313,110 @@ class LocationService {
     return prefs?.trackingEnabled ?? true;
   }
 
-  // LocationService.ts - setupReactiveSync() method replacement
+  /**
+   * Set up reactive database listeners - CRASH-SAFE VERSION
+   */
+  private setupReactiveSync() {
+    if (!this.realm || this.realm.isClosed) return;
 
-/**
- * Set up reactive database listeners - CRASH-SAFE VERSION
- */
-private setupReactiveSync() {
-  if (!this.realm || this.realm.isClosed) return;
+    const places = this.realm.objects('Place');
+    places.addListener((collection, changes) => {
+      // FIX: Wrap in async IIFE to allow await
+      (async () => {
+        try {
+          if (
+            changes.insertions.length > 0 ||
+            changes.deletions.length > 0 ||
+            changes.newModifications.length > 0
+          ) {
+            Logger.info('[LocationService] Places changed, syncing');
+            
+            // Check if we should auto-enable tracking
+            const enabledPlaces = Array.from(collection).filter((p: any) => p.isEnabled);
+            
+            if (enabledPlaces.length > 0) {
+              const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
+              if (prefs && !prefs.trackingEnabled) {
+                Logger.info('[LocationService] ✅ Auto-enabling tracking (places added)');
+                
+                // Enable tracking and wait for it to complete
+                this.realm!.write(() => {
+                  prefs.trackingEnabled = true;
+                });
+                
+                // Wait longer for all listeners to process
+                setTimeout(async () => {
+                  Logger.info('[LocationService] Syncing after tracking enabled');
+                  await this.syncGeofences();
+                  
+                  // NEW: Safety check for delayed sync
+                  if (this.isPreferenceTrackingEnabled() && !this.geofencesActive) {
+                       const currentEnabled = Array.from(this.realm!.objects('Place')).filter((p: any) => p.isEnabled);
+                       const { activePlaces } = ScheduleManager.categorizeBySchedule(currentEnabled);
+                       if (activePlaces.length > 0) {
+                           Logger.warn('[LocationService] ⚠️ Delayed sync finished but monitoring inactive - Restarting');
+                           await this.startForegroundService();
+                       }
+                  }
+                }, 300);
+                
+                return; // Don't sync immediately
+              }
+            }
+            
+            // If no enabled places, auto-disable tracking
+            if (enabledPlaces.length === 0) {
+              const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
+              if (prefs && prefs.trackingEnabled) {
+                Logger.info('[LocationService] ❌ Auto-disabling tracking (no enabled places)');
+                this.realm!.write(() => {
+                  prefs.trackingEnabled = false;
+                });
+              }
+            }
 
-  const places = this.realm.objects('Place');
-  places.addListener((collection, changes) => {
-    if (
-      changes.insertions.length > 0 ||
-      changes.deletions.length > 0 ||
-      changes.newModifications.length > 0
-    ) {
-      Logger.info('[LocationService] Places changed, syncing');
-      
-      // Check if we should auto-enable tracking
-      const enabledPlaces = Array.from(collection).filter((p: any) => p.isEnabled);
-      
-      if (enabledPlaces.length > 0) {
-        const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
-        if (prefs && !prefs.trackingEnabled) {
-          Logger.info('[LocationService] ✅ Auto-enabling tracking (places added)');
-          
-          // Enable tracking and wait for it to complete
-         this.realm!.write(() => {
-            prefs.trackingEnabled = true;
-          });
-          
-          // Wait longer for all listeners to process
-          setTimeout(() => {
-            Logger.info('[LocationService] Syncing after tracking enabled');
-            this.syncGeofences();
-          }, 300);
-          
-          return; // Don't sync immediately
+            // Main Sync with Await
+            await this.syncGeofences();
+            
+            // KILOCODE FIX: Explicitly ensure monitoring is restarted if active places exist
+            // This covers race conditions where syncGeofences might bail early
+            if (enabledPlaces.length > 0 && this.isPreferenceTrackingEnabled()) {
+               const { activePlaces, upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
+               const shouldMonitor = this.shouldStartMonitoring(activePlaces, upcomingSchedules);
+               
+               if (shouldMonitor && !this.geofencesActive) {
+                   Logger.warn('[LocationService] ⚠️ Reactive Sync Safety: Restarting monitoring explicitly');
+                   await this.startForegroundService(); 
+               }
+            }
+          }
+        } catch (error) {
+          Logger.error('[LocationService] Reactive sync failed:', error);
         }
-      }
-      
-      // If no enabled places, auto-disable tracking
-      if (enabledPlaces.length === 0) {
-        const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
-        if (prefs && prefs.trackingEnabled) {
-          Logger.info('[LocationService] ❌ Auto-disabling tracking (no enabled places)');
-          this.realm!.write(() => {
-            prefs.trackingEnabled = false;
-          });
-        }
-      }
-
-      this.syncGeofences();
-    }
-  });
-
-  // Listen for CheckInLog changes to update notification
-  const checkIns = this.realm.objects('CheckInLog');
-  checkIns.addListener((collection, changes) => {
-    if (changes.insertions.length > 0 || changes.deletions.length > 0) {
-      Logger.info('[LocationService] CheckIns changed, updating notification');
-      this.startForegroundService();
-    }
-  });
-
-  const prefs = this.realm.objectForPrimaryKey<Preferences>('Preferences', 'USER_PREFS');
-  if (prefs) {
-    prefs.addListener(() => {
-      Logger.info('[LocationService] Preferences changed, syncing');
-      this.syncGeofences();
+      })();
     });
+
+    // Listen for CheckInLog changes to update notification
+    const checkIns = this.realm.objects('CheckInLog');
+    checkIns.addListener((collection, changes) => {
+      (async () => {
+        if (changes.insertions.length > 0 || changes.deletions.length > 0) {
+          Logger.info('[LocationService] CheckIns changed, updating notification');
+          await this.startForegroundService();
+        }
+      })();
+    });
+
+    const prefs = this.realm.objectForPrimaryKey<Preferences>('Preferences', 'USER_PREFS');
+    if (prefs) {
+      prefs.addListener(() => {
+        (async () => {
+          Logger.info('[LocationService] Preferences changed, syncing');
+          await this.syncGeofences();
+        })();
+      });
+    }
   }
-}
 
   /**
    * Main sync method - smart scheduling support
@@ -422,7 +454,7 @@ private setupReactiveSync() {
       
       const { activePlaces, upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
       this.upcomingSchedules = upcomingSchedules;
-      this.isInScheduleWindow = activePlaces.length > 0 && upcomingSchedules.length > 0;
+      this.isInScheduleWindow = activePlaces.length > 0 || upcomingSchedules.length > 0;
 
       // NEW: Smart decision logic
       const shouldMonitor = this.shouldStartMonitoring(activePlaces, upcomingSchedules);
@@ -511,9 +543,7 @@ private setupReactiveSync() {
                                const scheduleEnd = new Date(now);
                                scheduleEnd.setHours(endHours, endMins, 0, 0);
                                
-                               // Handle overnight ending tomorrow (if end time is earlier than now, it might be +1 day, 
-                               // but isScheduleActiveNow handles the logic. 
-                               // Simplified: just ensure if end < now, it's tomorrow)
+                               // Handle overnight ending tomorrow
                                if (scheduleEnd.getTime() < now.getTime()) {
                                    scheduleEnd.setDate(scheduleEnd.getDate() + 1);
                                }

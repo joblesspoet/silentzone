@@ -15,6 +15,20 @@ const AppContent = () => {
     const realm = useRealm();
 
     useEffect(() => {
+        // Initialize Logger
+        if (realm) {
+            Logger.setRealm(realm);
+            
+            // Load logging preference
+            SettingsService.getLoggingEnabled().then(enabled => {
+                Logger.setEnabled(enabled);
+                // Auto-enable in DEV if needed, or just let user toggle
+                if (__DEV__) {
+                    console.log(`[App] Dev mode detected. Logging enabled: ${enabled}`);
+                }
+            });
+        }
+
         // Initialize Background Location Service
         locationService.initialize(realm);
     }, [realm]);
