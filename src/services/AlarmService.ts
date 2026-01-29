@@ -16,7 +16,8 @@ export const ALARM_ACTIONS = {
 
 class AlarmService {
   /**
-   * Schedule individual alarms for all schedules in a place (Today + Tomorrow)
+   * Schedule individual alarms for all schedules in a place (Next occurrence only)
+   * Optimized to schedule only the next upcoming occurrence for each schedule
    */
   async scheduleAlarmsForPlace(place: any) {
     if (!place.schedules || place.schedules.length === 0) {
@@ -32,76 +33,67 @@ class AlarmService {
     for (let i = 0; i < place.schedules.length; i++) {
       const schedule = place.schedules[i];
       const [startHour, startMin] = schedule.startTime.split(':').map(Number);
+      const [endHour, endMin] = schedule.endTime.split(':').map(Number);
       
-      // We schedule alarms for TODAY and TOMORROW to ensure continuity
-      // Day Offset 0 = Today, 1 = Tomorrow
-      for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
-        // Construct target start time
-        const targetTime = new Date(now);
-        targetTime.setHours(startHour, startMin, 0, 0);
-        
-        if (dayOffset === 1) {
-            targetTime.setDate(targetTime.getDate() + 1);
-        }
+      // Calculate next occurrence of this schedule
+      const nextOccurrence = this.getNextScheduleOccurrence(
+        now, startHour, startMin, endHour, endMin
+      );
+      
+      if (!nextOccurrence) {
+        Logger.info(`[AlarmService] Schedule ${i} for ${place.name} has no future occurrences`);
+        continue;
+      }
+      
+      const { startTime, endTime } = nextOccurrence;
+      const dayOffset = nextOccurrence.dayOffset;
 
-        // --- ALARM 1: MONITORING START (15 mins before) ---
-        const preActivationMillis = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
-        const monitorTime = targetTime.getTime() - preActivationMillis;
+      // --- ALARM 1: MONITORING START (15 mins before) ---
+      const preActivationMillis = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
+      const monitorTime = startTime.getTime() - preActivationMillis;
 
-        if (monitorTime > Date.now()) {
-            const monitorAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-monitor`;
-            await this.scheduleSingleAlarm(
-                monitorAlarmId,
-                monitorTime,
-                place.id,
-                ALARM_ACTIONS.START_MONITORING,
-                'Schedule Approaching',
-                `${place.name} starting soon`
-            );
-            alarmsScheduled++;
-            alarmIds.push(monitorAlarmId);
-        }
+      if (monitorTime > Date.now()) {
+          const monitorAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-monitor`;
+          await this.scheduleSingleAlarm(
+              monitorAlarmId,
+              monitorTime,
+              place.id,
+              ALARM_ACTIONS.START_MONITORING,
+              'Schedule Approaching',
+              `${place.name} starting soon`
+          );
+          alarmsScheduled++;
+          alarmIds.push(monitorAlarmId);
+      }
 
-        // --- ALARM 2: ACTIVATE SILENCE (Exact Start) ---
-        const startTime = targetTime.getTime();
-        if (startTime > Date.now()) {
-            const startAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-start`;
-            await this.scheduleSingleAlarm(
-                startAlarmId,
-                startTime,
-                place.id,
-                ALARM_ACTIONS.START_SILENCE,
-                'Silent Zone Starting',
-                `Activating ${place.name} now`
-            );
-            alarmsScheduled++;
-            alarmIds.push(startAlarmId);
-        }
+      // --- ALARM 2: ACTIVATE SILENCE (Exact Start) ---
+      if (startTime.getTime() > Date.now()) {
+          const startAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-start`;
+          await this.scheduleSingleAlarm(
+              startAlarmId,
+              startTime.getTime(),
+              place.id,
+              ALARM_ACTIONS.START_SILENCE,
+              'Silent Zone Starting',
+              `Activating ${place.name} now`
+          );
+          alarmsScheduled++;
+          alarmIds.push(startAlarmId);
+      }
 
-        // --- ALARM 3: DEACTIVATE SILENCE (Exact End) ---
-        // Determine duration
-        const [endHour, endMin] = schedule.endTime.split(':').map(Number);
-        const startTotal = startHour * 60 + startMin;
-        const endTotal = endHour * 60 + endMin;
-        // Handle overnight duration
-        const durationMinutes = endTotal >= startTotal ? (endTotal - startTotal) : (1440 - startTotal + endTotal);
-        
-        const endTime = startTime + (durationMinutes * 60 * 1000);
-        
-        if (endTime > Date.now()) {
-            const endAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-end`;
-            // We schedule this as "STOP_SILENCE" to force wakeup and exit
-            await this.scheduleSingleAlarm(
-                endAlarmId,
-                endTime,
-                place.id,
-                ALARM_ACTIONS.STOP_SILENCE,
-                'Silent Zone Ending',
-                `Leaving ${place.name}`
-            );
-            alarmsScheduled++;
-            alarmIds.push(endAlarmId);
-        }
+      // --- ALARM 3: DEACTIVATE SILENCE (Exact End) ---
+      if (endTime.getTime() > Date.now()) {
+          const endAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-end`;
+          await this.scheduleSingleAlarm(
+              endAlarmId,
+              endTime.getTime(),
+              place.id,
+              ALARM_ACTIONS.STOP_SILENCE,
+              'Silent Zone Ending',
+              `Leaving ${place.name}`
+          );
+          alarmsScheduled++;
+          alarmIds.push(endAlarmId);
       }
     }
     
@@ -254,13 +246,13 @@ class AlarmService {
   }> {
     try {
       const triggerNotifications = await notifee.getTriggerNotifications();
-      
+
       let nextAlarmTime: Date | null = null;
       const alarmIds: string[] = [];
-      
+
       for (const tn of triggerNotifications) {
         alarmIds.push(tn.notification.id || 'unknown');
-        
+
         // Find earliest alarm
         if (tn.trigger && 'timestamp' in tn.trigger) {
           const alarmTime = new Date(tn.trigger.timestamp);
@@ -269,17 +261,100 @@ class AlarmService {
           }
         }
       }
-      
+
       return {
         totalScheduled: triggerNotifications.length,
         nextAlarmTime,
         alarmIds
       };
-      
+
     } catch (error) {
       Logger.error('[Alarm Diagnostics] Failed:', error);
       return { totalScheduled: 0, nextAlarmTime: null, alarmIds: [] };
     }
+  }
+
+  /**
+   * Calculate the next occurrence of a schedule
+   * Returns the next start and end times, or null if no future occurrence
+   */
+  private getNextScheduleOccurrence(
+    now: Date,
+    startHour: number,
+    startMin: number,
+    endHour: number,
+    endMin: number
+  ): { startTime: Date; endTime: Date; dayOffset: number } | null {
+    const currentHour = now.getHours();
+    const currentMin = now.getMinutes();
+    const currentTotal = currentHour * 60 + currentMin;
+    const startTotal = startHour * 60 + startMin;
+    const endTotal = endHour * 60 + endMin;
+
+    // Check if schedule is currently active (we're between start and end time)
+    let isCurrentlyActive = false;
+    if (endTotal >= startTotal) {
+      // Normal schedule (e.g., 17:35 to 17:56)
+      isCurrentlyActive = currentTotal >= startTotal && currentTotal < endTotal;
+    } else {
+      // Overnight schedule (e.g., 23:00 to 01:00)
+      isCurrentlyActive = currentTotal >= startTotal || currentTotal < endTotal;
+    }
+
+    // If currently active, the "next" occurrence is actually the current one
+    if (isCurrentlyActive) {
+      const startTime = new Date(now);
+      startTime.setHours(startHour, startMin, 0, 0);
+
+      // If start time is later today, it means we crossed midnight for overnight schedule
+      if (endTotal < startTotal && currentTotal < endTotal) {
+        startTime.setDate(startTime.getDate() - 1);
+      }
+
+      const endTime = new Date(startTime);
+      if (endTotal >= startTotal) {
+        endTime.setHours(endHour, endMin, 0, 0);
+      } else {
+        // Overnight: end time is tomorrow
+        endTime.setDate(endTime.getDate() + 1);
+        endTime.setHours(endHour, endMin, 0, 0);
+      }
+
+      return { startTime, endTime, dayOffset: 0 };
+    }
+
+    // Check if schedule starts later today
+    if (startTotal > currentTotal) {
+      const startTime = new Date(now);
+      startTime.setHours(startHour, startMin, 0, 0);
+
+      const endTime = new Date(startTime);
+      if (endTotal >= startTotal) {
+        endTime.setHours(endHour, endMin, 0, 0);
+      } else {
+        // Overnight: end time is tomorrow
+        endTime.setDate(endTime.getDate() + 1);
+        endTime.setHours(endHour, endMin, 0, 0);
+      }
+
+      return { startTime, endTime, dayOffset: 0 };
+    }
+
+    // Schedule already passed today, return tomorrow's occurrence
+    const startTime = new Date(now);
+    startTime.setDate(startTime.getDate() + 1);
+    startTime.setHours(startHour, startMin, 0, 0);
+
+    const endTime = new Date(startTime);
+    if (endTotal >= startTotal) {
+      endTime.setHours(endHour, endMin, 0, 0);
+    } else {
+      // Overnight: end time is the day after start
+      endTime.setDate(endTime.getDate() + 1);
+      endTime.setHours(endHour, endMin, 0, 0);
+    }
+
+    return { startTime, endTime, dayOffset: 1 };
   }
 }
 

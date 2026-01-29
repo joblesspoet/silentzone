@@ -95,6 +95,52 @@ jest.mock('../src/modules/RingerMode', () => ({
   STREAM_TYPES: { MUSIC: 3, RING: 2, NOTIFICATION: 5, ALARM: 4 },
 }));
 
+// Mock new service modules
+jest.mock('../src/services/SilentZoneManager', () => ({
+  silentZoneManager: {
+    setRealm: jest.fn(),
+    activateSilentZone: jest.fn().mockResolvedValue(true),
+    handleExit: jest.fn().mockResolvedValue(true),
+    isPlaceActive: jest.fn().mockReturnValue(false),
+    getActiveCheckInCount: jest.fn().mockReturnValue(0),
+  },
+  SilentZoneManager: jest.fn().mockImplementation(() => ({
+    setRealm: jest.fn(),
+    activateSilentZone: jest.fn().mockResolvedValue(true),
+    handleExit: jest.fn().mockResolvedValue(true),
+  })),
+}));
+
+jest.mock('../src/services/GPSManager', () => ({
+  gpsManager: {
+    startWatching: jest.fn(),
+    stopWatching: jest.fn(),
+    forceLocationCheck: jest.fn().mockResolvedValue(undefined),
+    isWatching: jest.fn().mockReturnValue(false),
+    getLastKnownLocation: jest.fn().mockReturnValue(null),
+  },
+  GPSManager: jest.fn().mockImplementation(() => ({
+    startWatching: jest.fn(),
+    stopWatching: jest.fn(),
+    forceLocationCheck: jest.fn().mockResolvedValue(undefined),
+  })),
+}));
+
+jest.mock('../src/services/TimerManager', () => ({
+  timerManager: {
+    schedule: jest.fn(),
+    clear: jest.fn(),
+    clearAll: jest.fn(),
+    hasTimer: jest.fn().mockReturnValue(false),
+  },
+  TimerManager: jest.fn().mockImplementation(() => ({
+    schedule: jest.fn(),
+    clear: jest.fn(),
+    clearAll: jest.fn(),
+    hasTimer: jest.fn().mockReturnValue(false),
+  })),
+}));
+
 // 5.7 Mock Permissions
 jest.mock('react-native-permissions', () => ({
   check: jest.fn(),
@@ -133,9 +179,14 @@ describe('LocationService Logic', () => {
     // Reset service state if possible (we might need a reset method in LocationService for pure testing)
     (locationService as any).realm = mockRealm;
     (locationService as any).lastTriggerTime = {};
+    (locationService as any).isChecking = false;
+    (locationService as any).geofencesActive = true; // Set to true so processing happens
   });
 
   test('should determine user is INSIDE a place', async () => {
+    // Import the mocked SilentZoneManager
+    const { silentZoneManager } = require('../src/services/SilentZoneManager');
+
     // GIVEN a place at (0,0) with radius 100m
     const mockPlace = {
       id: 'place-1',
@@ -150,15 +201,10 @@ describe('LocationService Logic', () => {
     (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
     (PlaceService.getPlaceById as jest.Mock).mockReturnValue(mockPlace);
     (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue([]);
-    (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue([]);
     (CheckInService.isPlaceActive as jest.Mock).mockReturnValue(false);
-    
-    // Mock RingerMode Permission
-    const RingerMode = require('../src/modules/RingerMode');
-    (RingerMode.checkDndPermission as jest.Mock).mockResolvedValue(true);
 
-    // Mock CheckIn success
-    (CheckInService.logCheckIn as jest.Mock).mockReturnValue({ id: 'log-1' });
+    // Mock SilentZoneManager
+    (silentZoneManager.activateSilentZone as jest.Mock).mockResolvedValue(true);
 
     // WHEN user is at (0, 0) (Distance = 0)
     const mockPosition = {
@@ -167,20 +213,16 @@ describe('LocationService Logic', () => {
         longitude: 0,
         accuracy: 10,
       },
+      timestamp: Date.now(),
     };
 
     // Trigger private method via "any" cast or improved testability
     await (locationService as any).processLocationUpdate(mockPosition);
 
     // THEN
-    // 1. CheckInService should log check-in
-    expect(CheckInService.logCheckIn).toHaveBeenCalledWith(
-        mockRealm, 
-        'place-1', 
-        undefined, 
-        undefined
-    );
-    
+    // SilentZoneManager should be called to activate the zone
+    expect(silentZoneManager.activateSilentZone).toHaveBeenCalledWith(mockPlace);
+
     // 2. Notification should be displayed
     expect(notifee.displayNotification).toHaveBeenCalledWith(
       expect.objectContaining({ title: 'Phone Silenced 🔕' })
@@ -188,6 +230,9 @@ describe('LocationService Logic', () => {
   });
 
   test('should determine user is OUTSIDE a place', async () => {
+    // Import the mocked SilentZoneManager
+    const { silentZoneManager } = require('../src/services/SilentZoneManager');
+
     // GIVEN user is checked in
     const mockPlace = {
       id: 'place-1',
@@ -196,13 +241,16 @@ describe('LocationService Logic', () => {
       radius: 100,
       schedules: [],
     };
-    
+
     const mockLog = { id: 'log-1', placeId: 'place-1' };
 
     (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
     (PlaceService.getPlaceById as jest.Mock).mockReturnValue(mockPlace);
     (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue([mockLog]);
     (CheckInService.isPlaceActive as jest.Mock).mockReturnValue(true);
+
+    // Mock SilentZoneManager
+    (silentZoneManager.handleExit as jest.Mock).mockResolvedValue(true);
 
     // WHEN user moves far away (e.g. 1km)
     const mockPosition = {
@@ -211,11 +259,13 @@ describe('LocationService Logic', () => {
         longitude: 0,
         accuracy: 10,
       },
+      timestamp: Date.now(),
     };
 
     await (locationService as any).processLocationUpdate(mockPosition);
 
     // THEN
-    expect(CheckInService.logCheckOut).toHaveBeenCalledWith(mockRealm, 'log-1');
+    // SilentZoneManager should be called to handle exit
+    expect(silentZoneManager.handleExit).toHaveBeenCalledWith('place-1', false);
   });
 });
