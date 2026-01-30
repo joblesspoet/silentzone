@@ -11,7 +11,9 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.REQUEST_SCHEDULE_EXACT_ALARM" />
+      <uses-permission android:name="android.permission.REQUEST_SCHEDULE_EXACT_ALARM" />
+      <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+      <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
       android:name=".MainApplication"
@@ -44,11 +46,24 @@
 
       <!-- Android 14 Foreground Service Type Declaration -->
       <service
-    android:name="app.notifee.core.ForegroundService"
-    android:foregroundServiceType="location"
-    android:exported="false"
-    android:stopWithTask="false"
-    android:enabled="true" />
+        android:name="app.notifee.core.ForegroundService"
+        android:foregroundServiceType="location"
+        android:exported="false"
+        android:stopWithTask="false"
+        android:enabled="true" />
+
+      <!-- Boot Receiver to reschedule alarms after device reboot -->
+      <receiver
+        android:name=".BootReceiver"
+        android:enabled="true"
+        android:exported="true"
+        android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+        <intent-filter>
+          <action android:name="android.intent.action.BOOT_COMPLETED" />
+          <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+          <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+        </intent-filter>
+      </receiver>
 
     </application>
 </manifest>

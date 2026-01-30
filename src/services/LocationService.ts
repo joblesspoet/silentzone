@@ -139,10 +139,36 @@ class LocationService {
         }
       }
 
+      // 6. CRITICAL: If we're in an active window but geofences aren't active, start monitoring
+      // This handles the case where phone was rebooted during an active schedule
+      if (foundActiveWindow && !this.geofencesActive) {
+        Logger.warn('[Restore] In active window but geofences not active - auto-starting monitoring');
+        await this.startForegroundService();
+        
+        // Force a location check to see if we're already inside the zone
+        const activePlaces = enabledPlaces.filter((place: any) => {
+          const schedules = place.schedules || [];
+          return schedules.some((schedule: any) => ScheduleManager.isScheduleActiveNow(schedule, now));
+        });
+        
+        if (activePlaces.length > 0) {
+          const deadline = this.calculateMaxEndTime(activePlaces);
+          Logger.info(`[Restore] Forcing location check for ${activePlaces.length} active place(s)`);
+          await gpsManager.forceLocationCheck(
+            (location) => this.processLocationUpdate(location),
+            (error) => this.handleLocationError(error),
+            1,
+            3,
+            deadline
+          );
+        }
+      }
+
       Logger.info('[Restore] State restoration complete', {
         activeCheckIns: activeLogs.length,
         upcomingSchedules: this.upcomingSchedules.length,
         isInScheduleWindow: this.isInScheduleWindow,
+        geofencesActive: this.geofencesActive,
       });
     } catch (error) {
       Logger.error('[Restore] Failed to restore state:', error);
