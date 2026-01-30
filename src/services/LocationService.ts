@@ -454,16 +454,6 @@ class LocationService {
       }
 
       if (shouldMonitor) {
-        await this.handleManualDisableCleanup(new Set(activePlaces.map((p: any) => p.id as string)));
-        await Geofencing.removeAllGeofence();
-        this.geofencesActive = false;
-
-        if (enabledPlaces.length === 0) {
-          Logger.info('[LocationService] No locations to monitor');
-          await this.stopForegroundService();
-          return;
-        }
-
         const hasPermissions = await PermissionsManager.hasCriticalPermissions();
         if (!hasPermissions) {
           Logger.warn('[LocationService] Missing required permissions');
@@ -482,25 +472,42 @@ class LocationService {
           }
         }
 
-        for (const place of placesToMonitor) {
-          await Geofencing.addGeofence({
-            id: (place as any).id as string,
-            latitude: (place as any).latitude as number,
-            longitude: (place as any).longitude as number,
-            radius: Math.max(
-              CONFIG.MIN_GEOFENCE_RADIUS,
-              (place as any).radius as number + CONFIG.GEOFENCE_RADIUS_BUFFER
-            ),
-          });
+        // OPTIMIZATION: Check if monitoring set OR place details have changed
+        const currentIds = Array.from(placesToMonitor)
+          .map((p: any) => `${p.id}:${p.updatedAt?.getTime() || 0}`)
+          .sort()
+          .join(',');
+        const hasIdChanges = currentIds !== this.lastEnabledIds;
+
+        if (!hasIdChanges && this.geofencesActive) {
+          Logger.info('[LocationService] Monitoring set unchanged, skipping native geofence update');
+        } else {
+          await this.handleManualDisableCleanup(new Set(activePlaces.map((p: any) => p.id as string)));
+          await Geofencing.removeAllGeofence();
+          
+          for (const place of placesToMonitor) {
+            await Geofencing.addGeofence({
+              id: (place as any).id as string,
+              latitude: (place as any).latitude as number,
+              longitude: (place as any).longitude as number,
+              radius: Math.max(
+                CONFIG.MIN_GEOFENCE_RADIUS,
+                (place as any).radius as number + CONFIG.GEOFENCE_RADIUS_BUFFER
+              ),
+            });
+          }
+          this.lastEnabledIds = currentIds;
+          Logger.info(`[LocationService] Updated native geofences (${placesToMonitor.size} places)`);
         }
 
-        Logger.info(`[LocationService] Added ${placesToMonitor.size} geofences`);
         await this.startForegroundService();
         this.geofencesActive = true;
 
         // Schedule individual alarms for all enabled places
         for (const place of enabledPlaces) {
           if ((place as any).isEnabled) {
+            // OPTIMIZATION: Only reschedule if needed or it's a new day
+            // For now, keeping as is but canceling first to avoid dupes
             await alarmService.cancelAlarmsForPlace((place as any).id as string);
             await alarmService.scheduleAlarmsForPlace(place);
           }
@@ -730,6 +737,12 @@ class LocationService {
     // Check if we're CURRENTLY inside an active schedule window
     for (const place of enabledPlaces) {
       const schedules = (place as any).schedules || [];
+
+      // If no schedules, it's a 24/7 place - ALWAYS active
+      if (schedules.length === 0) {
+        Logger.info(`[Monitor Check] 24/7 Place: ${(place as any).name}`);
+        return true;
+      }
 
       for (const schedule of schedules) {
         if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
@@ -1124,6 +1137,11 @@ class LocationService {
     }
 
     // 3. ACTIVE SCHEDULE
+    if (CheckInService.isPlaceActive(this.realm, placeId)) {
+        Logger.info(`[LocationService] Place ${placeId} already active, skipping entry logic`);
+        return;
+    }
+
     await silentZoneManager.activateSilentZone(place);
 
     // Schedule strict end time
