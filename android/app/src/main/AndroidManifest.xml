@@ -14,6 +14,8 @@
       <uses-permission android:name="android.permission.REQUEST_SCHEDULE_EXACT_ALARM" />
       <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
       <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+      <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+      <uses-permission android:name="android.permission.ACTION_MANAGE_OVERLAY_PERMISSION" />
 
     <application
       android:name=".MainApplication"
@@ -51,6 +53,18 @@
         android:exported="false"
         android:stopWithTask="false"
         android:enabled="true" />
+
+      <!-- React Native Headless JS Task Service - Required for background execution -->
+      <service
+        android:name="com.facebook.react.HeadlessJsTaskService"
+        android:enabled="true"
+        android:exported="false" />
+
+      <!-- Alarm Receiver - Ensures alarms wake up the app even when killed -->
+      <receiver
+        android:name="app.notifee.core.AlarmReceiver"
+        android:enabled="true"
+        android:exported="false" />
 
       <!-- Boot Receiver to reschedule alarms after device reboot -->
       <receiver

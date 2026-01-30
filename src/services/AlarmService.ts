@@ -133,8 +133,15 @@ class AlarmService {
               channelId: CONFIG.CHANNELS.SERVICE,
               importance: AndroidImportance.HIGH,
               category: AndroidCategory.ALARM,
-              autoCancel: true,
+              autoCancel: false,
+              ongoing: true,
+              loopSound: false,
               pressAction: {
+                id: 'default',
+                launchActivity: 'default',
+              },
+              // CRITICAL: Full screen intent ensures app wakes up even when killed
+              fullScreenAction: {
                 id: 'default',
                 launchActivity: 'default',
               },
