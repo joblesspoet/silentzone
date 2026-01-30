@@ -1136,12 +1136,8 @@ class LocationService {
       return;
     }
 
-    // 3. ACTIVE SCHEDULE
-    if (CheckInService.isPlaceActive(this.realm, placeId)) {
-        Logger.info(`[LocationService] Place ${placeId} already active, skipping entry logic`);
-        return;
-    }
-
+    // 3. ACTIVE SCHEDULE - Activate silent zone
+    // Note: SilentZoneManager.activateSilentZone handles duplicate detection internally
     await silentZoneManager.activateSilentZone(place);
 
     // Schedule strict end time
