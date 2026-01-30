@@ -76,7 +76,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         const invalidTimes = findInvalidTimeRanges(schedules);
         setInvalidTimeIds(invalidTimes);
 
-        setLimitError(!validateLimit(schedules, 5));
+        setLimitError(!validateLimit(schedules, 10));
     } else {
         setOverlappingIds([]);
         setInvalidTimeIds([]);
@@ -234,7 +234,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         hasError = true;
     }
 
-    if (!validateLimit(schedules, 5)) {
+    if (!validateLimit(schedules, 10)) {
         setLimitError(true);
         hasError = true;
     }
@@ -354,7 +354,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
               zoomControlEnabled={true}
               scrollEnabled={true}
               showsUserLocation={hasLocationPermission}
-              showsMyLocationButton={true}
+              showsMyLocationButton={false}
             >
               <Circle 
                 center={region}
@@ -364,6 +364,13 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                 strokeWidth={2}
               />
             </MapView>
+
+            <TouchableOpacity 
+              style={styles.mapLocateButton}
+              onPress={handleGetCurrentLocation}
+            >
+              <MaterialIcon name="my-location" size={24} color={theme.colors.primary} />
+            </TouchableOpacity>
             
             <View style={styles.centerPinContainer}>
                <View style={styles.pinShadow} />
@@ -498,7 +505,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                 </View>
                 <TouchableOpacity 
                     onPress={() => {
-                        if (schedules.length >= 5) {
+                        if (schedules.length >= 10) {
                             setLimitError(true);
                             return; 
                         }
@@ -512,8 +519,8 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                         setSchedules([...schedules, newSlot]);
                         setScheduleError(false);
                     }}
-                    style={[styles.addSlotButton, schedules.length >= 5 && { opacity: 0.5 }]}
-                    disabled={schedules.length >= 5}
+                    style={[styles.addSlotButton, schedules.length >= 10 && { opacity: 0.5 }]}
+                    disabled={schedules.length >= 10}
                 >
                     <MaterialIcon name="add" size={18} color={theme.colors.primary} />
                     <Text style={styles.addSlotText}>Add Time</Text>
@@ -523,7 +530,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
               {/* Validation Messages */}
               {limitError && (
                   <Text style={{color: theme.colors.error, fontSize: 12, marginBottom: 8, marginTop: -8}}>
-                      Maximum 5 time slots allowed.
+                      Maximum 10 time slots allowed.
                   </Text>
               )}
               {overlappingIds.length > 0 && (
@@ -780,7 +787,7 @@ const styles = StyleSheet.create({
   mapLocateButton: {
     position: 'absolute',
     bottom: 16,
-    right: 16,
+    left: 16,
     backgroundColor: theme.colors.surface.light,
     padding: 10,
     borderRadius: 30,
