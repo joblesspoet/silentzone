@@ -217,7 +217,6 @@ export const PermissionsManager = {
     if (ExactAlarmModule?.canScheduleExactAlarms) {
         try {
             const hasPermission = await ExactAlarmModule.canScheduleExactAlarms();
-            console.log('Exact alarm permission status (native module):', hasPermission);
             return hasPermission;
         } catch (error) {
             console.error('Error using ExactAlarmModule:', error);

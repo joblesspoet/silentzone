@@ -116,7 +116,8 @@ class AlarmService {
       placeId: string, 
       action: string,
       title: string, 
-      body: string
+      body: string,
+      extraData?: object
   ) {
       try {
         await notifee.createTriggerNotification(
@@ -128,6 +129,7 @@ class AlarmService {
               action, // START_MONITORING or START_SILENCE
               placeId,
               scheduledTime: new Date(timestamp).toISOString(),
+              ...extraData
             },
             android: {
               channelId: CONFIG.CHANNELS.SERVICE,
@@ -177,6 +179,146 @@ class AlarmService {
         }
     }
     Logger.info(`[AlarmService] Cancelled alarms for place ${placeId}`);
+  }
+
+  /**
+   * CANCEL surgical triggers for a specific prayer slot
+   */
+  async cancelPrayerSurgically(placeId: string, prayerIndex: number, date: Date) {
+    const dayOffset = this.isTomorrow(date) ? 1 : 0;
+    const types = ['monitor', 'start', 'end'];
+    
+    for (const type of types) {
+      const id = `place-${placeId}-sched-${prayerIndex}-day-${dayOffset}-type-${type}`;
+      try {
+        await notifee.cancelTriggerNotification(id);
+      } catch (e) {}
+    }
+  }
+
+  /**
+   * SCHEDULE surgical triggers for a specific prayer slot
+   * Sets T-15 (Notify), T-5 (Monitor), and End-time (Cleanup)
+   */
+  async schedulePrayerSurgically(place: any, prayerIndex: number, targetDate: Date) {
+    const schedule = place.schedules[prayerIndex];
+    if (!schedule) return;
+
+    const [startHour, startMin] = schedule.startTime.split(':').map(Number);
+    const [endHour, endMin] = schedule.endTime.split(':').map(Number);
+
+    // 1. Calculate the exact times for THIS target date
+    const startTime = new Date(targetDate);
+    startTime.setHours(startHour, startMin, 0, 0);
+
+    const endTime = new Date(startTime);
+    // If end time is before start time, it's an overnight schedule (e.g. 23:00 to 01:00)
+    const endTotal = endHour * 60 + endMin;
+    const startTotal = startHour * 60 + startMin;
+    
+    endTime.setHours(endHour, endMin, 0, 0);
+    if (endTotal < startTotal) {
+      endTime.setDate(endTime.getDate() + 1);
+    }
+
+    const dayOffset = this.isTomorrow(targetDate) ? 1 : 0;
+    const alarmBaseData = {
+      placeId: place.id,
+      prayerIndex,
+      dayOffset,
+    };
+
+    // --- TRIGGER 1: NOTIFY (T-15) ---
+    const notifyTime = startTime.getTime() - (15 * 60 * 1000);
+    if (notifyTime > Date.now()) {
+      await this.scheduleSingleAlarm(
+        `place-${place.id}-sched-${prayerIndex}-day-${dayOffset}-type-monitor`,
+        notifyTime,
+        place.id,
+        ALARM_ACTIONS.START_MONITORING,
+        'Prayer Approaching',
+        `${place.name} prayer starting in 15 minutes`,
+        { ...alarmBaseData, subType: 'notify' }
+      );
+    }
+
+    // --- TRIGGER 2: MONITOR START (T-5) ---
+    const monitorStartTime = startTime.getTime() - (5 * 60 * 1000);
+    if (monitorStartTime > Date.now()) {
+      await this.scheduleSingleAlarm(
+        `place-${place.id}-sched-${prayerIndex}-day-${dayOffset}-type-start`,
+        monitorStartTime,
+        place.id,
+        ALARM_ACTIONS.START_SILENCE,
+        'Sensing Mosque',
+        `Starting check-in for ${place.name}`,
+        { ...alarmBaseData, subType: 'monitor' }
+      );
+    }
+
+    // --- TRIGGER 3: END & HEAL (End Time) ---
+    if (endTime.getTime() > Date.now()) {
+      await this.scheduleSingleAlarm(
+        `place-${place.id}-sched-${prayerIndex}-day-${dayOffset}-type-end`,
+        endTime.getTime(),
+        place.id,
+        ALARM_ACTIONS.STOP_SILENCE,
+        'Prayer Ended',
+        `Restoring sound for ${place.name}`,
+        { ...alarmBaseData, subType: 'cleanup' }
+      );
+    }
+
+    Logger.info(`[AlarmService] Surgical setup for ${place.name} (prayer #${prayerIndex}) for ${targetDate.toLocaleDateString()}`);
+  }
+
+  /**
+   * GAP-FILLING RESTORE (For Reboots)
+   * Only sets what is needed based on current time.
+   */
+  async restoreGapsOnBoot(places: any[]) {
+    if (places.length === 0) return;
+    Logger.info(`[AlarmService] Starting Gap-Filling Restore for ${places.length} places...`);
+    const now = new Date();
+
+    for (const place of places) {
+      if (!place.isEnabled || !place.schedules) continue;
+
+      for (let i = 0; i < place.schedules.length; i++) {
+        const schedule = place.schedules[i];
+        const [endHour, endMin] = schedule.endTime.split(':').map(Number);
+        
+        // Use today's date for comparison
+        const todayEnd = new Date(now);
+        todayEnd.setHours(endHour, endMin, 0, 0);
+        
+        // Handle overnight end time
+        const [startHour, startMin] = schedule.startTime.split(':').map(Number);
+        if ((endHour * 60 + endMin) < (startHour * 60 + startMin)) {
+          todayEnd.setDate(todayEnd.getDate() + 1);
+        }
+
+        if (todayEnd.getTime() > now.getTime()) {
+          // 1. Still upcoming today or currently active
+          Logger.info(`[Restore] Scheduling ${place.name} (#${i}) for TODAY`);
+          await this.schedulePrayerSurgically(place, i, now);
+        } else {
+          // 2. Already passed today
+          Logger.info(`[Restore] Scheduling ${place.name} (#${i}) for TOMORROW`);
+          const tomorrow = new Date(now);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          await this.schedulePrayerSurgically(place, i, tomorrow);
+        }
+      }
+    }
+  }
+
+  private isTomorrow(date: Date): boolean {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return date.getDate() === tomorrow.getDate() && 
+           date.getMonth() === tomorrow.getMonth() && 
+           date.getFullYear() === tomorrow.getFullYear();
   }
 
   /**

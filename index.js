@@ -154,58 +154,49 @@ const showBackgroundErrorNotification = async (errorMessage) => {
 notifee.onBackgroundEvent(async ({ type, detail }) => {
   const { notification, pressAction } = detail;
 
-  // Quick checks for alarm actions
-  const isAlarmAction = notification?.data?.action === 'START_MONITORING' || 
-                        notification?.data?.action === 'START_SILENCE' || 
-                        notification?.data?.action === 'STOP_SILENCE';
-
-  // Log raw events for debugging
-  console.log(`[Background] Event: type=${type}, hasNotification=${!!notification}, action=${notification?.data?.action || 'none'}`);
-
-  // Filter out irrelevant events early
-  // CRITICAL: Only process DELIVERED and ACTION_PRESS to avoid duplicate processing
-  const isRelevantEvent = type === EventType.DELIVERED || 
-                          type === EventType.ACTION_PRESS;
-
-  if (!isRelevantEvent || !isAlarmAction) {
-    // Silently ignore (Type=7, PRESS without action, etc.)
-    return;
-  }
-
-  // Extract alarm from ID if data.action is missing
+  // 1. EXTRACT ACTION FROM ID (If missing from data)
+  // This must happen BEFORE the isAlarmAction check
   const isTriggerNotification = notification?.id?.includes('place-') && 
                                  (notification?.id?.includes('-type-monitor') || 
                                   notification?.id?.includes('-type-start') || 
                                   notification?.id?.includes('-type-end'));
   
-  if (isTriggerNotification && !notification?.data?.action && notification?.id) {
+  if (isTriggerNotification && (!notification?.data?.action) && notification?.id) {
       const idParts = notification.id.split('-');
       const typeIndex = idParts.indexOf('type');
       if (typeIndex !== -1 && idParts[typeIndex + 1]) {
           const actionType = idParts[typeIndex + 1];
-          if (actionType === 'monitor') notification.data = { ...notification.data, action: 'START_MONITORING' };
-          if (actionType === 'start') notification.data = { ...notification.data, action: 'START_SILENCE' };
-          if (actionType === 'end') notification.data = { ...notification.data, action: 'STOP_SILENCE' };
-          console.log(`[Background] Extracted action from ID: ${notification.data.action}`);
+          const data = notification.data || {};
+          if (actionType === 'monitor') notification.data = { ...data, action: 'START_MONITORING' };
+          if (actionType === 'start') notification.data = { ...data, action: 'START_SILENCE' };
+          if (actionType === 'end') notification.data = { ...data, action: 'STOP_SILENCE' };
+          console.log(`[Background] 🧩 Extracted action from ID: ${notification.data.action}`);
       }
   }
 
-  // Final check after extraction
-  const finalIsAlarmAction = notification?.data?.action === 'START_MONITORING' || 
-                             notification?.data?.action === 'START_SILENCE' || 
-                             notification?.data?.action === 'STOP_SILENCE';
+  // 2. QUICK CHECKS
+  const isAlarmAction = notification?.data?.action === 'START_MONITORING' || 
+                        notification?.data?.action === 'START_SILENCE' || 
+                        notification?.data?.action === 'STOP_SILENCE';
 
-  if (!finalIsAlarmAction) {
+  // Log raw events for debugging
+  console.log(`[Background] Event: type=${type}, id=${notification?.id || 'none'}, action=${notification?.data?.action || 'none'}`);
+
+  // 3. FILTER RELEVANT EVENTS
+  // Skip creation events (Type 7) to avoid redundant processing logic
+  if (type === EventType.TRIGGER_NOTIFICATION_CREATED) {
     return;
   }
 
-  // ============================================================================
-  // BUSINESS LOGIC: Process Alarm with Deduplication & Concurrency Control
-  // ============================================================================
+  // Only proceed if this is an explicit alarm action we handle
+  if (!isAlarmAction) {
+    return;
+  }
 
-  const alarmId = notification.id || 'unknown';
+  // Final check after extraction
   const alarmType = notification.data.action;
   const placeId = notification.data?.placeId || 'unknown';
+  const alarmId = notification.id || `fallback-${placeId}-${alarmType}`;
 
   // STEP 1: Check if recently processed (deduplication)
   if (wasRecentlyProcessed(alarmId)) {
@@ -231,10 +222,10 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
       realm = await getRealm();
       console.log('[Background] ✅ Realm ready');
 
-      // STEP 5: Initialize LocationService (will restore state & reschedule)
-      console.log('[Background] Initializing LocationService...');
-      await locationService.initialize(realm);
-      console.log('[Background] ✅ LocationService initialized');
+      // STEP 5: Initialize LocationService (LIGHT initialization for background)
+      console.log('[Background] Initializing LocationService (Light)...');
+      await locationService.initializeLight(realm);
+      console.log('[Background] ✅ LocationService ready (Targeted context)');
 
       // STEP 6: Handle the specific alarm
       console.log('[Background] Handling alarm...');
@@ -262,7 +253,7 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
           await new Promise(r => setTimeout(r, 2000));
           try {
               realm = await getRealm();
-              await locationService.initialize(realm);
+              await locationService.initializeLight(realm);
               await locationService.handleAlarmFired({
                 notification: { id: notification.id, data: notification.data },
               });

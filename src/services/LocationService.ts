@@ -77,12 +77,27 @@ class LocationService {
       await notificationManager.createNotificationChannels();
     }
 
+    // CRITICAL: We don't call syncGeofences here because setupReactiveSync 
+    // will often trigger it via pref changes. One initial sync is enough.
     await this.syncGeofences();
     this.setupReactiveSync();
     this.setupServiceRestart();
 
     this.isReady = true;
-    Logger.info('[LocationService] Service initialized');
+    Logger.info('[LocationService] Service initialized fully');
+  }
+
+  /**
+   * LIGHT INITIALIZATION (Background Only)
+   * Sets up context without triggering global system resets or syncs.
+   */
+  async initializeLight(realmInstance: Realm) {
+    this.realm = realmInstance;
+    silentZoneManager.setRealm(realmInstance);
+    
+    // Set ready but SKIP full sync/restore tasks
+    this.isReady = true;
+    Logger.info('[LocationService] Light initialization complete (Background context)');
   }
 
   /**
@@ -129,14 +144,10 @@ class LocationService {
       // 4. Restore timers for active check-ins
       await this.restoreActiveTimers();
 
-      // 5. CRITICAL: Always reschedule alarms on app restart
-      // This handles the case where app was killed and alarms may have been lost
-      Logger.info('[Restore] Rescheduling all alarms after app restart...');
-      for (const place of enabledPlaces) {
-        if ((place as any).isEnabled) {
-          await alarmService.cancelAlarmsForPlace((place as any).id as string);
-          await alarmService.scheduleAlarmsForPlace(place);
-        }
+      // 5. SURGICAL RESTORE: Only fill gaps for missed or upcoming alarms
+      if (enabledPlaces.length > 0) {
+        Logger.info('[Restore] Performing surgical gap-filling restore...');
+        await alarmService.restoreGapsOnBoot(enabledPlaces);
       }
 
       // 6. CRITICAL: If we're in an active window but geofences aren't active, start monitoring
@@ -532,15 +543,8 @@ class LocationService {
         await this.startForegroundService();
         this.geofencesActive = true;
 
-        // Schedule individual alarms for all enabled places
-        for (const place of enabledPlaces) {
-          if ((place as any).isEnabled) {
-            // OPTIMIZATION: Only reschedule if needed or it's a new day
-            // For now, keeping as is but canceling first to avoid dupes
-            await alarmService.cancelAlarmsForPlace((place as any).id as string);
-            await alarmService.scheduleAlarmsForPlace(place);
-          }
-        }
+        // 5. SURGICAL RESTORE: Only fill gaps (much safer than resetting all)
+        await alarmService.restoreGapsOnBoot(enabledPlaces);
 
         // If we have active places, verify location immediately
         if (activePlaces.length > 0) {
@@ -555,22 +559,19 @@ class LocationService {
           );
         }
       } else {
-        // PASSIVE MODE
-        Logger.info('[LocationService] Entering passive mode (using alarms)');
-
+        // PASSIVE MODE - Only act if we were previously active or it's a fresh sync
         if (this.geofencesActive) {
+          Logger.info('[LocationService] Entering passive mode (using alarms)');
           await this.handleManualDisableCleanup(new Set());
           await Geofencing.removeAllGeofence();
+          await this.stopForegroundService();
           this.geofencesActive = false;
         }
 
-        await this.stopForegroundService();
-
-        for (const place of enabledPlaces) {
-          if ((place as any).isEnabled) {
-            await alarmService.cancelAlarmsForPlace((place as any).id as string);
-            await alarmService.scheduleAlarmsForPlace(place);
-          }
+        // Always ensure alarms are gap-filled/restored even in passive mode
+        // but only if we have places to restore
+        if (enabledPlaces.length > 0) {
+          await alarmService.restoreGapsOnBoot(enabledPlaces);
         }
       }
 
@@ -715,6 +716,54 @@ class LocationService {
   }
 
   /**
+   * START active prayer session (T-5 to End)
+   * High-frequency GPS monitoring
+   */
+  private async startActivePrayerSession(placeId: string, prayerIndex: number, deadline?: number) {
+    Logger.info(`[Session] Starting active session for ${placeId} (Prayer #${prayerIndex})`);
+    
+    // 1. Ensure foreground service is running for high priority
+    await this.startForegroundService();
+    
+    // 2. Start high-frequency GPS watcher (Uber-style)
+    // We pass a custom config for higher frequency
+    await gpsManager.startWatching(
+      (location) => this.processLocationUpdate(location),
+      (error) => this.handleLocationError(error),
+      deadline,
+      {
+        interval: 30000, // 30 seconds
+        fastestInterval: 15000,
+        distanceFilter: 10,
+      }
+    );
+
+    this.geofencesActive = true;
+    Logger.info(`[Session] High-frequency GPS active for ${placeId}`);
+  }
+
+  /**
+   * STOP active prayer session (End-time)
+   */
+  private async stopActivePrayerSession(placeId: string) {
+    Logger.info(`[Session] Stopping active session for ${placeId}`);
+    
+    // 1. Force checkout
+    await this.handleGeofenceExit(placeId, true);
+    
+    // 2. Stop GPS and cleanup
+    this.stopGeofenceMonitoring();
+    this.geofencesActive = false;
+    
+    // 3. Stop foreground service if no other sessions active
+    // (In a multi-place scenario, we'd check if others are active, 
+    // but stopForegroundService is safe to call as it updates notifications)
+    await this.stopForegroundService();
+    
+    Logger.info(`[Session] Active session stopped for ${placeId}`);
+  }
+
+  /**
    * Start geofence monitoring with GPS verification
    */
   private async startGeofenceMonitoring(deadline?: number) {
@@ -834,62 +883,50 @@ class LocationService {
       }
 
       const action = data?.notification?.data?.action || data?.action;
+      const placeId = data?.notification?.data?.placeId || data?.placeId;
+      const prayerIndex = data?.notification?.data?.prayerIndex;
+      const subType = data?.notification?.data?.subType;
 
-      if (action === ALARM_ACTIONS.START_MONITORING) {
-        Logger.info('[LocationService] Pre-activation alarm (15min before)');
-      } else if (action === ALARM_ACTIONS.START_SILENCE) {
-        Logger.info('[LocationService] Activation alarm (exact time)');
-      } else if (action === ALARM_ACTIONS.STOP_SILENCE) {
-        Logger.info('[LocationService] Deactivation alarm (end time)');
+      if (!placeId) {
+        Logger.error('[LocationService] Alarm fired without placeId, skipping');
+        return;
       }
 
-      // CRITICAL: If a sync is already in progress, wait for it to finish
-      // instead of skipping, to ensure we have the latest schedule state.
-      if (this.isSyncing) {
-        Logger.info(`[LocationService] Waiting for active sync for alarm ${alarmId}`);
-        let waitAttempts = 0;
-        while (this.isSyncing && waitAttempts < 10) {
-          await new Promise<void>(resolve => setTimeout(resolve, 500));
-          waitAttempts++;
-        }
+      const place = PlaceService.getPlaceById(this.realm, placeId);
+      if (!place) {
+        Logger.error(`[LocationService] Place ${placeId} not found for alarm`);
+        return;
       }
 
-      await this.syncGeofences();
-
-      if (action === ALARM_ACTIONS.START_SILENCE) {
-        const placeId = data?.notification?.data?.placeId || data?.placeId;
+      // --- SURGICAL LOGIC SELECTION ---
+      
+      if (subType === 'notify') {
+        Logger.info(`[Surgical] T-15 Notify for ${place.name}`);
+        // Notification already shown by notifee trigger
+      } 
+      else if (subType === 'monitor') {
+        Logger.info(`[Surgical] T-5 Session Start for ${place.name}`);
+        const deadline = this.calculateDeadlineForPlace(placeId);
+        await this.startActivePrayerSession(placeId, prayerIndex, deadline);
+      } 
+      else if (subType === 'cleanup') {
+        Logger.info(`[Surgical] End-time Cleanup for ${place.name}`);
+        await this.stopActivePrayerSession(placeId);
         
-        // Only trigger a specific force check if we are NOT already active for this place
-        // This avoids overlapping GPS requests if syncGeofences already found us inside.
-        if (placeId && !CheckInService.isPlaceActive(this.realm, placeId)) {
-          Logger.info(`[LocationService] START_SILENCE: Forcing check-in for ${placeId}`);
-          const deadline = this.calculateDeadlineForPlace(placeId);
-          await gpsManager.forceLocationCheck(
-            (location) => this.processLocationUpdate(location),
-            (error) => this.handleLocationError(error),
-            1,
-            5, // Increased attempts for start alarm
-            deadline
-          );
-        } else if (placeId) {
-          Logger.info(`[LocationService] START_SILENCE: Already active for ${placeId}, skipping force check`);
-        }
+        // Surgical reschedule for tomorrow
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        await alarmService.schedulePrayerSurgically(place, prayerIndex, tomorrow);
+        Logger.info(`[Surgical] Rescheduled ${place.name} (#${prayerIndex}) for tomorrow`);
       }
-
-      if (action === ALARM_ACTIONS.STOP_SILENCE) {
-        Logger.info('[LocationService] STOP_SILENCE: Forcing check-out and rescheduling next occurrence');
-        const placeId = data?.notification?.data?.placeId || data?.placeId;
-        if (placeId) {
+      else {
+        // Fallback for legacy alarms
+        Logger.info(`[LocationService] Legacy alarm action: ${action}`);
+        if (action === ALARM_ACTIONS.STOP_SILENCE) {
           await this.handleGeofenceExit(placeId, true);
-
-          // CRITICAL: Reschedule alarms for the next occurrence (tomorrow)
-          // This ensures daily repeating schedules work correctly
-          const place = this.realm ? PlaceService.getPlaceById(this.realm, placeId) : null;
-          if (place) {
-            Logger.info(`[LocationService] Rescheduling next occurrence for ${(place as any).name}`);
-            await alarmService.cancelAlarmsForPlace(placeId);
-            await alarmService.scheduleAlarmsForPlace(place);
-          }
+        } else {
+          // If it's a legacy start alarm, we still need sync for now
+          await this.syncGeofences();
         }
       }
 
@@ -1144,6 +1181,7 @@ class LocationService {
    * Handle geofence entry
    */
   private async handleGeofenceEntry(placeId: string) {
+    Logger.info(`[LocationService] handleGeofenceEntry (Surgical v1) for ${placeId}`);
     const now = Date.now();
     const lastTime = this.lastTriggerTime[placeId] || 0;
 
@@ -1172,11 +1210,11 @@ class LocationService {
     const endTime = currentSchedule.endTime.getTime();
 
     // 1. EARLY ARRIVAL CHECK
-    // Add 3s grace period to handle alarm timing jitter
-    if (now < startTime - 3000) {
+    // Allow auto-silence up to 6 minutes early (covers the T-5 active session window)
+    if (now < startTime - (6 * 60 * 1000)) {
       const msUntilStart = startTime - now;
       Logger.info(
-        `[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`
+        `[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s until activation window.`
       );
 
       // IMPORTANT: We do NOT update lastTriggerTime here, so that the 
