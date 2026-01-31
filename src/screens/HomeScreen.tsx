@@ -21,16 +21,21 @@ interface Props {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RealmWriteHelper } from '../database/helpers/RealmWriteHelper';
 import { CheckInService } from '../database/services/CheckInService';
+import { PermissionBlock } from '../components/PermissionBlock';
+import { locationService } from '../services/LocationService';
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
   const insets = useSafeAreaInsets();
+  
   const { 
-    locationStatus, 
-    backgroundLocationStatus, 
-    dndStatus, 
     notificationStatus,
-    hasAllPermissions // Use centralized logic
+    hasAllPermissions,
+    requestLocationFlow,
+    requestNotificationFlow,
+    requestDndFlow,
+    requestBatteryExemption,
+    getFirstMissingPermission
   } = usePermissions();
 
   const [places, setPlaces] = useState<any[]>([]);
@@ -228,10 +233,14 @@ useEffect(() => {
           <TouchableOpacity 
             style={[
               styles.pauseButton, 
-              !trackingEnabled && styles.pauseButtonActive,
-              activeCount === 0 && styles.pauseButtonDisabled
+              (!trackingEnabled || !hasAllPermissions) && styles.pauseButtonActive,
+              (activeCount === 0 || !hasAllPermissions) && styles.pauseButtonDisabled
             ]}
             onPress={() => {
+              if (!hasAllPermissions) {
+                Alert.alert("Action Required", "Please resolve permission issues to manage tracking.");
+                return;
+              }
               if (activeCount > 0) {
                 PreferencesService.toggleTracking(realm);
               } else {
@@ -241,18 +250,18 @@ useEffect(() => {
                 );
               }
             }}
-            disabled={activeCount === 0}
+            disabled={activeCount === 0 || !hasAllPermissions}
           >
             <MaterialIcon 
-              name={!trackingEnabled ? "play-circle-outline" : "pause-circle-outline"} 
+              name={(!trackingEnabled || !hasAllPermissions) ? "play-circle-outline" : "pause-circle-outline"} 
               size={18} 
-              color={activeCount === 0 ? theme.colors.text.disabled : theme.colors.primary} 
+              color={(activeCount === 0 || !hasAllPermissions) ? theme.colors.text.disabled : theme.colors.primary} 
             />
             <Text style={[
               styles.pauseButtonText,
-              activeCount === 0 && styles.pauseButtonTextDisabled
+              (activeCount === 0 || !hasAllPermissions) && styles.pauseButtonTextDisabled
             ]}>
-              {!trackingEnabled ? "Resume Tracking" : "Pause Tracking"}
+              {(!trackingEnabled || !hasAllPermissions) ? "Resume Tracking" : "Pause Tracking"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -263,6 +272,27 @@ useEffect(() => {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {!hasAllPermissions && (
+          <View style={styles.section}>
+            <PermissionBlock 
+              missingType={getFirstMissingPermission()} 
+              onPress={async () => {
+                const missing = getFirstMissingPermission();
+                switch (missing) {
+                  case 'LOCATION': await requestLocationFlow(); break;
+                  case 'NOTIFICATION': await requestNotificationFlow(); break;
+                  case 'DND': await requestDndFlow(); break;
+                  case 'BATTERY': await requestBatteryExemption(); break;
+                  case 'ALARM': 
+                    // Open settings directly if exact alarm missing
+                    navigation.navigate('OnboardingAutoSilenceScreen'); // Or wherever the alarm screen is
+                    break;
+                }
+              }}
+            />
+          </View>
+        )}
+
         <View style={styles.section}>
           <StatusCard 
             activeCount={activeCount} 
@@ -282,29 +312,41 @@ useEffect(() => {
           {places.length === 0 ? (
             renderEmptyState()
           ) : (
-            places.map(place => {
-              const distanceText = getPlaceDistance(place);
-              const isInside = isInsidePlace(place);
-              
-              return (
-                <PlaceCard
-                  key={place.id}
-                  id={place.id}
-                  name={place.name}
-                  icon={place.icon || 'place'}
-                  radius={`${place.radius}m`} 
-                  distance={distanceText}
-                  isActive={place.isEnabled}
-                  isCurrentLocation={isInside && place.isEnabled && trackingEnabled && hasFullPermissions} 
-                  onToggle={() => handleToggle(place.id)}
-                  onDelete={() => handleDelete(place.id, place.name)}
-                  onPress={() => {
-                    navigation.navigate('PlaceDetail', { placeId: place.id });
-                  }}
-                  isPaused={!trackingEnabled || !hasFullPermissions}
-                />
-              );
-            })
+            <View style={!hasAllPermissions && { opacity: 0.5 }}>
+              {places.map(place => {
+                const distanceText = getPlaceDistance(place);
+                const isInside = isInsidePlace(place);
+                
+                return (
+                  <PlaceCard
+                    key={place.id}
+                    id={place.id}
+                    name={place.name}
+                    icon={place.icon || 'place'}
+                    radius={`${place.radius}m`} 
+                    distance={distanceText}
+                    isActive={place.isEnabled}
+                    isCurrentLocation={isInside && place.isEnabled && trackingEnabled && hasFullPermissions} 
+                    onToggle={() => {
+                      if (hasAllPermissions) handleToggle(place.id);
+                      else Alert.alert("Permissions Required", "Please resolve permission issues to manage places.");
+                    }}
+                    onDelete={() => {
+                      if (hasAllPermissions) handleDelete(place.id, place.name);
+                      else Alert.alert("Permissions Required", "Please resolve permission issues to manage places.");
+                    }}
+                    onPress={() => {
+                      if (hasAllPermissions) {
+                        navigation.navigate('PlaceDetail', { placeId: place.id });
+                      } else {
+                        Alert.alert("Permissions Required", "Please resolve permission issues to view details.");
+                      }
+                    }}
+                    isPaused={!trackingEnabled || !hasFullPermissions}
+                  />
+                );
+              })}
+            </View>
           )}
           
           {places.length > 0 && canAddPlace && (

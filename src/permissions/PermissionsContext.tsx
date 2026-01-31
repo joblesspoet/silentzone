@@ -19,6 +19,7 @@ interface PermissionsContextType {
   hasAllPermissions: boolean;
   isBatteryOptimized: boolean;
   exactAlarmStatus: boolean;
+  getFirstMissingPermission: () => string | null;
 }
 
 const PermissionsContext = createContext<PermissionsContextType | undefined>(undefined);
@@ -105,8 +106,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       if (hadAllPermissions && !hasAllNow) {
         console.log('[PermissionsContext] Critical permissions revoked! Stopping geofencing and redirecting to permission screen...');
         
-        // Stop background services/geofencing immediately
-        locationService.destroy();
+        // Stop background services/geofencing immediately and restore state
+        locationService.purgeAllTracking();
 
         // Determine which permission is missing and navigate to that screen
         const getFirstMissingScreen = () => {
@@ -206,6 +207,16 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         hasAllPermissions,
         isBatteryOptimized,
         exactAlarmStatus,
+        getFirstMissingPermission: () => {
+          const locationOk = (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED) && 
+                            (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED);
+          if (!locationOk) return 'LOCATION';
+          if (notificationStatus !== RESULTS.GRANTED) return 'NOTIFICATION';
+          if (dndStatus !== RESULTS.GRANTED) return 'DND';
+          if (!isBatteryOptimized) return 'BATTERY';
+          if (!exactAlarmStatus) return 'ALARM';
+          return null;
+        },
       }}
     >
       {children}

@@ -273,6 +273,32 @@ class LocationService {
   }
 
   /**
+   * CRITICAL: Stop everything and restore phone state
+   * Used when permissions are revoked or tracking is hard-disabled
+   */
+  async purgeAllTracking() {
+    Logger.info('[LocationService] Purging all tracking states...');
+    try {
+      if (this.realm && !this.realm.isClosed) {
+        // Restore sound for all potentially active zones
+        await this.cleanupOnCrash();
+        
+        // Cancel ALL alarms
+        const allPlaces = Array.from(PlaceService.getAllPlaces(this.realm));
+        for (const place of allPlaces) {
+          await alarmService.cancelAlarmsForPlace((place as any).id as string);
+        }
+      }
+    } catch (error) {
+      Logger.error('[LocationService] Purge failed:', error);
+    } finally {
+      this.geofencesActive = false;
+      this.isReady = false;
+      await Geofencing.removeAllGeofence();
+    }
+  }
+
+  /**
    * Emergency cleanup for crashes
    */
   async cleanupOnCrash() {
