@@ -1181,7 +1181,6 @@ class LocationService {
    * Handle geofence entry
    */
   private async handleGeofenceEntry(placeId: string) {
-    Logger.info(`[LocationService] handleGeofenceEntry (Surgical v1) for ${placeId}`);
     const now = Date.now();
     const lastTime = this.lastTriggerTime[placeId] || 0;
 
@@ -1214,7 +1213,7 @@ class LocationService {
     if (now < startTime - (6 * 60 * 1000)) {
       const msUntilStart = startTime - now;
       Logger.info(
-        `[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s until activation window.`
+        `[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`
       );
 
       // IMPORTANT: We do NOT update lastTriggerTime here, so that the 
