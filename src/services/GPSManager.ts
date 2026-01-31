@@ -121,13 +121,21 @@ export class GPSManager {
             accuracy: position.coords.accuracy,
             timestamp: position.timestamp,
           };
+          
+          this.lastKnownLocation = location;
+          if (this.verificationTimeout) {
+            clearTimeout(this.verificationTimeout);
+            this.verificationTimeout = null;
+          }
+          this.stopFallbackPolling();
+          
           onLocation(location);
         } catch (error) {
           Logger.error('[GPSManager] Error processing immediate location:', error);
         }
       },
       (error) => onError(error),
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: CONFIG.GPS_MAXIMUM_AGE }
     );
   }
 
@@ -160,6 +168,14 @@ export class GPSManager {
               accuracy: position.coords.accuracy,
               timestamp: position.timestamp,
             };
+            
+            this.lastKnownLocation = location;
+            if (this.verificationTimeout) {
+              clearTimeout(this.verificationTimeout);
+              this.verificationTimeout = null;
+            }
+            this.stopFallbackPolling();
+            
             Logger.info(`[GPSManager] Forced location acquired on attempt ${attemptNumber}`);
             onLocation(location);
             resolve();
@@ -207,7 +223,7 @@ export class GPSManager {
       return;
     }
 
-    const timeoutDuration = attemptNumber === 1 ? 30000 : 60000;
+    const timeoutDuration = attemptNumber === 1 ? 40000 : 75000; // Loosened from 30/60
 
     Logger.info(`[GPSManager] GPS verification attempt ${attemptNumber}/${maxAttempts} (${timeoutDuration / 1000}s timeout)`);
 

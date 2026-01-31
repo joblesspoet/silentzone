@@ -23,7 +23,7 @@ export class LocationValidator {
     
     // Check age (stale location)
     const age = Date.now() - location.timestamp;
-    const maxAge = 60000; // 1 minute
+    const maxAge = 180000; // 3 minutes (loosened from 1 minute for background reliability)
     
     if (age > maxAge) {
       return {

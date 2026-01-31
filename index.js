@@ -66,9 +66,9 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
 
   // Log ALL background events for debugging (helps identify what events are received)
   console.log(`[Background] Raw event received: type=${type}, hasNotification=${!!notification}, hasData=${!!notification?.data}`);
-  if (notification?.data?.action) {
-      console.log(`[Background] Event with action: type=${type}, action=${notification.data.action}`);
-  }
+  if (notification?.data?.action && (type === EventType.DELIVERED || type === EventType.ACTION_PRESS)) {
+    console.log(`[Background] Event with action: type=${type}, action=${notification.data.action}`);
+}
 
   // CRITICAL FIX: Accept multiple event types for alarm delivery
   // EventType.DELIVERED (1) - Standard delivery
@@ -79,7 +79,6 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
   // EventType.CHANNEL_BLOCKED (6) - Channel blocked
   // EventType.SUBSCRIPTION_BLOCKED (10) - Subscription blocked
   const isRelevantEvent = type === EventType.DELIVERED || 
-                          type === EventType.TRIGGER_NOTIFICATION_CREATED ||
                           type === EventType.ACTION_PRESS ||
                           (type === EventType.PRESS && isAlarmAction);
 
@@ -140,6 +139,21 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
           console.error('[Background] ❌ CRITICAL FAILURE:', err);
           console.error('[Background] Error stack:', err.stack);
           
+          // Re-attempt once after short delay if it's a realm error
+          if (err.message?.includes('Realm')) {
+              console.log('[Background] Retrying after realm error...');
+              await new Promise(r => setTimeout(r, 2000));
+              try {
+                  realm = await getRealm();
+                  await locationService.initialize(realm);
+                  await locationService.handleAlarmFired({
+                    notification: { id: notification.id, data: notification.data },
+                  });
+              } catch (reErr) {
+                  console.error('[Background] Retry also failed:', reErr);
+              }
+          }
+          
           // Notify user of failure so they know to open the app
           await showBackgroundErrorNotification(
               `Failed to activate ${alarmType}. Please open Silent Zone to ensure your phone silences correctly.`
@@ -160,6 +174,11 @@ AppRegistry.registerHeadlessTask('GeofenceTask', () => async (taskData) => {
   try {
     const realm = await getRealm();
     await locationService.initialize(realm);
+    
+    // REDUNDANT BUT SAFE: Double check initialization
+    if (!locationService.isReady) {
+        await locationService.initialize(realm);
+    }
     
     // The library passes { event: 'ENTER'|'EXIT', ids: ['place-id'] }
     if (taskData.event === 'ENTER') {

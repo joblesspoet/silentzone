@@ -102,7 +102,7 @@ class AlarmService {
     // Verify alarms were actually scheduled
     if (alarmsScheduled > 0) {
       // Small delay to ensure system has processed the requests
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
       await this.verifyScheduledAlarms(alarmIds);
     }
   }

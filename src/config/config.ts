@@ -11,11 +11,11 @@ export const CONFIG = {
   // Accuracy thresholds
   MIN_ACCURACY_THRESHOLD: 50,  // Good for small radius (30m+)
   ACTIVE_MIN_ACCURACY: 80,     // For already active places
-  MAX_ACCEPTABLE_ACCURACY: 100,
+  MAX_ACCEPTABLE_ACCURACY: 200, // Loosened from 100m for background reliability
   
   // GPS settings
   GPS_TIMEOUT: 30000,           // 30 seconds
-  GPS_MAXIMUM_AGE: 5000,        // 5 seconds - fresh readings
+  GPS_MAXIMUM_AGE: 30000,       // 30 seconds (was 5s) - allow slightly older cached locations
   
   // Check intervals - ADAPTIVE
   INTERVALS: {

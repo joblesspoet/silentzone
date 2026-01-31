@@ -60,18 +60,18 @@ class LocationService {
    * Initialize the location service
    */
   async initialize(realmInstance: Realm) {
+    // CRITICAL: If already initialized with the SAME realm, skip full restore
+    if (this.isReady && this.realm === realmInstance) {
+      Logger.info('[LocationService] Already initialized with this realm instance');
+      return;
+    }
+
     // CRITICAL: Always update the realm instance
     this.realm = realmInstance;
     silentZoneManager.setRealm(realmInstance);
 
     // CRITICAL: Always restore state from database
     await this.restoreStateFromDatabase();
-
-    if (this.isReady) {
-      Logger.info('[LocationService] Re-initializing with new realm instance');
-      await this.syncGeofences();
-      return;
-    }
 
     if (Platform.OS === 'android') {
       await notificationManager.createNotificationChannels();
@@ -419,6 +419,9 @@ class LocationService {
 
       if (!trackingEnabled) {
         Logger.info('[LocationService] Tracking disabled globally');
+        // CRITICAL FIX: Ensure active silences are checked out when tracking is disabled
+        await this.handleManualDisableCleanup(new Set());
+        
         const allPlaces = Array.from(PlaceService.getAllPlaces(this.realm));
         for (const place of allPlaces) {
           await alarmService.cancelAlarmsForPlace((place as any).id as string);
@@ -789,7 +792,13 @@ class LocationService {
     this.isProcessingAlarm = true;
 
     try {
-      Logger.info(`[LocationService] Processing alarm: ${alarmId}`, data);
+      const now = Date.now();
+      const scheduledTimeStr = data?.notification?.data?.scheduledTime || 'unknown';
+      const scheduledDiff = scheduledTimeStr !== 'unknown' 
+        ? Math.round((now - new Date(scheduledTimeStr).getTime()) / 1000)
+        : 0;
+
+      Logger.info(`[LocationService] Processing alarm: ${alarmId} (fired ${scheduledDiff}s after scheduled)`, data);
 
       await new Promise<void>((resolve) => setTimeout(() => resolve(), 500));
 
@@ -806,6 +815,17 @@ class LocationService {
         Logger.info('[LocationService] Activation alarm (exact time)');
       } else if (action === ALARM_ACTIONS.STOP_SILENCE) {
         Logger.info('[LocationService] Deactivation alarm (end time)');
+      }
+
+      // CRITICAL: If a sync is already in progress, wait for it to finish
+      // instead of skipping, to ensure we have the latest schedule state.
+      if (this.isSyncing) {
+        Logger.info(`[LocationService] Waiting for active sync for alarm ${alarmId}`);
+        let waitAttempts = 0;
+        while (this.isSyncing && waitAttempts < 10) {
+          await new Promise<void>(resolve => setTimeout(resolve, 500));
+          waitAttempts++;
+        }
       }
 
       await this.syncGeofences();
@@ -1114,7 +1134,8 @@ class LocationService {
     const endTime = currentSchedule.endTime.getTime();
 
     // 1. EARLY ARRIVAL CHECK
-    if (now < startTime) {
+    // Add 3s grace period to handle alarm timing jitter
+    if (now < startTime - 3000) {
       const msUntilStart = startTime - now;
       Logger.info(
         `[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`
