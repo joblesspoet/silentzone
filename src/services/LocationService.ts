@@ -858,14 +858,22 @@ class LocationService {
 
       if (action === ALARM_ACTIONS.START_SILENCE) {
         const placeId = data?.notification?.data?.placeId || data?.placeId;
-        const deadline = this.calculateDeadlineForPlace(placeId);
-        await gpsManager.forceLocationCheck(
-          (location) => this.processLocationUpdate(location),
-          (error) => this.handleLocationError(error),
-          1,
-          3,
-          deadline
-        );
+        
+        // Only trigger a specific force check if we are NOT already active for this place
+        // This avoids overlapping GPS requests if syncGeofences already found us inside.
+        if (placeId && !CheckInService.isPlaceActive(this.realm, placeId)) {
+          Logger.info(`[LocationService] START_SILENCE: Forcing check-in for ${placeId}`);
+          const deadline = this.calculateDeadlineForPlace(placeId);
+          await gpsManager.forceLocationCheck(
+            (location) => this.processLocationUpdate(location),
+            (error) => this.handleLocationError(error),
+            1,
+            5, // Increased attempts for start alarm
+            deadline
+          );
+        } else if (placeId) {
+          Logger.info(`[LocationService] START_SILENCE: Already active for ${placeId}, skipping force check`);
+        }
       }
 
       if (action === ALARM_ACTIONS.STOP_SILENCE) {
@@ -1015,10 +1023,14 @@ class LocationService {
     this.isChecking = true;
 
     try {
-      // Validate location quality
-      const quality = LocationValidator.validateLocationQuality(location);
+      // Validate location quality using config threshold
+      const quality = LocationValidator.validateLocationQuality(
+        location, 
+        CONFIG.MAX_ACCEPTABLE_ACCURACY
+      );
+      
       if (!quality.valid) {
-        Logger.warn(`[LocationService] Poor location quality: ${quality.reason}`);
+        Logger.warn(`[LocationService] Skipping location update: ${quality.reason}`);
         return;
       }
 
@@ -1140,7 +1152,6 @@ class LocationService {
       Logger.info(`[LocationService] Debouncing entry: ${placeId}`);
       return;
     }
-    this.lastTriggerTime[placeId] = now;
 
     if (!this.realm) return;
 
@@ -1152,6 +1163,7 @@ class LocationService {
 
     if (!currentSchedule) {
       // 24/7 Place (No schedule)
+      this.lastTriggerTime[placeId] = now; // Action taken
       await silentZoneManager.activateSilentZone(place);
       return;
     }
@@ -1167,7 +1179,9 @@ class LocationService {
         `[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`
       );
 
-      // Schedule timer to silence exactly at start time (only if within 60s)
+      // IMPORTANT: We do NOT update lastTriggerTime here, so that the 
+      // actual start alarm (3s later) can still fire without being debounced.
+
       if (msUntilStart <= 60000) {
         this.timerManager.schedule(`start-${placeId}`, msUntilStart, async () => {
           Logger.info(`[LocationService] Strict timer fired for ${placeId}`);
@@ -1179,12 +1193,14 @@ class LocationService {
 
     // 2. LATE ARRIVAL / ALREADY ENDED CHECK
     if (now >= endTime) {
+      this.lastTriggerTime[placeId] = now; // Mark as processed
       Logger.info(`[LocationService] Schedule ended for ${place.name}, ignoring entry`);
       return;
     }
 
     // 3. ACTIVE SCHEDULE - Activate silent zone
-    // Note: SilentZoneManager.activateSilentZone handles duplicate detection internally
+    // Only update lastTriggerTime when we actually ATTEMPT activation
+    this.lastTriggerTime[placeId] = now;
     await silentZoneManager.activateSilentZone(place);
 
     // Schedule strict end time

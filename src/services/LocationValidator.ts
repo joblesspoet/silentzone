@@ -33,7 +33,7 @@ export class LocationValidator {
     }
     
     // Check accuracy
-    const maxAccuracy = requiredAccuracy || 100; // Default 100m
+    const maxAccuracy = requiredAccuracy || CONFIG.MAX_ACCEPTABLE_ACCURACY;
     
     if (location.accuracy > maxAccuracy) {
       return {

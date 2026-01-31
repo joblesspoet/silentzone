@@ -1,5 +1,6 @@
 /**
  * @format
+ * PRODUCTION VERSION - Handles alarm race conditions and deduplication
  */
 
 import { AppRegistry } from 'react-native';
@@ -13,24 +14,116 @@ crashHandler.initialize();
 
 const { locationService } = require('./src/services/LocationService');
 
-// NEW: Helper to get realm in background
-const getRealm = async () => {
-    const Realm = require('realm');
-    const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
-    return await Realm.open({
-        schema: schemas,
-        schemaVersion: SCHEMA_VERSION,
-    });
+// ============================================================================
+// BUSINESS LOGIC: Alarm Processing State Management
+// ============================================================================
+
+/**
+ * Tracks recently processed alarms to prevent duplicate processing
+ * Key: alarmId, Value: timestamp when processed
+ */
+const processedAlarms = new Map();
+const ALARM_DEBOUNCE_MS = 5000; // 5 seconds
+
+/**
+ * Tracks currently processing alarms to prevent concurrent processing
+ */
+const processingAlarms = new Set();
+
+/**
+ * Check if alarm was recently processed (deduplication)
+ */
+const wasRecentlyProcessed = (alarmId) => {
+  const lastProcessed = processedAlarms.get(alarmId);
+  if (!lastProcessed) return false;
+  
+  const timeSince = Date.now() - lastProcessed;
+  return timeSince < ALARM_DEBOUNCE_MS;
 };
 
-// Helper to show error notification when background processing fails
+/**
+ * Check if alarm is currently being processed (concurrency control)
+ */
+const isCurrentlyProcessing = (alarmId) => {
+  return processingAlarms.has(alarmId);
+};
+
+/**
+ * Mark alarm as processed and cleanup old entries
+ */
+const markAlarmProcessed = (alarmId) => {
+  processedAlarms.set(alarmId, Date.now());
+  processingAlarms.delete(alarmId); // Remove from processing set
+  
+  // Cleanup old entries to prevent memory leak
+  if (processedAlarms.size > 100) {
+    const cutoff = Date.now() - ALARM_DEBOUNCE_MS * 2;
+    for (const [id, timestamp] of processedAlarms.entries()) {
+      if (timestamp < cutoff) {
+        processedAlarms.delete(id);
+      }
+    }
+  }
+};
+
+/**
+ * Mark alarm as currently processing
+ */
+const markAlarmProcessing = (alarmId) => {
+  processingAlarms.add(alarmId);
+};
+
+// ============================================================================
+// BUSINESS LOGIC: Realm Instance Management
+// ============================================================================
+
+let cachedRealm = null;
+let realmOpenPromise = null;
+
+/**
+ * Get Realm instance with caching to prevent multiple opens
+ * Uses singleton pattern with promise caching
+ */
+const getRealm = async () => {
+    // If we already have a cached instance, return it
+    if (cachedRealm && !cachedRealm.isClosed) {
+        console.log('[Realm] Using cached instance');
+        return cachedRealm;
+    }
+    
+    // If opening is in progress, wait for it
+    if (realmOpenPromise) {
+        console.log('[Realm] Waiting for in-progress open...');
+        return await realmOpenPromise;
+    }
+    
+    // Open new instance
+    console.log('[Realm] Opening new instance...');
+    realmOpenPromise = (async () => {
+        const Realm = require('realm');
+        const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
+        const realm = await Realm.open({
+            schema: schemas,
+            schemaVersion: SCHEMA_VERSION,
+        });
+        cachedRealm = realm;
+        realmOpenPromise = null;
+        return realm;
+    })();
+    
+    return await realmOpenPromise;
+};
+
+// ============================================================================
+// BUSINESS LOGIC: Error Notification
+// ============================================================================
+
 const showBackgroundErrorNotification = async (errorMessage) => {
     try {
-        // Create alerts channel if not exists
         await notifee.createChannel({
             id: 'background-errors',
             name: 'Background Service Errors',
-            importance: 4, // HIGH
+            importance: 4,
             vibration: true,
         });
 
@@ -42,7 +135,7 @@ const showBackgroundErrorNotification = async (errorMessage) => {
                 channelId: 'background-errors',
                 smallIcon: 'ic_launcher',
                 color: '#FF6B6B',
-                importance: 4, // HIGH
+                importance: 4,
                 pressAction: {
                     id: 'default',
                     launchActivity: 'default',
@@ -54,41 +147,37 @@ const showBackgroundErrorNotification = async (errorMessage) => {
     }
 };
 
-// Handle background events (required for Foreground Service)
+// ============================================================================
+// BUSINESS LOGIC: Alarm Event Handler
+// ============================================================================
+
 notifee.onBackgroundEvent(async ({ type, detail }) => {
   const { notification, pressAction } = detail;
 
-  // CRITICAL FIX: Handle ALL event types that could contain alarm actions
-  // Notifee may deliver alarms via different event types depending on Android version/manufacturer
+  // Quick checks for alarm actions
   const isAlarmAction = notification?.data?.action === 'START_MONITORING' || 
                         notification?.data?.action === 'START_SILENCE' || 
                         notification?.data?.action === 'STOP_SILENCE';
 
-  // Log ALL background events for debugging (helps identify what events are received)
-  console.log(`[Background] Raw event received: type=${type}, hasNotification=${!!notification}, hasData=${!!notification?.data}`);
-  if (notification?.data?.action && (type === EventType.DELIVERED || type === EventType.ACTION_PRESS)) {
-    console.log(`[Background] Event with action: type=${type}, action=${notification.data.action}`);
-}
+  // Log raw events for debugging
+  console.log(`[Background] Event: type=${type}, hasNotification=${!!notification}, action=${notification?.data?.action || 'none'}`);
 
-  // CRITICAL FIX: Accept multiple event types for alarm delivery
-  // EventType.DELIVERED (1) - Standard delivery
-  // EventType.TRIGGER_NOTIFICATION_CREATED (7) - Alarm trigger created
-  // EventType.PRESS (2) - User pressed notification (could also trigger alarm handling)
-  // EventType.ACTION_PRESS (3) - Action button pressed
-  // EventType.APP_BLOCKED (5) - App was blocked (sometimes triggers on alarm)
-  // EventType.CHANNEL_BLOCKED (6) - Channel blocked
-  // EventType.SUBSCRIPTION_BLOCKED (10) - Subscription blocked
+  // Filter out irrelevant events early
+  // CRITICAL: Only process DELIVERED and ACTION_PRESS to avoid duplicate processing
   const isRelevantEvent = type === EventType.DELIVERED || 
-                          type === EventType.ACTION_PRESS ||
-                          (type === EventType.PRESS && isAlarmAction);
+                          type === EventType.ACTION_PRESS;
 
-  // CRITICAL FIX: Also check if this is a trigger notification (alarm) by checking the ID pattern
+  if (!isRelevantEvent || !isAlarmAction) {
+    // Silently ignore (Type=7, PRESS without action, etc.)
+    return;
+  }
+
+  // Extract alarm from ID if data.action is missing
   const isTriggerNotification = notification?.id?.includes('place-') && 
                                  (notification?.id?.includes('-type-monitor') || 
                                   notification?.id?.includes('-type-start') || 
                                   notification?.id?.includes('-type-end'));
   
-  // If it's a trigger notification but data.action is missing, extract from ID
   if (isTriggerNotification && !notification?.data?.action && notification?.id) {
       const idParts = notification.id.split('-');
       const typeIndex = idParts.indexOf('type');
@@ -100,87 +189,109 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
           console.log(`[Background] Extracted action from ID: ${notification.data.action}`);
       }
   }
-  
-  // Re-check isAlarmAction after potential extraction
+
+  // Final check after extraction
   const finalIsAlarmAction = notification?.data?.action === 'START_MONITORING' || 
                              notification?.data?.action === 'START_SILENCE' || 
                              notification?.data?.action === 'STOP_SILENCE';
 
-  if (isRelevantEvent && finalIsAlarmAction) {
-      const alarmType = notification.data.action;
-      const placeId = notification.data?.placeId || 'unknown';
-      
-      console.log(`[Background] ⏰ Alarm received: ${alarmType} for place ${placeId}, eventType=${type}`);
-      
-      let realm = null;
-      
-      try {
-          // Step 1: Open Realm
-          console.log('[Background] Step 1: Opening Realm...');
-          realm = await getRealm();
-          console.log('[Background] ✅ Realm opened successfully');
-          
-          // Step 2: Initialize LocationService
-          console.log('[Background] Step 2: Initializing LocationService...');
-          await locationService.initialize(realm);
-          console.log('[Background] ✅ LocationService initialized');
-          
-          // Step 3: Handle the alarm
-          console.log('[Background] Step 3: Handling alarm...');
-          await locationService.handleAlarmFired({
-              notification: {
-                  id: notification.id,
-                  data: notification.data,
-              },
-          });
-          console.log('[Background] ✅ Alarm handled successfully');
-          
-      } catch (err) {
-          console.error('[Background] ❌ CRITICAL FAILURE:', err);
-          console.error('[Background] Error stack:', err.stack);
-          
-          // Re-attempt once after short delay if it's a realm error
-          if (err.message?.includes('Realm')) {
-              console.log('[Background] Retrying after realm error...');
-              await new Promise(r => setTimeout(r, 2000));
-              try {
-                  realm = await getRealm();
-                  await locationService.initialize(realm);
-                  await locationService.handleAlarmFired({
-                    notification: { id: notification.id, data: notification.data },
-                  });
-              } catch (reErr) {
-                  console.error('[Background] Retry also failed:', reErr);
-              }
+  if (!finalIsAlarmAction) {
+    return;
+  }
+
+  // ============================================================================
+  // BUSINESS LOGIC: Process Alarm with Deduplication & Concurrency Control
+  // ============================================================================
+
+  const alarmId = notification.id || 'unknown';
+  const alarmType = notification.data.action;
+  const placeId = notification.data?.placeId || 'unknown';
+
+  // STEP 1: Check if recently processed (deduplication)
+  if (wasRecentlyProcessed(alarmId)) {
+    console.log(`[Background] ⏭️ SKIPPED: Alarm ${alarmId} processed ${Math.round((Date.now() - processedAlarms.get(alarmId)) / 1000)}s ago`);
+    return;
+  }
+
+  // STEP 2: Check if currently processing (concurrency control)
+  if (isCurrentlyProcessing(alarmId)) {
+    console.log(`[Background] ⏭️ SKIPPED: Alarm ${alarmId} already processing`);
+    return;
+  }
+
+  // STEP 3: Mark as processing
+  markAlarmProcessing(alarmId);
+  console.log(`[Background] ⏰ PROCESSING: ${alarmType} for place ${placeId} (type=${type})`);
+
+  let realm = null;
+
+  try {
+      // STEP 4: Get Realm (cached for performance)
+      console.log('[Background] Opening Realm...');
+      realm = await getRealm();
+      console.log('[Background] ✅ Realm ready');
+
+      // STEP 5: Initialize LocationService (will restore state & reschedule)
+      console.log('[Background] Initializing LocationService...');
+      await locationService.initialize(realm);
+      console.log('[Background] ✅ LocationService initialized');
+
+      // STEP 6: Handle the specific alarm
+      console.log('[Background] Handling alarm...');
+      await locationService.handleAlarmFired({
+          notification: {
+              id: notification.id,
+              data: notification.data,
+          },
+      });
+      console.log('[Background] ✅ Alarm handled successfully');
+
+      // STEP 7: Mark as processed (deduplication + cleanup)
+      markAlarmProcessed(alarmId);
+
+  } catch (err) {
+      console.error('[Background] ❌ FAILED:', err);
+      console.error('[Background] Stack:', err.stack);
+
+      // Mark as processed even on error to prevent retry loops
+      markAlarmProcessed(alarmId);
+
+      // Retry once on Realm errors
+      if (err.message?.includes('Realm')) {
+          console.log('[Background] Retrying after Realm error...');
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+              realm = await getRealm();
+              await locationService.initialize(realm);
+              await locationService.handleAlarmFired({
+                notification: { id: notification.id, data: notification.data },
+              });
+              console.log('[Background] ✅ Retry successful');
+          } catch (reErr) {
+              console.error('[Background] ❌ Retry failed:', reErr);
+              await showBackgroundErrorNotification(
+                  `Failed to activate ${alarmType}. Please open Silent Zone.`
+              );
           }
-          
-          // Notify user of failure so they know to open the app
+      } else {
           await showBackgroundErrorNotification(
-              `Failed to activate ${alarmType}. Please open Silent Zone to ensure your phone silences correctly.`
+              `Failed to activate ${alarmType}. Please open Silent Zone.`
           );
       }
   }
-
-  // Handle user pressing notification (separate from alarm handling)
-  if (type === EventType.PRESS && pressAction?.id === 'default') {
-    console.log('[Background] User pressed notification', notification?.id);
-  }
 });
 
-// Register background handler for Geofencing (Headless JS)
+// ============================================================================
+// Geofencing Handler
+// ============================================================================
+
 AppRegistry.registerHeadlessTask('GeofenceTask', () => async (taskData) => {
-  console.log('[Headless] 🌎 Geofence event received:', taskData);
+  console.log('[Headless] 🌎 Geofence event:', taskData);
   
   try {
     const realm = await getRealm();
     await locationService.initialize(realm);
     
-    // REDUNDANT BUT SAFE: Double check initialization
-    if (!locationService.isReady) {
-        await locationService.initialize(realm);
-    }
-    
-    // The library passes { event: 'ENTER'|'EXIT', ids: ['place-id'] }
     if (taskData.event === 'ENTER') {
       for (const id of taskData.ids) {
         await locationService.handleGeofenceEntry(id);
@@ -191,33 +302,32 @@ AppRegistry.registerHeadlessTask('GeofenceTask', () => async (taskData) => {
       }
     }
   } catch (error) {
-    console.error('[Headless] Failed to process geofence event:', error);
+    console.error('[Headless] Failed:', error);
   }
 });
 
-// Register foreground service (Required for Android 14+)
+// ============================================================================
+// Foreground Service
+// ============================================================================
+
 notifee.registerForegroundService((notification) => {
   return new Promise(() => {
-    // Long running task - keep service alive
-    // This promise never resolves to keep the foreground service running
-    console.log('[ForegroundService] Service started and running');
+    console.log('[ForegroundService] Running');
   });
 });
 
-// Register headless task for boot rescheduling
+// ============================================================================
+// Boot Handler
+// ============================================================================
+
 AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async (taskData) => {
-  console.log('[BootReschedule] Device rebooted - Rescheduling alarms...', taskData);
+  console.log('[BootReschedule] Device rebooted...');
   
   try {
-    // Open Realm
     const realm = await getRealm();
-    
-    // Initialize LocationService which will restore state and reschedule alarms
     await locationService.initialize(realm);
+    console.log('[BootReschedule] ✅ Alarms rescheduled');
     
-    console.log('[BootReschedule] ✅ Alarms rescheduled successfully after reboot');
-    
-    // Show notification to user
     await notifee.displayNotification({
       id: 'boot-reschedule-complete',
       title: 'Silent Zone',
@@ -230,13 +340,12 @@ AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async (taskData) =>
       },
     });
   } catch (error) {
-    console.error('[BootReschedule] ❌ Failed to reschedule alarms:', error);
+    console.error('[BootReschedule] ❌ Failed:', error);
     
-    // Notify user of failure
     await notifee.displayNotification({
       id: 'boot-reschedule-error',
       title: '⚠️ Silent Zone',
-      body: 'Failed to resume monitoring after restart. Please open the app.',
+      body: 'Failed to resume. Please open the app.',
       android: {
         channelId: 'background-errors',
         smallIcon: 'ic_launcher',
