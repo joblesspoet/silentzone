@@ -272,26 +272,35 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
                     <Text style={styles.emptyText}>No check-ins recorded yet.</Text>
                 </View>
             ) : (
-                checkIns.map((log: any) => (
-                    <View key={log.id} style={styles.historyItem}>
-                        <View style={styles.historyLeft}>
-                             <View style={styles.historyIcon}>
-                                 <MaterialIcon name="history" size={16} color={theme.colors.primary} />
-                             </View>
-                             <View>
-                                 <Text style={styles.historyDate}>
-                                     {new Date(log.checkInTime).toLocaleDateString()}
-                                 </Text>
-                                 <Text style={styles.historyTime}>
-                                     {new Date(log.checkInTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                                 </Text>
-                             </View>
+                checkIns.map((log: any) => {
+                    const checkIn = new Date(log.checkInTime);
+                    const checkOut = log.checkOutTime ? new Date(log.checkOutTime) : null;
+                    
+                    const timeFormat: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+                    const checkInTimeStr = checkIn.toLocaleTimeString([], timeFormat);
+                    const checkOutTimeStr = checkOut ? checkOut.toLocaleTimeString([], timeFormat) : '—';
+
+                    return (
+                        <View key={log.id} style={styles.historyItem}>
+                            <View style={styles.historyLeft}>
+                                 <View style={styles.historyIcon}>
+                                     <MaterialIcon name="history" size={16} color={theme.colors.primary} />
+                                 </View>
+                                 <View>
+                                     <Text style={styles.historyDate}>
+                                         {checkIn.toLocaleDateString()}
+                                     </Text>
+                                     <Text style={styles.historyTime}>
+                                         {checkInTimeStr}{checkOut ? ` — ${checkOutTimeStr}` : ''}
+                                     </Text>
+                                 </View>
+                            </View>
+                            <Text style={styles.duration}>
+                                {log.durationMinutes ? `${log.durationMinutes} min` : 'Ongoing'}
+                            </Text>
                         </View>
-                        <Text style={styles.duration}>
-                            {log.durationMinutes ? `${log.durationMinutes} min` : 'Ongoing'}
-                        </Text>
-                    </View>
-                ))
+                    );
+                })
             )}
         </View>
 

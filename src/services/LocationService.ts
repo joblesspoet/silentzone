@@ -546,10 +546,10 @@ class LocationService {
         // 5. SURGICAL RESTORE: Only fill gaps (much safer than resetting all)
         await alarmService.restoreGapsOnBoot(enabledPlaces);
 
-        // If we have active places, verify location immediately
-        if (activePlaces.length > 0) {
-          const deadline = this.calculateMaxEndTime(activePlaces);
-          Logger.info(`[LocationService] Active places detected - Checking if already inside...`);
+        // If we have places to monitor (active or sensing window), verify location immediately
+        if (placesToMonitor.size > 0) {
+          const deadline = this.calculateMaxEndTime(Array.from(placesToMonitor));
+          Logger.info(`[LocationService] Monitoring active - Checking if already inside...`);
           await gpsManager.forceLocationCheck(
             (location) => this.processLocationUpdate(location),
             (error) => this.handleLocationError(error),

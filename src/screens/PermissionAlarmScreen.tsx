@@ -65,7 +65,7 @@ export const PermissionAlarmScreen: React.FC<Props> = ({ navigation }) => {
 
         <Text style={styles.title}>Exact Alarms</Text>
         <Text style={styles.description}>
-          To ensure your schedules activate exactly on time (especially for prayers), Silent Zone needs permission to set exact alarms.
+          To ensure your schedules activate exactly on time, Silent Zone needs permission to set exact alarms.
         </Text>
 
         <View style={styles.infoBox}>

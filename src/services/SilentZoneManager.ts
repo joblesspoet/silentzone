@@ -67,10 +67,14 @@ export class SilentZoneManager {
         CheckInService.logCheckIn(this.realm!, placeId);
       }
 
-      await notificationManager.showNotification(
-        'Phone Silenced 🔕',
-        `Entered ${placeName}`,
-        'check-in'
+      const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm!));
+      const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
+      
+      await notificationManager.startForegroundService(
+        enabledPlaces.length,
+        upcomingSchedules,
+        placeName,
+        true
       );
 
       Logger.info(`[SilentZoneManager] Phone silenced for ${placeName}`);
@@ -130,10 +134,14 @@ export class SilentZoneManager {
         CheckInService.logCheckIn(this.realm!, placeId);
       }
 
-      await notificationManager.showNotification(
-        'Multiple Silent Zones',
-        `Entered ${placeName}. Phone remains silent (${activeLogs.length + 1} active zones).`,
-        'check-in-multi'
+      const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm!));
+      const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
+
+      await notificationManager.startForegroundService(
+        enabledPlaces.length,
+        upcomingSchedules,
+        placeName,
+        true
       );
 
       Logger.info(`[SilentZoneManager] Overlapping check-in logged for ${placeName}`);
@@ -199,7 +207,9 @@ export class SilentZoneManager {
       await notificationManager.showNotification(
         'Sound Restored 🔔',
         `You have left ${placeName}. Phone sound restored.`,
-        'check-out'
+        'check-out',
+        false, // silent
+        false  // NOT grouped - making it a standalone alert
       );
 
       Logger.info(`[SilentZoneManager] Sound restored after exiting ${placeName}`);
@@ -235,10 +245,20 @@ export class SilentZoneManager {
     // Close this check-in but DON'T restore sound
     CheckInService.logCheckOut(this.realm!, logId);
 
-    await notificationManager.showNotification(
-      'Partial Exit',
-      `Left ${placeName}. Phone stays silent (${activeLogs.length - 1} active zones).`,
-      'check-out-partial'
+    const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm!));
+    const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
+
+    // Update persistent notification to show we are still in OTHER zones
+    const activeLogsRemaining = Array.from(CheckInService.getActiveCheckIns(this.realm!));
+    const nextPlaceName = activeLogsRemaining.length > 0 
+      ? (PlaceService.getPlaceById(this.realm!, activeLogsRemaining[0].placeId as string)?.name as string || 'Another Zone')
+      : null;
+
+    await notificationManager.startForegroundService(
+      enabledPlaces.length,
+      upcomingSchedules,
+      nextPlaceName,
+      activeLogsRemaining.length > 0
     );
 
     Logger.info(`[SilentZoneManager] Partial exit from ${placeName}`);

@@ -8,6 +8,7 @@
 
 export const PRODUCT_NAME = "Silent Zone";
 export const PRODUCT_TAGLINE = "Smart, location-aware audio management.";
+export const PRIVACY_POLICY_URL = "https://qybrix.com/silentzone/privacy"; // Placeholder for EU compliance
 
 export const TECH_STACK = {
   framework: "React Native 0.83.1",

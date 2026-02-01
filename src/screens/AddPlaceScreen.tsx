@@ -60,15 +60,9 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
   const [invalidTimeIds, setInvalidTimeIds] = useState<string[]>([]);
   const [limitError, setLimitError] = useState<boolean>(false);
 
-  // Auto-sort and validate whenever schedules change
+  // Auto-validate whenever schedules change
   useEffect(() => {
     if (schedules.length > 0) {
-        const sorted = sortSchedules(schedules);
-        // Only update if order changed to avoid infinite loop
-        if (JSON.stringify(sorted) !== JSON.stringify(schedules)) {
-            setSchedules(sorted);
-        }
-        
         const overlaps = findOverlappingSchedules(schedules);
         setOverlappingIds(overlaps);
 
@@ -250,7 +244,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         category: selectedCategory.id,
         icon: selectedCategory.icon,
         isEnabled: isSilencingEnabled,
-        schedules: schedules.map(s => ({
+        schedules: sortSchedules(schedules).map(s => ({
             startTime: s.startTime,
             endTime: s.endTime,
             days: s.days,
@@ -260,6 +254,9 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
       
       await locationService.syncGeofences();
       
+      // CRITICAL: Immediately check if we are ALREADY inside the place we just added
+      await locationService.forceLocationCheck();
+
       const prefs = PreferencesService.getPreferences(realm);
       if (isSilencingEnabled && prefs && !(prefs as any).trackingEnabled) {
         PreferencesService.updatePreferences(realm, { trackingEnabled: true });
@@ -462,7 +459,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                             days: [],
                             label: 'Interval ' + (schedules.length + 1)
                         };
-                        setSchedules([...schedules, newSlot]);
+                        setSchedules([newSlot, ...schedules]);
                         setScheduleError(false);
                     }}
                     style={[styles.addSlotButton, schedules.length >= 10 && { opacity: 0.5 }]}

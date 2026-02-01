@@ -1,10 +1,10 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, Platform } from 'react-native';
+import { View, Text, StyleSheet, Image, ScrollView, Platform, TouchableOpacity, Linking } from 'react-native';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
 import { CustomButton } from '../components/CustomButton';
 import { usePermissions } from '../permissions/PermissionsContext';
-import { RESULTS } from 'react-native-permissions';
+import { PRIVACY_POLICY_URL } from '../constants/ProductDetails';
 
 interface Props {
   navigation: any;
@@ -39,7 +39,7 @@ export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
 
         <Text style={styles.title}>Enable Location Access</Text>
         <Text style={styles.description}>
-          Silent Zone uses your location to automatically silence your phone when you are in your saved places.
+          Silent Zone accesses your location <Text style={{ fontWeight: 'bold' }}>even when the app is closed or not in use</Text> to automatically trigger silencing whenever you enter your saved places.
         </Text>
 
         <View style={styles.infoBox}>
@@ -48,8 +48,8 @@ export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.infoText}>Detects when you enter/exit zones</Text>
           </View>
           <View style={styles.infoRow}>
-            <MaterialIcon name="battery-std" size={20} color={theme.colors.text.secondary.light} />
-            <Text style={styles.infoText}>Optimized for minimal battery usage</Text>
+            <MaterialIcon name="update" size={20} color={theme.colors.text.secondary.light} />
+            <Text style={styles.infoText}>Triggers without opening the app</Text>
           </View>
           <View style={styles.infoRow}>
             <MaterialIcon name="lock" size={20} color={theme.colors.text.secondary.light} />
@@ -71,11 +71,17 @@ export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
           fullWidth 
           style={styles.grantButton}
         />
-        <CustomButton 
-          title="Maybe Later" 
-          onPress={handleSkip} 
-          variant="link"
-        />
+        <View style={styles.footerLinks}>
+          <CustomButton 
+             title="Maybe Later" 
+             onPress={handleSkip} 
+             variant="link"
+          />
+          <Text style={styles.linkSeparator}>•</Text>
+          <TouchableOpacity onPress={() => Linking.openURL(PRIVACY_POLICY_URL)}>
+            <Text style={styles.privacyLink}>Privacy Policy</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -168,5 +174,22 @@ const styles = StyleSheet.create({
   },
   grantButton: {
     marginBottom: theme.spacing.sm,
+  },
+  footerLinks: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  linkSeparator: {
+    color: theme.colors.text.disabled,
+    fontSize: 12,
+  },
+  privacyLink: {
+    fontFamily: theme.typography.primary,
+    fontSize: theme.typography.sizes.sm,
+    color: theme.colors.primary,
+    fontWeight: theme.typography.weights.medium,
+    textDecorationLine: 'underline',
   },
 });

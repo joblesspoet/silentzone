@@ -132,11 +132,15 @@ class AlarmService {
               ...extraData
             },
             android: {
-              channelId: CONFIG.CHANNELS.SERVICE,
-              importance: AndroidImportance.HIGH,
+              channelId: CONFIG.CHANNELS.ALERTS, // Use Alerts channel for triggers
+              importance: (extraData as any)?.subType === 'cleanup' ? AndroidImportance.HIGH : AndroidImportance.LOW,
               category: AndroidCategory.ALARM,
-              autoCancel: false,
-              ongoing: true,
+              groupId: 'com.qybirx.silentzone.group',
+              smallIcon: 'ic_launcher',
+              largeIcon: 'ic_launcher',
+              color: '#8B5CF6',
+              autoCancel: true, // Allow user to dismiss
+              ongoing: false,   // Don't pin it
               loopSound: false,
               pressAction: {
                 id: 'default',
@@ -236,8 +240,8 @@ class AlarmService {
         notifyTime,
         place.id,
         ALARM_ACTIONS.START_MONITORING,
-        'Prayer Approaching',
-        `${place.name} prayer starting in 15 minutes`,
+        'Upcoming Schedule',
+        `${place.name} starting in 15 minutes`,
         { ...alarmBaseData, subType: 'notify' }
       );
     }
@@ -250,8 +254,8 @@ class AlarmService {
         monitorStartTime,
         place.id,
         ALARM_ACTIONS.START_SILENCE,
-        'Sensing Mosque',
-        `Starting check-in for ${place.name}`,
+        `Sensing ${place.name}`,
+        `Starting check-in `,
         { ...alarmBaseData, subType: 'monitor' }
       );
     }
@@ -263,13 +267,13 @@ class AlarmService {
         endTime.getTime(),
         place.id,
         ALARM_ACTIONS.STOP_SILENCE,
-        'Prayer Ended',
+        'Schedule Ended',
         `Restoring sound for ${place.name}`,
         { ...alarmBaseData, subType: 'cleanup' }
       );
     }
 
-    Logger.info(`[AlarmService] Surgical setup for ${place.name} (prayer #${prayerIndex}) for ${targetDate.toLocaleDateString()}`);
+    Logger.info(`[AlarmService] Surgical setup for ${place.name} (interval #${prayerIndex}) for ${targetDate.toLocaleDateString()}`);
   }
 
   /**

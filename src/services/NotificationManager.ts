@@ -8,6 +8,8 @@ import { Logger } from './Logger';
 import { CONFIG } from '../config/config';
 import { UpcomingSchedule } from './ScheduleManager';
 
+const NOTIFICATION_GROUP = 'com.qybirx.silentzone.group';
+
 class NotificationManager {
   /**
    * Create notification channels
@@ -19,7 +21,7 @@ class NotificationManager {
       await notifee.createChannel({
         id: CONFIG.CHANNELS.SERVICE,
         name: 'Location Tracking Service',
-        importance: AndroidImportance.DEFAULT, // Changed from LOW to DEFAULT for better persistence
+        importance: AndroidImportance.DEFAULT,
         vibration: false,
         lights: false,
       });
@@ -49,9 +51,6 @@ class NotificationManager {
     if (Platform.OS !== 'android') return;
 
     try {
-      // Small delay to ensure notifee is fully ready if called early
-      // await new Promise<void>(resolve => setTimeout(() => resolve(), 100)); // Maybe not needed if pure util?
-
       // Default state
       let title = '🛡️ Silent Zone Running';
       let body = `Monitoring ${enabledCount} active location${enabledCount !== 1 ? 's' : ''}`;
@@ -81,10 +80,13 @@ class NotificationManager {
         android: {
           channelId: CONFIG.CHANNELS.SERVICE,
           asForegroundService: true,
-          color: '#8B5CF6', // Purple-500
+          color: '#8B5CF6',
           ongoing: true,
           autoCancel: false,
           colorized: true,
+          groupId: NOTIFICATION_GROUP,
+          groupSummary: false, // Don't make foreground service the summary
+          smallIcon: 'ic_launcher',
           largeIcon: 'ic_launcher',
           foregroundServiceTypes: [
             AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION,
@@ -120,7 +122,7 @@ class NotificationManager {
   /**
    * Show a general alert notification
    */
-  async showNotification(title: string, body: string, id: string) {
+  async showNotification(title: string, body: string, id: string, silent: boolean = false, grouped: boolean = true) {
     try {
       await notifee.displayNotification({
         id,
@@ -128,18 +130,20 @@ class NotificationManager {
         body,
         android: {
           channelId: CONFIG.CHANNELS.ALERTS,
+          ...(grouped ? { groupId: NOTIFICATION_GROUP } : {}),
+          importance: silent ? AndroidImportance.LOW : AndroidImportance.HIGH,
           smallIcon: 'ic_launcher', 
           largeIcon: 'ic_launcher',
-          color: '#8B5CF6', // Purple-500 (Silent Zone Theme)
+          color: '#8B5CF6',
           pressAction: {
             id: 'default',
           },
         },
         ios: {
           foregroundPresentationOptions: {
-            alert: true,
+            alert: !silent,
             badge: true,
-            sound: true,
+            sound: !silent,
           },
         },
       });
