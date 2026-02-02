@@ -120,20 +120,22 @@ class AlarmService {
       extraData?: object
   ) {
       try {
+        const isSilent = (extraData as any)?.silent === 'true';
+        
         await notifee.createTriggerNotification(
           {
             id,
             title,
             body,
             data: {
-              action, // START_MONITORING or START_SILENCE
+              action, // START_MONITORING or START_SILENCE or STOP_SILENCE
               placeId,
               scheduledTime: new Date(timestamp).toISOString(),
               ...extraData
             },
             android: {
               channelId: CONFIG.CHANNELS.ALERTS, // Use Alerts channel for triggers
-              importance: (extraData as any)?.subType === 'cleanup' ? AndroidImportance.HIGH : AndroidImportance.LOW,
+              importance: isSilent ? AndroidImportance.MIN : AndroidImportance.LOW,
               category: AndroidCategory.ALARM,
               groupId: 'com.qybirx.silentzone.group',
               smallIcon: 'ic_launcher',
@@ -162,7 +164,7 @@ class AlarmService {
             },
           }
         );
-        Logger.info(`[AlarmService] ✅ Alarm set: ${action} @ ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})`);
+        Logger.info(`[AlarmService] ✅ Alarm set: ${action} @ ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})${isSilent ? ' [SILENT]' : ''}`);
       } catch (error) {
         Logger.error(`[AlarmService] Failed to schedule alarm ${id}:`, error);
       }
@@ -267,9 +269,9 @@ class AlarmService {
         endTime.getTime(),
         place.id,
         ALARM_ACTIONS.STOP_SILENCE,
-        'Schedule Ended',
-        `Restoring sound for ${place.name}`,
-        { ...alarmBaseData, subType: 'cleanup' }
+        'Silent Timer', // Generic - won't be shown
+        'Background task', // Generic - won't be shown
+        { ...alarmBaseData, subType: 'cleanup', silent: 'true' } // String, not boolean
       );
     }
 

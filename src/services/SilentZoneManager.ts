@@ -5,6 +5,7 @@ import { CheckInService } from '../database/services/CheckInService';
 import { PlaceService } from '../database/services/PlaceService';
 import { Logger } from './Logger';
 import { notificationManager } from './NotificationManager';
+import { notificationBus } from './NotificationEventBus';
 import { ScheduleManager, UpcomingSchedule } from './ScheduleManager';
 
 export interface SilentZoneState {
@@ -204,13 +205,14 @@ export class SilentZoneManager {
       }
       CheckInService.logCheckOut(this.realm!, logId);
 
-      await notificationManager.showNotification(
-        'Sound Restored 🔔',
-        `You have left ${placeName}. Phone sound restored.`,
-        'check-out',
-        false, // silent
-        false  // NOT grouped - making it a standalone alert
-      );
+      // Emit event instead of direct notification (deduplicated by bus)
+      notificationBus.emit({
+        type: 'SOUND_RESTORED',
+        placeId: logId,
+        placeName,
+        timestamp: Date.now(),
+        source: 'manual'
+      });
 
       Logger.info(`[SilentZoneManager] Sound restored after exiting ${placeName}`);
       return true;

@@ -10,6 +10,7 @@ import { ScheduleManager, UpcomingSchedule } from './ScheduleManager';
 import { LocationValidator, LocationState } from './LocationValidator';
 import { alarmService, ALARM_ACTIONS } from './AlarmService';
 import { notificationManager } from './NotificationManager';
+import { notificationBus } from './NotificationEventBus';
 import { CONFIG } from '../config/config';
 import { TimerManager } from './TimerManager';
 import { GPSManager, gpsManager } from './GPSManager';
@@ -911,6 +912,16 @@ class LocationService {
       } 
       else if (subType === 'cleanup') {
         Logger.info(`[Surgical] End-time Cleanup for ${place.name}`);
+        
+        // Emit event to notification bus (deduplicated centrally)
+        notificationBus.emit({
+          type: 'SCHEDULE_END',
+          placeId,
+          placeName: (place.name as string) || 'Unknown Place',
+          timestamp: Date.now(),
+          source: 'alarm'
+        });
+        
         await this.stopActivePrayerSession(placeId);
         
         // Surgical reschedule for tomorrow
