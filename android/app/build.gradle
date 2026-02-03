@@ -85,8 +85,8 @@ android {
         applicationId "com.qybrix.silentzone"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 7
-        versionName "1.1.4"
+        versionCode 8
+        versionName "1.1.5"
 
         Properties properties = new Properties()
         if (project.rootProject.file('local.properties').exists()) {

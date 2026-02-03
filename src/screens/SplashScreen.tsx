@@ -155,7 +155,7 @@ export const SplashScreen = () => {
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <Text style={[styles.version, { marginBottom: 4, fontWeight: '600' }]}>Developed by Qybrix</Text>
-        <Text style={styles.version}>v1.0</Text>
+        <Text style={styles.version}>v1.1.5</Text>
       </View>
     </View>
   );

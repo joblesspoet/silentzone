@@ -4,6 +4,7 @@ import { Logger } from './Logger';
 export type NotificationEventType = 
   | 'SCHEDULE_START' 
   | 'SCHEDULE_END' 
+  | 'SCHEDULE_APPROACHING'
   | 'PLACE_ENTERED' 
   | 'PLACE_EXITED' 
   | 'SOUND_RESTORED';
@@ -79,6 +80,16 @@ class NotificationEventBus {
         notificationManager.showNotification(
           'Silent Zone Active',
           `Activated for ${event.placeName}`,
+          notifId,
+          false,
+          true
+        );
+        break;
+
+      case 'SCHEDULE_APPROACHING':
+        notificationManager.showNotification(
+          'Upcoming Schedule',
+          `${event.placeName} starting in 15 minutes`,
           notifId,
           false,
           true

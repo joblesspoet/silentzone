@@ -242,9 +242,9 @@ class AlarmService {
         notifyTime,
         place.id,
         ALARM_ACTIONS.START_MONITORING,
-        'Upcoming Schedule',
-        `${place.name} starting in 15 minutes`,
-        { ...alarmBaseData, subType: 'notify' }
+        '', // Silent
+        '', // Silent
+        { ...alarmBaseData, subType: 'notify', silent: 'true' }
       );
     }
 
@@ -256,9 +256,9 @@ class AlarmService {
         monitorStartTime,
         place.id,
         ALARM_ACTIONS.START_SILENCE,
-        `Sensing ${place.name}`,
-        `Starting check-in `,
-        { ...alarmBaseData, subType: 'monitor' }
+        '', // Silent
+        '', // Silent
+        { ...alarmBaseData, subType: 'monitor', silent: 'true' }
       );
     }
 
@@ -269,9 +269,9 @@ class AlarmService {
         endTime.getTime(),
         place.id,
         ALARM_ACTIONS.STOP_SILENCE,
-        'Silent Timer', // Generic - won't be shown
-        'Background task', // Generic - won't be shown
-        { ...alarmBaseData, subType: 'cleanup', silent: 'true' } // String, not boolean
+        '', // Silent
+        '', // Silent
+        { ...alarmBaseData, subType: 'cleanup', silent: 'true' }
       );
     }
 

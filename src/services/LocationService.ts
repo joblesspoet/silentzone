@@ -902,25 +902,72 @@ class LocationService {
       // --- SURGICAL LOGIC SELECTION ---
       
       if (subType === 'notify') {
-        Logger.info(`[Surgical] T-15 Notify for ${place.name}`);
-        // Notification already shown by notifee trigger
+        Logger.info(`[Surgical] T-15 Notify check for ${place.name}`);
+        
+        // Silent location check
+        const location = await this.getQuickLocation();
+        if (location) {
+          const distance = LocationValidator.calculateDistance(
+            location.latitude,
+            location.longitude,
+            (place as any).latitude,
+            (place as any).longitude
+          );
+
+          if (distance <= 2000) { // 2km threshold
+            Logger.info(`[Surgical] User is nearby (${Math.round(distance)}m), showing notification`);
+            notificationBus.emit({
+              type: 'SCHEDULE_APPROACHING',
+              placeId,
+              placeName: (place.name as string) || 'Unknown Place',
+              timestamp: Date.now(),
+              source: 'alarm'
+            });
+          } else {
+            Logger.info(`[Surgical] User is far (${Math.round(distance)}m), skipping notification`);
+          }
+        } else {
+          Logger.warn('[Surgical] Could not get location for T-15 check, skipping notification');
+        }
       } 
       else if (subType === 'monitor') {
-        Logger.info(`[Surgical] T-5 Session Start for ${place.name}`);
-        const deadline = this.calculateDeadlineForPlace(placeId);
-        await this.startActivePrayerSession(placeId, prayerIndex, deadline);
+        Logger.info(`[Surgical] T-5 Session Start check for ${place.name}`);
+        
+        const location = await this.getQuickLocation();
+        if (location) {
+          const distance = LocationValidator.calculateDistance(
+            location.latitude,
+            location.longitude,
+            (place as any).latitude,
+            (place as any).longitude
+          );
+
+          if (distance <= 2000) {
+            Logger.info(`[Surgical] User is nearby (${Math.round(distance)}m), starting monitoring`);
+            const deadline = this.calculateDeadlineForPlace(placeId);
+            await this.startActivePrayerSession(placeId, prayerIndex, deadline);
+          } else {
+            Logger.info(`[Surgical] User is far (${Math.round(distance)}m), staying in passive mode`);
+          }
+        } else {
+          Logger.info('[Surgical] No location for T-5 check, skipping session start');
+        }
       } 
       else if (subType === 'cleanup') {
         Logger.info(`[Surgical] End-time Cleanup for ${place.name}`);
         
-        // Emit event to notification bus (deduplicated centrally)
-        notificationBus.emit({
-          type: 'SCHEDULE_END',
-          placeId,
-          placeName: (place.name as string) || 'Unknown Place',
-          timestamp: Date.now(),
-          source: 'alarm'
-        });
+        // Only notify if we were actually active in this place
+        if (CheckInService.isPlaceActive(this.realm, placeId)) {
+          notificationBus.emit({
+            type: 'SCHEDULE_END',
+            placeId,
+            placeName: (place.name as string) || 'Unknown Place',
+            timestamp: Date.now(),
+            source: 'alarm'
+          });
+        } else {
+          Logger.info(`[Surgical] Skipping cleanup notification (no active check-in)`);
+        }
         
         await this.stopActivePrayerSession(placeId);
         
@@ -1302,6 +1349,27 @@ class LocationService {
       1,
       3
     );
+  }
+
+  /**
+   * Get a single location update quickly for decision making
+   */
+  private async getQuickLocation(): Promise<LocationState | null> {
+    try {
+      return await new Promise((resolve) => {
+        gpsManager.forceLocationCheck(
+          (location) => resolve(location),
+          (error) => {
+            Logger.warn(`[LocationService] Quick location fail: ${error.message}`);
+            resolve(null);
+          },
+          1,
+          1 // Single attempt
+        );
+      });
+    } catch (error) {
+      return null;
+    }
   }
 
   destroy() {
