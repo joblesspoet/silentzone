@@ -958,6 +958,7 @@ class LocationService {
         
         // Only notify if we were actually active in this place
         if (CheckInService.isPlaceActive(this.realm, placeId)) {
+          Logger.info(`[Surgical] Emitting SCHEDULE_END for active place ${place.name}`);
           notificationBus.emit({
             type: 'SCHEDULE_END',
             placeId,
@@ -966,7 +967,7 @@ class LocationService {
             source: 'alarm'
           });
         } else {
-          Logger.info(`[Surgical] Skipping cleanup notification (no active check-in)`);
+          Logger.info(`[Surgical] Skipping cleanup notification (no active check-in for ${place.name})`);
         }
         
         await this.stopActivePrayerSession(placeId);

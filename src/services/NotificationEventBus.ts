@@ -68,7 +68,7 @@ class NotificationEventBus {
       case 'SCHEDULE_END':
       case 'SOUND_RESTORED':
         notificationManager.showNotification(
-          'Schedule Ended',
+          'Silent Zone Ended',
           `Sound restored for ${event.placeName}`,
           notifId,
           false, // not silent
@@ -77,11 +77,12 @@ class NotificationEventBus {
         break;
 
       case 'SCHEDULE_START':
+        // Legacy start notification - keeping minimal to avoid overlap with Foreground Service
         notificationManager.showNotification(
           'Silent Zone Active',
-          `Activated for ${event.placeName}`,
+          `Phone silenced at ${event.placeName}`,
           notifId,
-          false,
+          true, // Make it quiet if possible to avoid double alert
           true
         );
         break;

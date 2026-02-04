@@ -186,7 +186,7 @@ export class SilentZoneManager {
 
     if (totalActive === 1) {
       // LAST ZONE: Restore sound
-      return await this.handleLastZoneExit(thisLog.id as string, placeName);
+      return await this.handleLastZoneExit(thisLog.id as string, placeId, placeName);
     } else {
       // OVERLAPPING: Still in other zones, stay silent
       return await this.handlePartialExit(thisLog.id as string, placeName, activeLogs, placeId);
@@ -196,7 +196,7 @@ export class SilentZoneManager {
   /**
    * Handle exit from the last active zone
    */
-  private async handleLastZoneExit(logId: string, placeName: string): Promise<boolean> {
+  private async handleLastZoneExit(logId: string, placeId: string, placeName: string): Promise<boolean> {
     Logger.info(`[SilentZoneManager] Last zone exit - restoring sound`);
 
     try {
@@ -208,7 +208,7 @@ export class SilentZoneManager {
       // Emit event instead of direct notification (deduplicated by bus)
       notificationBus.emit({
         type: 'SOUND_RESTORED',
-        placeId: logId,
+        placeId: placeId,
         placeName,
         timestamp: Date.now(),
         source: 'manual'

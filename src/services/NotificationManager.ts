@@ -88,6 +88,7 @@ class NotificationManager {
           groupSummary: false, // Don't make foreground service the summary
           smallIcon: 'ic_launcher',
           largeIcon: 'ic_launcher',
+          importance: AndroidImportance.HIGH, // Ensure it stays prominent
           foregroundServiceTypes: [
             AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION,
           ],

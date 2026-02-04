@@ -59,8 +59,9 @@ class AlarmService {
               monitorTime,
               place.id,
               ALARM_ACTIONS.START_MONITORING,
-              'Schedule Approaching',
-              `${place.name} starting soon`
+              '', // Silent trigger
+              '', // Silent trigger
+              { subType: 'notify', silent: 'true' }
           );
           alarmsScheduled++;
           alarmIds.push(monitorAlarmId);
@@ -74,8 +75,9 @@ class AlarmService {
               startTime.getTime(),
               place.id,
               ALARM_ACTIONS.START_SILENCE,
-              'Silent Zone Starting',
-              `Activating ${place.name} now`
+              '', // Silent trigger
+              '', // Silent trigger
+              { subType: 'monitor', silent: 'true' }
           );
           alarmsScheduled++;
           alarmIds.push(startAlarmId);
@@ -89,8 +91,9 @@ class AlarmService {
               endTime.getTime(),
               place.id,
               ALARM_ACTIONS.STOP_SILENCE,
-              'Silent Zone Ending',
-              `Leaving ${place.name}`
+              '', // Silent trigger
+              '', // Silent trigger
+              { subType: 'cleanup', silent: 'true' }
           );
           alarmsScheduled++;
           alarmIds.push(endAlarmId);
