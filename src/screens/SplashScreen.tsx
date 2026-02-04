@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -16,9 +16,11 @@ import { theme } from '../theme';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { useRealm } from '../database/RealmProvider';
 import { PreferencesService } from '../database/services/PreferencesService';
-type SplashScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Splash'>;
+import { PermissionsManager } from '../permissions/PermissionsManager';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+type SplashScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Splash'>;
 
 export const SplashScreen = () => {
   const navigation = useNavigation<SplashScreenNavigationProp>();
@@ -87,6 +89,17 @@ export const SplashScreen = () => {
       await new Promise(resolve => setTimeout(() => resolve(undefined), 2000));
       
       const prefs = PreferencesService.getPreferences(realm);
+      
+      // Android: Check battery optimization once onboarding is done or for returning users
+      if (Platform.OS === 'android' && prefs?.onboardingCompleted) {
+        const ignoring = await PermissionsManager.isBatteryOptimizationEnabled();
+        if (!ignoring) {
+          // If not ignoring, and we haven't asked recently (optional logic here)
+          // For now, let's just proceed to Home, but we might want a middle screen
+          // Actually, let's let Home handle the persistent nagging for battery optimization
+        }
+      }
+
       console.log('[SplashScreen] Preferences:', JSON.stringify({
         onboardingCompleted: prefs?.onboardingCompleted,
         databaseSeeded: prefs?.databaseSeeded,

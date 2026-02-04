@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert, Platform } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert, Platform, ActivityIndicator } from 'react-native';
 import MapView, { Circle, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
 import Geolocation from '@react-native-community/geolocation';
@@ -52,6 +52,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
   // Location state
   const [hasLocationPermission, setHasLocationPermission] = useState(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
 
   // Schedule state
   const [schedules, setSchedules] = useState<ScheduleSlot[]>([]);
@@ -174,6 +175,8 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
       return;
     }
 
+    if (isLocating) return;
+
     try {
         const gpsEnabled = await PermissionsManager.isGpsEnabled();
         if (!gpsEnabled) {
@@ -185,27 +188,43 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
           return;
         }
 
+        setIsLocating(true);
+
+        // Helper to update map state
+        const updateMap = (lat: number, lng: number, acc: number) => {
+          setAccuracy(acc);
+          const newRegion = { ...region, latitude: lat, longitude: lng };
+          setRegion(newRegion);
+          mapRef.current?.animateToRegion(newRegion, 1000);
+        };
+
+        // 1. QUICK PASS: Instant response with low accuracy
         Geolocation.getCurrentPosition(
             (position) => {
                 const { latitude, longitude, accuracy } = position.coords;
-                setAccuracy(accuracy);
-                
-                const newRegion = {
-                    ...region,
-                    latitude,
-                    longitude,
-                };
-                setRegion(newRegion);
-                mapRef.current?.animateToRegion(newRegion, 1000);
+                updateMap(latitude, longitude, accuracy);
+            },
+            (error) => console.log('[Location] Quick pass failed:', error),
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 10000 }
+        );
+
+        // 2. REFINEMENT PASS: Precise location refinement
+        Geolocation.getCurrentPosition(
+            (position) => {
+                const { latitude, longitude, accuracy } = position.coords;
+                updateMap(latitude, longitude, accuracy);
+                setIsLocating(false);
             },
             (error) => {
-                Alert.alert("Error", "Could not fetch location.");
-                console.log(error);
+                console.log('[Location] Precise pass failed:', error);
+                setIsLocating(false);
+                Alert.alert("Location Error", "Could not fetch precise location.");
             },
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
         );
     } catch (err) {
         console.warn(err);
+        setIsLocating(false);
     }
   };
 
@@ -362,8 +381,13 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
             <TouchableOpacity 
               style={styles.mapLocateButton}
               onPress={handleGetCurrentLocation}
+              disabled={isLocating}
             >
-              <MaterialIcon name="my-location" size={24} color={theme.colors.primary} />
+              {isLocating ? (
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+              ) : (
+                <MaterialIcon name="my-location" size={24} color={theme.colors.primary} />
+              )}
             </TouchableOpacity>
             
             <View style={styles.centerPinContainer}>

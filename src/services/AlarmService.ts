@@ -59,8 +59,8 @@ class AlarmService {
               monitorTime,
               place.id,
               ALARM_ACTIONS.START_MONITORING,
-              '', // Silent trigger
-              '', // Silent trigger
+              'Location Monitoring',
+              'Checking distance to prayer location...',
               { subType: 'notify', silent: 'true' }
           );
           alarmsScheduled++;
@@ -75,9 +75,9 @@ class AlarmService {
               startTime.getTime(),
               place.id,
               ALARM_ACTIONS.START_SILENCE,
-              '', // Silent trigger
-              '', // Silent trigger
-              { subType: 'monitor', silent: 'true' }
+              'Silent Zone Starting',
+              'Activating silent mode...',
+              { subType: 'monitor', prayerIndex: i, silent: 'true' }
           );
           alarmsScheduled++;
           alarmIds.push(startAlarmId);
@@ -91,9 +91,9 @@ class AlarmService {
               endTime.getTime(),
               place.id,
               ALARM_ACTIONS.STOP_SILENCE,
-              '', // Silent trigger
-              '', // Silent trigger
-              { subType: 'cleanup', silent: 'true' }
+              'Silent Zone Ending',
+              'Restoring phone settings...',
+              { subType: 'cleanup', prayerIndex: i, silent: 'true' }
           );
           alarmsScheduled++;
           alarmIds.push(endAlarmId);
@@ -138,7 +138,7 @@ class AlarmService {
             },
             android: {
               channelId: CONFIG.CHANNELS.ALERTS, // Use Alerts channel for triggers
-              importance: isSilent ? AndroidImportance.MIN : AndroidImportance.LOW,
+              importance: AndroidImportance.LOW,
               category: AndroidCategory.ALARM,
               groupId: 'com.qybirx.silentzone.group',
               smallIcon: 'ic_launcher',
@@ -245,8 +245,8 @@ class AlarmService {
         notifyTime,
         place.id,
         ALARM_ACTIONS.START_MONITORING,
-        '', // Silent
-        '', // Silent
+        'Location Monitoring',
+        'Checking distance to prayer location...',
         { ...alarmBaseData, subType: 'notify', silent: 'true' }
       );
     }

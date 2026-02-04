@@ -280,8 +280,25 @@ class LocationService {
    * Stop foreground service
    */
   private async stopForegroundService() {
-    await notificationManager.stopForegroundService();
-    this.stopGeofenceMonitoring();
+    if (!this.realm || this.realm.isClosed) {
+      await notificationManager.stopForegroundService();
+      return;
+    }
+
+    const activeLogs = CheckInService.getActiveCheckIns(this.realm);
+    const enabledPlaces = PlaceService.getEnabledPlaces(this.realm);
+    const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(Array.from(enabledPlaces));
+
+    const hasActiveWork = activeLogs.length > 0 || upcomingSchedules.length > 0;
+
+    if (!hasActiveWork) {
+      Logger.info('[LocationService] No active work left, stopping foreground service');
+      await notificationManager.stopForegroundService();
+      this.stopGeofenceMonitoring();
+    } else {
+      // Just update it instead of stopping
+      await this.startForegroundService();
+    }
   }
 
   /**

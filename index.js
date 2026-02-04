@@ -301,9 +301,15 @@ AppRegistry.registerHeadlessTask('GeofenceTask', () => async (taskData) => {
 // Foreground Service
 // ============================================================================
 
+/**
+ * Register foreground service task.
+ * The promise returned must remain PENDING to keep the native service alive.
+ */
 notifee.registerForegroundService((notification) => {
-  return new Promise(() => {
-    console.log('[ForegroundService] Running');
+  return new Promise((resolve) => {
+    console.log(`[ForegroundService] Service task started (id=${notification.id})`);
+    // Default - let it resolve to avoid sticking if not needed
+    resolve();
   });
 });
 
