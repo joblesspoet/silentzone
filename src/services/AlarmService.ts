@@ -246,7 +246,7 @@ class AlarmService {
         place.id,
         ALARM_ACTIONS.START_MONITORING,
         'Location Monitoring',
-        'Checking distance to prayer location...',
+        `Checking distance to location ${place.name}...`,
         { ...alarmBaseData, subType: 'notify', silent: 'true' }
       );
     }

@@ -27,7 +27,7 @@ const CHECK_EXACT_ALARM_PERMISSION = Platform.select({
 export const PermissionsManager = {
   // Check strict type for status to avoid string mismatch issues
   isBatteryOptimizationEnabled: async (): Promise<boolean> => {
-     if (Platform.OS !== 'android') return false;
+     if (Platform.OS !== 'android') return true;
      try {
        return await BatteryOptimization.isIgnoringBatteryOptimizations();
      } catch (error) {
