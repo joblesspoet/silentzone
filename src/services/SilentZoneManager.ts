@@ -78,6 +78,15 @@ export class SilentZoneManager {
         true
       );
 
+      // ✅ Emit check-in notification
+      notificationBus.emit({
+        type: 'CHECK_IN',
+        placeId: placeId,
+        placeName: placeName,
+        timestamp: Date.now(),
+        source: 'geofence'
+      });
+
       Logger.info(`[SilentZoneManager] Phone silenced for ${placeName}`);
       return true;
     } catch (error) {
@@ -145,6 +154,15 @@ export class SilentZoneManager {
         true
       );
 
+      // After startForegroundService call, add:
+      notificationBus.emit({
+        type: 'CHECK_IN',
+        placeId: placeId,
+        placeName: placeName,
+        timestamp: Date.now(),
+        source: 'geofence'
+      });
+
       Logger.info(`[SilentZoneManager] Overlapping check-in logged for ${placeName}`);
       return true;
     } catch (error) {
@@ -205,14 +223,34 @@ export class SilentZoneManager {
       }
       CheckInService.logCheckOut(this.realm!, logId);
 
-      // Emit event instead of direct notification (deduplicated by bus)
-      notificationBus.emit({
-        type: 'SOUND_RESTORED',
-        placeId: placeId,
-        placeName,
-        timestamp: Date.now(),
-        source: 'manual'
-      });
+      // Check if this was a manual early exit or a scheduled end
+      // If we are currently in a schedule window, this exit is likely MANUAL (user left early)
+      // If we are NOT in a schedule window, the schedule just ended naturally (AlarmService handles this)
+      
+      const place = PlaceService.getPlaceById(this.realm!, placeId);
+      let isScheduledTime = false;
+      
+      if (place) {
+          const now = new Date();
+          const schedules = (place as any).schedules || [];
+          for (const schedule of schedules) {
+              if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
+                  isScheduledTime = true;
+                  break;
+              }
+          }
+      }
+
+      // Only notify if this is a MANUAL exit during scheduled time (early exit)
+      if (isScheduledTime) {
+         notificationBus.emit({
+            type: 'SOUND_RESTORED',
+            placeId: placeId,
+            placeName,
+            timestamp: Date.now(),
+            source: 'manual'
+         });
+      }
 
       Logger.info(`[SilentZoneManager] Sound restored after exiting ${placeName}`);
       return true;

@@ -1316,9 +1316,8 @@ class LocationService {
     this.lastTriggerTime[placeId] = now;
     await silentZoneManager.activateSilentZone(place);
 
-    // Schedule strict end time
-    const msUntilEnd = endTime - now;
-    this.scheduleEndTimerForPlace(placeId, msUntilEnd);
+    // NO-OP: We do NOT schedule an end timer here for scheduled places.
+    // AlarmService handles the 'cleanup' alarm which triggers termination.
   }
 
   /**
@@ -1345,12 +1344,23 @@ class LocationService {
    * Schedule a timer to force exit silent zone at strict end time
    */
   private scheduleEndTimerForPlace(placeId: string, delay: number) {
-    this.timerManager.clear(`end-${placeId}`);
+    if (!this.realm) return;
+  
+    const place = PlaceService.getPlaceById(this.realm, placeId);
+    if (!place) return;
+  
+    // Only schedule manual end timer for 24/7 places (no schedules)
+    const schedules = (place as any).schedules || [];
+    if (schedules.length > 0) {
+      Logger.info(`[LocationService] Skipping end timer for ${placeId} - AlarmService handles scheduled ends`);
+      return;
+    }
 
-    Logger.info(`[LocationService] Scheduled END timer for ${placeId} in ${Math.round(delay / 1000)}s`);
+    this.timerManager.clear(`end-${placeId}`);
+    Logger.info(`[LocationService] Scheduled END timer for 24/7 place ${placeId} in ${Math.round(delay / 1000)}s`);
 
     this.timerManager.schedule(`end-${placeId}`, delay, async () => {
-      Logger.info(`[LocationService] End time arrived for ${placeId}`);
+      Logger.info(`[LocationService] End time arrived for 24/7 place ${placeId}`);
       await this.handleGeofenceExit(placeId, true);
       await this.syncGeofences();
     });

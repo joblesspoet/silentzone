@@ -208,9 +208,12 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         isBatteryOptimized,
         exactAlarmStatus,
         getFirstMissingPermission: () => {
-          const locationOk = (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED) && 
-                            (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED);
-          if (!locationOk) return 'LOCATION';
+          const locGranted = (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED);
+          const bgGranted = (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED);
+
+          if (!locGranted) return 'LOCATION';
+          if (!bgGranted) return 'BACKGROUND_LOCATION';
+          
           if (notificationStatus !== RESULTS.GRANTED) return 'NOTIFICATION';
           if (dndStatus !== RESULTS.GRANTED) return 'DND';
           if (!isBatteryOptimized) return 'BATTERY';

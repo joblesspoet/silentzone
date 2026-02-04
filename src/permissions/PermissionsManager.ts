@@ -105,7 +105,13 @@ export const PermissionsManager = {
       }
     } catch (error) {
       console.error('Error requesting background location:', error);
-      return RESULTS.DENIED;
+      
+      // Fallback for "not attached to an Activity" or other native failures
+      if (Platform.OS === 'android') {
+        console.log('Falling back to settings for background location...');
+        Linking.openSettings();
+      }
+      return RESULTS.DENIED; 
     }
   },
 

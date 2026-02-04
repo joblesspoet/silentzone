@@ -13,6 +13,8 @@ export const PermissionBlock: React.FC<PermissionBlockProps> = ({ missingType, o
     switch (missingType) {
       case 'LOCATION':
         return 'Location access is required to track your arrival at Silent Zones.';
+      case 'BACKGROUND_LOCATION':
+        return 'Select "Allow all the time" in settings to enable automatic silencing.';
       case 'NOTIFICATION':
         return 'Notification access is required to keep the background service running reliably.';
       case 'DND':
@@ -29,6 +31,7 @@ export const PermissionBlock: React.FC<PermissionBlockProps> = ({ missingType, o
   const getTitle = () => {
     switch (missingType) {
       case 'LOCATION': return 'Location Required';
+      case 'BACKGROUND_LOCATION': return 'Always Allow Required';
       case 'NOTIFICATION': return 'Notifications Disabled';
       case 'DND': return 'DND Access Required';
       case 'BATTERY': return 'Allow Background Processing';
@@ -41,7 +44,7 @@ export const PermissionBlock: React.FC<PermissionBlockProps> = ({ missingType, o
     <View style={styles.container}>
       <View style={styles.iconContainer}>
         <MaterialIcon 
-          name={missingType === 'LOCATION' ? 'location-off' : 'warning-amber'} 
+          name={(missingType === 'LOCATION' || missingType === 'BACKGROUND_LOCATION') ? 'location-off' : 'warning-amber'} 
           size={32} 
           color={theme.colors.warning} 
         />

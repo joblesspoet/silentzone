@@ -259,8 +259,8 @@ class AlarmService {
         monitorStartTime,
         place.id,
         ALARM_ACTIONS.START_SILENCE,
-        '', // Silent
-        '', // Silent
+        'Start Monitoring', // Silent
+        'Geofensing going to start', // Silent
         { ...alarmBaseData, subType: 'monitor', silent: 'true' }
       );
     }
@@ -272,8 +272,8 @@ class AlarmService {
         endTime.getTime(),
         place.id,
         ALARM_ACTIONS.STOP_SILENCE,
-        '', // Silent
-        '', // Silent
+        'End Monitoring', // Silent
+        'Geofensing going to end', // Silent
         { ...alarmBaseData, subType: 'cleanup', silent: 'true' }
       );
     }

@@ -2,7 +2,7 @@ import { notificationManager } from './NotificationManager';
 import { Logger } from './Logger';
 
 export type NotificationEventType = 
-  | 'SCHEDULE_START' 
+  | 'CHECK_IN'               // NEW: Immediate check-in confirmation
   | 'SCHEDULE_END' 
   | 'SCHEDULE_APPROACHING'
   | 'PLACE_ENTERED' 
@@ -23,7 +23,7 @@ export interface NotificationEvent {
  */
 class NotificationEventBus {
   private recentEvents: Map<string, number> = new Map();
-  private readonly DEDUPE_WINDOW_MS = 30000; // 30 seconds
+  private readonly DEDUPE_WINDOW_MS = 60000; // 60 seconds (Increased from 30s)
 
   /**
    * Emit a notification event
@@ -65,6 +65,16 @@ class NotificationEventBus {
     const notifId = `${event.type.toLowerCase()}-${event.placeId}-${event.timestamp}`;
 
     switch (event.type) {
+      case 'CHECK_IN':
+        notificationManager.showNotification(
+          '🔕 Phone Silenced',
+          `You're at ${event.placeName}`,
+          notifId,
+          false, // Not silent - user needs to see this!
+          true   // grouped
+        );
+        break;
+
       case 'SCHEDULE_END':
       case 'SOUND_RESTORED':
         notificationManager.showNotification(
@@ -73,17 +83,6 @@ class NotificationEventBus {
           notifId,
           false, // not silent
           true   // grouped
-        );
-        break;
-
-      case 'SCHEDULE_START':
-        // Legacy start notification - keeping minimal to avoid overlap with Foreground Service
-        notificationManager.showNotification(
-          'Silent Zone Active',
-          `Phone silenced at ${event.placeName}`,
-          notifId,
-          true, // Make it quiet if possible to avoid double alert
-          true
         );
         break;
 
@@ -118,7 +117,7 @@ class NotificationEventBus {
         break;
 
       default:
-        Logger.warn(`[NotificationBus] Unknown event type: ${event.type}`);
+        Logger.warn(`[NotificationBus] Unknown event type: ${(event as any).type}`);
     }
   }
 

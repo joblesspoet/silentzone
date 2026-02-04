@@ -280,6 +280,7 @@ useEffect(() => {
                 const missing = getFirstMissingPermission();
                 switch (missing) {
                   case 'LOCATION': await requestLocationFlow(); break;
+                  case 'BACKGROUND_LOCATION': await requestLocationFlow(); break;
                   case 'NOTIFICATION': await requestNotificationFlow(); break;
                   case 'DND': await requestDndFlow(); break;
                   case 'BATTERY': await requestBatteryExemption(); break;
