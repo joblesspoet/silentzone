@@ -60,7 +60,7 @@ class AlarmService {
               place.id,
               ALARM_ACTIONS.START_MONITORING,
               'Location Monitoring',
-              'Checking distance to prayer location...',
+              '', // suppressed body
               { subType: 'notify', silent: 'true' }
           );
           alarmsScheduled++;
@@ -75,8 +75,8 @@ class AlarmService {
               startTime.getTime(),
               place.id,
               ALARM_ACTIONS.START_SILENCE,
-              'Silent Zone Starting',
-              'Activating silent mode...',
+              'Start Monitoring', // Unified Title
+              'Geofencing going to start', // Unified Body
               { subType: 'monitor', prayerIndex: i, silent: 'true' }
           );
           alarmsScheduled++;
@@ -91,8 +91,8 @@ class AlarmService {
               endTime.getTime(),
               place.id,
               ALARM_ACTIONS.STOP_SILENCE,
-              'Silent Zone Ending',
-              'Restoring phone settings...',
+              'End Monitoring', // Unified Title
+              'Geofencing going to end', // Unified Body
               { subType: 'cleanup', prayerIndex: i, silent: 'true' }
           );
           alarmsScheduled++;
@@ -246,7 +246,7 @@ class AlarmService {
         place.id,
         ALARM_ACTIONS.START_MONITORING,
         'Location Monitoring',
-        `Checking distance to location ${place.name}...`,
+        '', // Suppress body
         { ...alarmBaseData, subType: 'notify', silent: 'true' }
       );
     }
@@ -260,7 +260,7 @@ class AlarmService {
         place.id,
         ALARM_ACTIONS.START_SILENCE,
         'Start Monitoring', // Silent
-        'Geofensing going to start', // Silent
+        'Geofencing going to start', // Silent
         { ...alarmBaseData, subType: 'monitor', silent: 'true' }
       );
     }
@@ -273,7 +273,7 @@ class AlarmService {
         place.id,
         ALARM_ACTIONS.STOP_SILENCE,
         'End Monitoring', // Silent
-        'Geofensing going to end', // Silent
+        'Geofencing going to end', // Silent
         { ...alarmBaseData, subType: 'cleanup', silent: 'true' }
       );
     }

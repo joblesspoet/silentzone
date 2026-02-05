@@ -3,6 +3,7 @@
 import Realm from 'realm';
 import { generateUUID } from '../../utils/uuid';
 import { RealmWriteHelper } from '../helpers/RealmWriteHelper';
+import { alarmService } from '../../services/AlarmService';
 
 export interface PlaceData {
   name: string;
@@ -91,6 +92,11 @@ export const PlaceService = {
    * Update place - THREAD SAFE
    */
   updatePlace: (realm: Realm, id: string, data: Partial<PlaceData>): boolean => {
+    // CRITICAL: Cancel existing alarms before modifying schedules
+    if (data.schedules) {
+        alarmService.cancelAlarmsForPlace(id);
+    }
+
     return RealmWriteHelper.safeWrite(
       realm,
       () => {
@@ -140,6 +146,9 @@ export const PlaceService = {
    * Delete place - THREAD SAFE
    */
   deletePlace: (realm: Realm, id: string): boolean => {
+    // CRITICAL: Cancel alarms before deleting
+    alarmService.cancelAlarmsForPlace(id);
+
     return RealmWriteHelper.safeWrite(
       realm,
       () => {
@@ -176,6 +185,12 @@ export const PlaceService = {
         place.updatedAt = new Date();
 
         console.log(`[PlaceService] Toggled ${place.name}: ${newState}`);
+        
+        // If disabling, cancel alarms
+        if (!newState) {
+             alarmService.cancelAlarmsForPlace(id);
+        }
+        
         return newState;
       },
       `togglePlace:${id}`
@@ -214,6 +229,7 @@ export const PlaceService = {
         if (place) {
           place.isEnabled = enabled;
           place.updatedAt = new Date();
+          // Note: Full alarm sync should happen after batch operation via context/manager
         }
       },
     }));

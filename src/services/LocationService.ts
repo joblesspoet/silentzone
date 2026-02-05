@@ -561,8 +561,10 @@ class LocationService {
         await this.startForegroundService();
         this.geofencesActive = true;
 
-        // 5. SURGICAL RESTORE: Only fill gaps (much safer than resetting all)
-        await alarmService.restoreGapsOnBoot(enabledPlaces);
+        // Schedule alarms for enabled places (uses scheduleAlarmsForPlace which handles deduplication via same IDs)
+        for (const place of enabledPlaces) {
+          await alarmService.scheduleAlarmsForPlace(place);
+        }
 
         // If we have places to monitor (active or sensing window), verify location immediately
         if (placesToMonitor.size > 0) {
@@ -588,8 +590,9 @@ class LocationService {
 
         // Always ensure alarms are gap-filled/restored even in passive mode
         // but only if we have places to restore
-        if (enabledPlaces.length > 0) {
-          await alarmService.restoreGapsOnBoot(enabledPlaces);
+        // Schedule/update alarms for passive mode
+        for (const place of enabledPlaces) {
+          await alarmService.scheduleAlarmsForPlace(place);
         }
       }
 
@@ -1177,6 +1180,28 @@ class LocationService {
 
       await this.handleScheduleCleanup(activePlaces);
       await this.handleNewEntries(insidePlaces);
+
+      // --- ADAPTIVE GPS FREQUENCY ---
+      // If we are currently watching, adjust interval based on distance
+      if (gpsManager.isWatching()) {
+        let minDistance = Infinity;
+        // Check distance to all enabled places (or active/approaching ones)
+        for (const place of enabledPlaces) {
+          const dist = LocationValidator.calculateDistance(
+            location.latitude,
+            location.longitude,
+            (place as any).latitude,
+            (place as any).longitude
+          );
+          if (dist < minDistance) minDistance = dist;
+        }
+
+        if (minDistance !== Infinity) {
+          const isFar = minDistance > 2000;
+          const targetInterval = isFar ? 60000 : 30000;
+          await gpsManager.updateConfig({ interval: targetInterval });
+        }
+      }
 
       // Schedule auto-stop when schedule ends
       this.scheduleAutoStop(activePlaces);

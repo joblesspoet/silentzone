@@ -178,44 +178,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
     setNameError(null);
     setScheduleError(false);
 
-    // Granular Permission Check
-    const locStatus = await PermissionsManager.getLocationStatus();
-    const bgStatus = await PermissionsManager.getBackgroundLocationStatus();
-    const dndStatus = await PermissionsManager.getDndStatus();
-    const notifStatus = await PermissionsManager.getNotificationStatus();
-    const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
 
-    // Check specific failures
-    if (locStatus !== RESULTS.GRANTED && locStatus !== RESULTS.LIMITED) {
-        Alert.alert("Location Permission Needed", "Please grant 'When In Use' location permission in Settings.", [{ text: "Open Settings", onPress: () => PermissionsManager.openSettings() }, { text: "Cancel", style: "cancel" }]);
-        return;
-    }
-    if (bgStatus !== RESULTS.GRANTED && bgStatus !== RESULTS.LIMITED) {
-        Alert.alert("Background Location Needed", "Silent Zone requires 'Allow all the time' location access to work in the background. Please update this in Settings.", [{ text: "Open Settings", onPress: () => PermissionsManager.openSettings() }, { text: "Cancel", style: "cancel" }]);
-        return;
-    }
-    if (notifStatus !== RESULTS.GRANTED) {
-        Alert.alert("Notifications Needed", "Please enable notifications so we can verify if the service is running.", [{ text: "Open Settings", onPress: () => PermissionsManager.openSettings() }, { text: "Cancel", style: "cancel" }]);
-        return;
-    }
-    if (dndStatus !== RESULTS.GRANTED) {
-        Alert.alert("DND Access Needed", "Please grant Do Not Disturb access so the app can silence your phone.", [{ text: "Open Settings", onPress: () => PermissionsManager.openSettings() }, { text: "Cancel", style: "cancel" }]);
-        return;
-    }
-    if (!exactAlarm) {
-        Alert.alert("Alarm Permission Needed", "Please allow 'Alarms & reminders' in Settings. This is required for schedule accuracy.", [{ text: "Open Settings", onPress: () => PermissionsManager.openSettings() }, { text: "Cancel", style: "cancel" }]);
-        return;
-    }
-
-    const gpsEnabled = await PermissionsManager.isGpsEnabled();
-    if (!gpsEnabled) {
-      Alert.alert(
-        "GPS Disabled",
-        "Please enable location services (GPS) to accurately save this place.",
-        [{ text: "OK" }]
-      );
-      return;
-    }
 
     let hasError = false;
 
@@ -273,10 +236,10 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         })),
       });
       
-      await locationService.syncGeofences();
+      locationService.syncGeofences();
       
       // CRITICAL: Immediately check if we are ALREADY inside the place we just added
-      await locationService.forceLocationCheck();
+      locationService.forceLocationCheck();
 
       const prefs = PreferencesService.getPreferences(realm);
       if (isSilencingEnabled && prefs && !(prefs as any).trackingEnabled) {
