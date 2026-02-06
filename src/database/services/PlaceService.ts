@@ -140,20 +140,21 @@ export const PlaceService = {
   /**
    * Delete place - THREAD SAFE
    */
-  deletePlace: (realm: Realm, id: string): boolean => {
+  deletePlace: async (realm: Realm, id: string): Promise<boolean> => {
+    // CRITICAL: Explicitly cancel and AWAIT cancellation before deleting data
+    // This prevents orphaned alarms for a non-existent place
+    await alarmService.cancelAlarmsForPlace(id);
+
     return RealmWriteHelper.safeWrite(
       realm,
       () => {
         const place = realm.objectForPrimaryKey('Place', id);
-        if (!place) {
-          console.warn(`[PlaceService] Place not found: ${id}`);
-          return false;
+        if (place) {
+          realm.delete(place);
+          console.log(`[PlaceService] Deleted place: ${id}`);
+          return true;
         }
-
-        const placeName = (place as any).name;
-        realm.delete(place);
-        console.log(`[PlaceService] Deleted place: ${placeName}`);
-        return true;
+        return false;
       },
       `deletePlace:${id}`
     ) ?? false;

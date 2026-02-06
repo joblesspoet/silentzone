@@ -1005,11 +1005,15 @@ class LocationService {
         
         await this.stopActivePrayerSession(placeId);
         
-        // Surgical reschedule for tomorrow
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        await alarmService.schedulePrayerSurgically(place, prayerIndex, tomorrow);
-        Logger.info(`[Surgical] Rescheduled ${place.name} (#${prayerIndex}) for tomorrow`);
+        // Surgical reschedule for tomorrow (ONLY if place is still enabled)
+        if (place.isEnabled) {
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          await alarmService.schedulePrayerSurgically(place, prayerIndex, tomorrow);
+          Logger.info(`[Surgical] Rescheduled ${place.name} (#${prayerIndex}) for tomorrow`);
+        } else {
+          Logger.info(`[Surgical] Skipping reschedule for ${place.name} - place is disabled`);
+        }
       }
       else {
         // Fallback for legacy alarms
