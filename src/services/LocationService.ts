@@ -391,6 +391,7 @@ class LocationService {
                 });
 
                 setTimeout(async () => {
+                  // For auto-enabling tracking, we sync everything
                   await this.syncGeofences(true);
                   await this.safetyCheckMonitoring();
                 }, 300);
@@ -410,7 +411,18 @@ class LocationService {
               }
             }
 
-            await this.syncGeofences(true);
+            // Extract IDs of inserted and modified places for targeted alarm sync
+            const affectedIds: string[] = [];
+            changes.insertions.forEach(index => {
+                const place = collection[index] as any;
+                if (place?.id) affectedIds.push(place.id);
+            });
+            changes.newModifications.forEach(index => {
+                const place = collection[index] as any;
+                if (place?.id) affectedIds.push(place.id);
+            });
+
+            await this.syncGeofences(false, affectedIds);
             await this.safetyCheckMonitoring();
           }
         } catch (error) {
@@ -464,7 +476,7 @@ class LocationService {
   /**
    * Main sync method - smart scheduling support
    */
-  async syncGeofences(forceAlarmSync: boolean = false) {
+  async syncGeofences(forceAlarmSync: boolean = false, specificPlaceIds?: string[]) {
     if (!this.realm || this.realm.isClosed || this.isSyncing) return;
 
     this.isSyncing = true;
@@ -561,9 +573,15 @@ class LocationService {
         await this.startForegroundService();
         this.geofencesActive = true;
 
-        // Condition-based alarm sync
-        if (forceAlarmSync) {
-            Logger.info('[LocationService] Forcing alarm sync for enabled places');
+        // Condition-based alarm sync (Targeted or Global)
+        if (specificPlaceIds && specificPlaceIds.length > 0) {
+            Logger.info(`[LocationService] Syncing alarms for specific places: ${specificPlaceIds.join(', ')}`);
+            for (const id of specificPlaceIds) {
+                const place = enabledPlaces.find((p: any) => p.id === id);
+                if (place) await alarmService.scheduleAlarmsForPlace(place);
+            }
+        } else if (forceAlarmSync) {
+            Logger.info('[LocationService] Forcing global alarm sync for all enabled places');
             for (const place of enabledPlaces) {
                 await alarmService.scheduleAlarmsForPlace(place);
             }
@@ -591,9 +609,15 @@ class LocationService {
           this.geofencesActive = false;
         }
 
-        // Condition-based alarm sync
-        if (forceAlarmSync) {
-            Logger.info('[LocationService] Forcing alarm sync (passive mode)');
+        // Condition-based alarm sync (Targeted or Global)
+        if (specificPlaceIds && specificPlaceIds.length > 0) {
+            Logger.info(`[LocationService] Syncing alarms (passive) for specific places: ${specificPlaceIds.join(', ')}`);
+            for (const id of specificPlaceIds) {
+                const place = enabledPlaces.find((p: any) => p.id === id);
+                if (place) await alarmService.scheduleAlarmsForPlace(place);
+            }
+        } else if (forceAlarmSync) {
+            Logger.info('[LocationService] Forcing global (passive) alarm sync');
             for (const place of enabledPlaces) {
                 await alarmService.scheduleAlarmsForPlace(place);
             }

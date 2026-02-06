@@ -92,11 +92,6 @@ export const PlaceService = {
    * Update place - THREAD SAFE
    */
   updatePlace: (realm: Realm, id: string, data: Partial<PlaceData>): boolean => {
-    // CRITICAL: Cancel existing alarms before modifying schedules
-    if (data.schedules) {
-        alarmService.cancelAlarmsForPlace(id);
-    }
-
     return RealmWriteHelper.safeWrite(
       realm,
       () => {
@@ -146,9 +141,6 @@ export const PlaceService = {
    * Delete place - THREAD SAFE
    */
   deletePlace: (realm: Realm, id: string): boolean => {
-    // CRITICAL: Cancel alarms before deleting
-    alarmService.cancelAlarmsForPlace(id);
-
     return RealmWriteHelper.safeWrite(
       realm,
       () => {
@@ -185,11 +177,6 @@ export const PlaceService = {
         place.updatedAt = new Date();
 
         console.log(`[PlaceService] Toggled ${place.name}: ${newState}`);
-        
-        // If disabling, cancel alarms
-        if (!newState) {
-             alarmService.cancelAlarmsForPlace(id);
-        }
         
         return newState;
       },

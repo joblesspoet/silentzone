@@ -20,6 +20,9 @@ class AlarmService {
    * Optimized to schedule only the next upcoming occurrence for each schedule
    */
   async scheduleAlarmsForPlace(place: any) {
+    // CRITICAL: Always cancel existing alarms first to ensure clean state
+    await this.cancelAlarmsForPlace(place.id);
+
     if (!place.schedules || place.schedules.length === 0) {
       Logger.info(`[AlarmService] No schedules for ${place.name}, skipping alarm setup`);
       return;
