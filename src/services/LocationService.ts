@@ -50,6 +50,7 @@ class LocationService {
   // Schedule tracking
   private upcomingSchedules: UpcomingSchedule[] = [];
   private isInScheduleWindow = false;
+  private completedVisits: Set<string> = new Set();
 
   // Timer management
   private timerManager = new TimerManager();
@@ -129,15 +130,16 @@ class LocationService {
       let foundActiveWindow = false;
 
       for (const place of enabledPlaces) {
-        const schedules = (place as any).schedules || [];
-        for (const schedule of schedules) {
-          if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
+        const currentSchedule = ScheduleManager.getCurrentOrNextSchedule(place);
+        if (currentSchedule && ScheduleManager.isScheduleActiveNow(currentSchedule, now)) {
+          if (!this.isVisitCompleted((place as any).id, currentSchedule)) {
             foundActiveWindow = true;
             Logger.info(`[Restore] Currently in active window: ${(place as any).name}`);
             break;
+          } else {
+            Logger.info(`[Restore] Already completed visit for ${(place as any).name} in this window`);
           }
         }
-        if (foundActiveWindow) break;
       }
 
       this.isInScheduleWindow = foundActiveWindow;
@@ -511,7 +513,13 @@ class LocationService {
 
       const { activePlaces, upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
       this.upcomingSchedules = upcomingSchedules;
-      this.isInScheduleWindow = activePlaces.length > 0 || upcomingSchedules.length > 0;
+      
+      // NARROW LOGIC: Only in window if we are SENSING (T-15) or ACTIVE
+      const sensingThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
+      const isSensingSoon = upcomingSchedules.length > 0 && 
+                           upcomingSchedules[0].minutesUntilStart <= sensingThreshold;
+                           
+      this.isInScheduleWindow = activePlaces.length > 0 || isSensingSoon;
 
       const shouldMonitor = this.shouldStartMonitoring(activePlaces, upcomingSchedules);
 
@@ -644,7 +652,31 @@ class LocationService {
       Logger.error('[LocationService] Sync failed:', error);
     } finally {
       this.isSyncing = false;
+      // Periodic cleanup of completed visits (keep only relevant ones)
+      this.cleanupCompletedVisits();
     }
+  }
+
+  /**
+   * Cleanup completed visits that are in the past
+   */
+  private cleanupCompletedVisits() {
+    const now = Date.now();
+    const toRemove: string[] = [];
+    
+    this.completedVisits.forEach(key => {
+      try {
+        const parts = key.split('-');
+        if (parts.length < 2) return;
+        const startTime = new Date(parts[1]).getTime();
+        // If the schedule start was more than 24 hours ago, definitely safe to remove
+        if (now - startTime > 24 * 60 * 60 * 1000) {
+          toRemove.push(key);
+        }
+      } catch (e) {}
+    });
+
+    toRemove.forEach(key => this.completedVisits.delete(key));
   }
 
   /**
@@ -863,32 +895,40 @@ class LocationService {
 
     // Check if we're CURRENTLY inside an active schedule window
     for (const place of enabledPlaces) {
-      const schedules = (place as any).schedules || [];
-
-      // If no schedules, it's a 24/7 place - ALWAYS active
-      if (schedules.length === 0) {
-        Logger.info(`[Monitor Check] 24/7 Place: ${(place as any).name}`);
-        return true;
-      }
-
-      for (const schedule of schedules) {
-        if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
+      const schedule = ScheduleManager.getCurrentOrNextSchedule(place);
+      if (schedule && ScheduleManager.isScheduleActiveNow(schedule, now)) {
+        if (!this.isVisitCompleted((place as any).id, schedule)) {
           Logger.info(`[Monitor Check] ACTIVE NOW: ${(place as any).name}`);
           return true;
+        } else {
+          Logger.info(`[Monitor Check] Already completed visit for ${(place as any).name}`);
+          continue;
         }
+      }
+      
+      // If no schedules, it's a 24/7 place - ALWAYS active
+      if (!(place as any).schedules || (place as any).schedules.length === 0) {
+        Logger.info(`[Monitor Check] 24/7 Place: ${(place as any).name}`);
+        return true;
       }
     }
 
     // Check if we have an upcoming schedule soon
     if (upcomingSchedules.length > 0) {
       const nextSchedule = upcomingSchedules[0];
-      const safetyThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES + 5;
+      
+      // Skip if already completed
+      if (this.isVisitCompleted(nextSchedule.placeId, nextSchedule)) {
+         Logger.info(`[Monitor Check] Upcoming ${nextSchedule.placeName} already completed`);
+      } else {
+        const safetyThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES + 5;
 
-      if (nextSchedule.minutesUntilStart <= safetyThreshold) {
-        Logger.info(
-          `[Monitor Check] UPCOMING: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart} min`
-        );
-        return true;
+        if (nextSchedule.minutesUntilStart <= safetyThreshold) {
+          Logger.info(
+            `[Monitor Check] UPCOMING: ${nextSchedule.placeName} in ${nextSchedule.minutesUntilStart} min`
+          );
+          return true;
+        }
       }
 
       Logger.info(
@@ -898,6 +938,35 @@ class LocationService {
       Logger.info('[Monitor Check] No upcoming schedules found');
     }
 
+    return false;
+  }
+
+  /**
+   * Helper to determine if a visit was already completed (memory or DB)
+   */
+  private isVisitCompleted(placeId: string, schedule: UpcomingSchedule): boolean {
+    const visitKey = `${placeId}-${schedule.startTime.toISOString()}`;
+    if (this.completedVisits.has(visitKey)) return true;
+
+    // Persistent check: Do we have a checkout for this place in this window?
+    if (this.realm && !this.realm.isClosed) {
+      const recentCheckIns = Array.from(CheckInService.getCheckInsForPlace(this.realm, placeId));
+      if (recentCheckIns.length > 0) {
+        const lastLog = recentCheckIns[0] as any;
+        if (lastLog.checkOutTime) {
+          // If checked in during this schedule window and already checked out
+          const checkInTime = new Date(lastLog.checkInTime).getTime();
+          const winStart = schedule.startTime.getTime();
+          const winEnd = schedule.endTime.getTime();
+          
+          if (checkInTime >= winStart && checkInTime < winEnd) {
+             // Synchronize our session-based cache
+             this.completedVisits.add(visitKey);
+             return true;
+          }
+        }
+      }
+    }
     return false;
   }
 
@@ -1032,9 +1101,10 @@ class LocationService {
     } finally {
       this.isProcessingAlarm = false;
 
-      if (this.alarmQueue.length > 0) {
-        const nextAlarm = this.alarmQueue.shift();
-        Logger.info(`[LocationService] Processing queued alarm (${this.alarmQueue.length} remaining)`);
+      const queue = this.alarmQueue as any[];
+      if (queue.length > 0) {
+        const nextAlarm = queue.shift();
+        Logger.info(`[LocationService] Processing queued alarm (${queue.length} remaining)`);
         setTimeout(() => this.handleAlarmFired(nextAlarm), 1000);
       }
     }
@@ -1355,6 +1425,19 @@ class LocationService {
     this.lastTriggerTime[placeId] = now;
 
     await silentZoneManager.handleExit(placeId, force);
+
+    // MARK VISIT AS COMPLETED
+    // This prevents the "Monitoring" notification from reappearing immediately
+    // after an early exit until the next schedule window.
+    if (!force) {
+      const place = this.realm ? PlaceService.getPlaceById(this.realm, placeId) : null;
+      const schedule = place ? ScheduleManager.getCurrentOrNextSchedule(place) : null;
+      if (schedule) {
+        const visitKey = `${placeId}-${schedule.startTime.toISOString()}`;
+        this.completedVisits.add(visitKey);
+        Logger.info(`[LocationService] Visit marked as completed: ${visitKey}`);
+      }
+    }
 
     // Clear end timer for this place
     this.timerManager.clear(`end-${placeId}`);

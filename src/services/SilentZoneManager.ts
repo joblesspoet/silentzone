@@ -22,6 +22,7 @@ export interface SilentZoneState {
  */
 export class SilentZoneManager {
   private realm: Realm | null = null;
+  private lastSoundRestoredTime: { [key: string]: number } = {};
 
   setRealm(realm: Realm | null): void {
     this.realm = realm;
@@ -242,12 +243,16 @@ export class SilentZoneManager {
       }
 
       // Only notify if this is a MANUAL exit during scheduled time (early exit)
-      if (isScheduledTime) {
+      const now = Date.now();
+      const lastRestored = this.lastSoundRestoredTime[placeId] || 0;
+      
+      if (isScheduledTime && (now - lastRestored > 60000)) {
+         this.lastSoundRestoredTime[placeId] = now;
          notificationBus.emit({
             type: 'SOUND_RESTORED',
             placeId: placeId,
             placeName,
-            timestamp: Date.now(),
+            timestamp: now,
             source: 'manual'
          });
       }
