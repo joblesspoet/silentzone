@@ -16,8 +16,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { locationService } from '../services/LocationService';
 import { sortSchedules, validateLimit, findOverlappingSchedules, findInvalidTimeRanges, 
   ScheduleSlot as UtilScheduleSlot } from '../utils/ScheduleUtils';
+import { PrayerTimeService, PrayerConfig } from '../services/PrayerTimeService';
 
 import { PreferencesService } from '../database/services/PreferencesService';
+import { Modal } from 'react-native';
 
 // Use shared interface or map to it
 interface ScheduleSlot extends UtilScheduleSlot {}
@@ -61,6 +63,14 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
   const [overlappingIds, setOverlappingIds] = useState<string[]>([]);
   const [invalidTimeIds, setInvalidTimeIds] = useState<string[]>([]);
   const [limitError, setLimitError] = useState<boolean>(false);
+
+  // Prayer Auto-Fill State
+  const [showPrayerConfig, setShowPrayerConfig] = useState(false);
+  const [prayerConfig, setPrayerConfig] = useState<PrayerConfig>({
+      method: 'ISNA',
+      madhab: 'HANAFI',
+      adjustments: [0, 0, 0, 0, 0]
+  });
 
   // Auto-validate whenever schedules change
   useEffect(() => {
@@ -225,6 +235,40 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
     } catch (err) {
         console.warn(err);
         setIsLocating(false);
+    }
+  };
+
+  const handleApplyPrayerTimes = () => {
+    const lat = region.latitude;
+    const long = region.longitude;
+
+    const now = new Date();
+    const times = PrayerTimeService.calculatePrayerTimes(lat, long, now, prayerConfig);
+    
+    if (times) {
+        const prayerSchedules = PrayerTimeService.generateSchedules(times).map(s => ({
+            ...s,
+            id: Math.random().toString(), 
+        }));
+        const prayerLabels = ['Fajr', 'Dhuhr', 'Jumma', 'Asr', 'Maghrib', 'Isha'];
+        const nonPrayerSchedules = schedules.filter(s => !prayerLabels.includes(s.label));
+
+        // Check if we can add these schedules without exceeding the limit of 10
+        if (nonPrayerSchedules.length + prayerSchedules.length > 10) {
+            Alert.alert(
+                "Limit Reached",
+                "Auto-filling prayer times would exceed the 10-interval limit. Please remove some existing intervals first."
+            );
+            return;
+        }
+
+        setSchedules([...nonPrayerSchedules, ...prayerSchedules]);
+        setScheduleError(false);
+        setShowPrayerConfig(false);
+        setIsEnabled(true);
+        Alert.alert("Success", "Prayer times have been pre-populated based on the selected method.");
+    } else {
+        Alert.alert("Error", "Could not calculate prayer times.");
     }
   };
 
@@ -506,7 +550,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                 <Text style={styles.cardTitle}>Monitoring Status</Text>
                 <Text style={styles.cardSubtitle}>Enable or pause silencing</Text>
               </View>
-              <ToggleSwitch
+                <ToggleSwitch
                 value={isEnabled}
                 onValueChange={setIsEnabled}
               />
@@ -521,6 +565,17 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                        <MaterialIcon name="error-outline" size={16} color={theme.colors.error} />
                   )}
                 </View>
+
+                {selectedCategory.id === 'mosque' && (
+                    <TouchableOpacity 
+                        onPress={() => setShowPrayerConfig(true)}
+                        style={[styles.addSlotButton, { marginRight: 16 }]}
+                    >
+                        <MaterialIcon name="auto-awesome" size={18} color={theme.colors.primary} />
+                        <Text style={styles.addSlotText}>Auto-Fill</Text>
+                    </TouchableOpacity>
+                )}
+
                 <TouchableOpacity 
                     onPress={() => {
                         if (schedules.length >= 10) {
@@ -701,6 +756,15 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                 {showPicker && (
                     <DateTimePicker
                       value={(() => {
+                          if (showPicker && schedules[showPicker.index]) {
+                              const timeStr = showPicker.type === 'start' 
+                                  ? schedules[showPicker.index].startTime 
+                                  : schedules[showPicker.index].endTime;
+                              const [hours, minutes] = timeStr.split(':').map(Number);
+                              const d = new Date();
+                              d.setHours(hours, minutes, 0, 0);
+                              return d;
+                          }
                           const d = new Date();
                           d.setHours(12, 0, 0, 0);
                           return d;
@@ -710,7 +774,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                       display="default"
                       onChange={(event, selectedDate) => {
                           if (Platform.OS === 'android') setShowPicker(null);
-                          if (selectedDate) {
+                          if (event.type === 'set' && selectedDate) {
                                const timeStr = `${selectedDate.getHours().toString().padStart(2, '0')}:${selectedDate.getMinutes().toString().padStart(2, '0')}`;
                                setSchedules(prev => {
                                    const newS = [...prev];
@@ -720,6 +784,9 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                                    }
                                    return newS;
                                });
+                          }
+                          if (Platform.OS === 'ios' && event.type === 'dismissed') {
+                              setShowPicker(null);
                           }
                       }}
                     />
@@ -734,6 +801,75 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
             <View style={{ height: 40 }} />
           </View>
       </ScrollView>
+
+      {/* Prayer Config Modal */}
+      <Modal
+        visible={showPrayerConfig}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowPrayerConfig(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Auto-Fill Prayer Times</Text>
+            <Text style={styles.modalSubtitle}>Calculate precise timings based on your location.</Text>
+
+            <View style={styles.modalSection}>
+                <Text style={styles.modalLabel}>Calculation Method</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 8}}>
+                    {['ISNA', 'MWL', 'MAKKAH', 'KARACHI', 'TEHRAN', 'EGYPT'].map(m => (
+                        <TouchableOpacity
+                            key={m}
+                            style={[
+                                styles.chip,
+                                prayerConfig.method === m && styles.chipActive
+                            ]}
+                            onPress={() => setPrayerConfig({...prayerConfig, method: m as any})}
+                        >
+                            <Text style={[styles.chipText, prayerConfig.method === m && styles.chipTextActive]}>{m}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
+
+            <View style={styles.modalSection}>
+                <Text style={styles.modalLabel}>Madhab (Asr Time)</Text>
+                <View style={{flexDirection: 'row', gap: 12}}>
+                    {['HANAFI', 'SHAFII'].map(m => (
+                        <TouchableOpacity
+                            key={m}
+                            style={[
+                                styles.chip,
+                                prayerConfig.madhab === m && styles.chipActive,
+                                {flex: 1, justifyContent: 'center'}
+                            ]}
+                            onPress={() => setPrayerConfig({...prayerConfig, madhab: m as any})}
+                        >
+                            <Text style={[styles.chipText, prayerConfig.madhab === m && styles.chipTextActive]}>{m}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+
+            <View style={styles.modalButtons}>
+                <TouchableOpacity 
+                    style={styles.modalCancelButton}
+                    onPress={() => setShowPrayerConfig(false)}
+                >
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                    style={styles.modalApplyButton}
+                    onPress={handleApplyPrayerTimes}
+                >
+                    <Text style={styles.modalApplyText}>Calculate & Apply</Text>
+                </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 };
@@ -870,4 +1006,87 @@ const styles = StyleSheet.create({
   dayToggleTextActive: { color: theme.colors.white },
   deleteButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, padding: theme.spacing.md, borderRadius: theme.layout.borderRadius.md, borderWidth: 1, borderColor: theme.colors.error, backgroundColor: theme.colors.error + '1A', marginBottom: theme.spacing.xl },
   deleteText: { color: theme.colors.error, fontWeight: theme.typography.weights.bold },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: theme.colors.surface.light,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: theme.spacing.xl,
+    paddingBottom: Platform.OS === 'ios' ? 40 : theme.spacing.xl,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: theme.colors.text.primary.light,
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: theme.colors.text.secondary.light,
+    marginBottom: 24,
+  },
+  modalSection: {
+    marginBottom: 20,
+  },
+  modalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.colors.text.secondary.dark,
+    marginBottom: 12,
+  },
+  chip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: theme.colors.background.light,
+    borderWidth: 1,
+    borderColor: theme.colors.border.light,
+  },
+  chipActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  chipText: {
+    fontSize: 13,
+    color: theme.colors.text.primary.light,
+    fontWeight: '500',
+  },
+  chipTextActive: {
+    color: theme.colors.white,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 12,
+  },
+  modalCancelButton: {
+    flex: 1,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  modalCancelText: {
+    fontSize: 16,
+    color: theme.colors.text.secondary.light,
+    fontWeight: '600',
+  },
+  modalApplyButton: {
+    flex: 1,
+    backgroundColor: theme.colors.primary,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    ...theme.layout.shadows.soft,
+  },
+  modalApplyText: {
+    fontSize: 16,
+    color: theme.colors.white,
+    fontWeight: 'bold',
+  },
 });
