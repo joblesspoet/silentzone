@@ -131,7 +131,7 @@ class LocationService {
 
       for (const place of enabledPlaces) {
         const currentSchedule = ScheduleManager.getCurrentOrNextSchedule(place);
-        if (currentSchedule && ScheduleManager.isScheduleActiveNow(currentSchedule, now)) {
+        if (currentSchedule && now >= currentSchedule.startTime && now < currentSchedule.endTime) {
           if (!this.isVisitCompleted((place as any).id, currentSchedule)) {
             foundActiveWindow = true;
             Logger.info(`[Restore] Currently in active window: ${(place as any).name}`);
@@ -184,8 +184,8 @@ class LocationService {
         isInScheduleWindow: this.isInScheduleWindow,
         geofencesActive: this.geofencesActive,
       });
-    } catch (error) {
-      Logger.error('[Restore] Failed to restore state:', error);
+    } catch (error: any) {
+      Logger.error('[Restore] Failed to restore state:', error?.message || error);
     }
   }
 
@@ -648,8 +648,8 @@ class LocationService {
           Logger.warn('[LocationService] In schedule window but no alarms scheduled!');
         }
       }
-    } catch (error) {
-      Logger.error('[LocationService] Sync failed:', error);
+    } catch (error: any) {
+      Logger.error('[LocationService] Sync failed:', error?.message || error);
     } finally {
       this.isSyncing = false;
       // Periodic cleanup of completed visits (keep only relevant ones)
@@ -896,7 +896,7 @@ class LocationService {
     // Check if we're CURRENTLY inside an active schedule window
     for (const place of enabledPlaces) {
       const schedule = ScheduleManager.getCurrentOrNextSchedule(place);
-      if (schedule && ScheduleManager.isScheduleActiveNow(schedule, now)) {
+      if (schedule && now >= schedule.startTime && now < schedule.endTime) {
         if (!this.isVisitCompleted((place as any).id, schedule)) {
           Logger.info(`[Monitor Check] ACTIVE NOW: ${(place as any).name}`);
           return true;

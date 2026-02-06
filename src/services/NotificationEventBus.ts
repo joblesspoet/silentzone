@@ -75,28 +75,35 @@ class NotificationEventBus {
         );
         break;
 
-      // case 'SCHEDULE_END': // Handled by AlarmService directly now ("Geofencing going to end")
-    case 'SOUND_RESTORED':
-      notificationManager.showNotification(
-        'Silent Zone Ended',
-        `Sound restored for ${event.placeName}`,
-        notifId,
-        false, // not silent
-        true   // grouped
-      );
-      break;
+      case 'SOUND_RESTORED':
+        notificationManager.showNotification(
+          'Silent Zone Ended',
+          `Sound restored for ${event.placeName}`,
+          notifId,
+          false,
+          true
+        );
+        break;
 
-      /*
+      case 'SCHEDULE_END':
+        notificationManager.showNotification(
+          'Silent Zone Ending',
+          `${event.placeName} schedule has ended`,
+          notifId,
+          false,
+          true
+        );
+        break;
+
       case 'SCHEDULE_APPROACHING':
         notificationManager.showNotification(
-          'Upcoming Schedule',
+          'Upcoming Silence',
           `${event.placeName} starting in 15 minutes`,
           notifId,
           false,
           true
         );
         break;
-      */
 
       case 'PLACE_ENTERED':
         notificationManager.showNotification(
