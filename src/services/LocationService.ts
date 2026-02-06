@@ -391,7 +391,7 @@ class LocationService {
                 });
 
                 setTimeout(async () => {
-                  await this.syncGeofences();
+                  await this.syncGeofences(true);
                   await this.safetyCheckMonitoring();
                 }, 300);
 
@@ -410,7 +410,7 @@ class LocationService {
               }
             }
 
-            await this.syncGeofences();
+            await this.syncGeofences(true);
             await this.safetyCheckMonitoring();
           }
         } catch (error) {
@@ -436,7 +436,7 @@ class LocationService {
       prefs.addListener(() => {
         (async () => {
           Logger.info('[LocationService] Preferences changed, syncing');
-          await this.syncGeofences();
+          await this.syncGeofences(true);
           await this.safetyCheckMonitoring();
         })();
       });
@@ -464,7 +464,7 @@ class LocationService {
   /**
    * Main sync method - smart scheduling support
    */
-  async syncGeofences() {
+  async syncGeofences(forceAlarmSync: boolean = false) {
     if (!this.realm || this.realm.isClosed || this.isSyncing) return;
 
     this.isSyncing = true;
@@ -561,9 +561,12 @@ class LocationService {
         await this.startForegroundService();
         this.geofencesActive = true;
 
-        // Schedule alarms for enabled places (uses scheduleAlarmsForPlace which handles deduplication via same IDs)
-        for (const place of enabledPlaces) {
-          await alarmService.scheduleAlarmsForPlace(place);
+        // Condition-based alarm sync
+        if (forceAlarmSync) {
+            Logger.info('[LocationService] Forcing alarm sync for enabled places');
+            for (const place of enabledPlaces) {
+                await alarmService.scheduleAlarmsForPlace(place);
+            }
         }
 
         // If we have places to monitor (active or sensing window), verify location immediately
@@ -588,11 +591,12 @@ class LocationService {
           this.geofencesActive = false;
         }
 
-        // Always ensure alarms are gap-filled/restored even in passive mode
-        // but only if we have places to restore
-        // Schedule/update alarms for passive mode
-        for (const place of enabledPlaces) {
-          await alarmService.scheduleAlarmsForPlace(place);
+        // Condition-based alarm sync
+        if (forceAlarmSync) {
+            Logger.info('[LocationService] Forcing alarm sync (passive mode)');
+            for (const place of enabledPlaces) {
+                await alarmService.scheduleAlarmsForPlace(place);
+            }
         }
       }
 
@@ -951,27 +955,12 @@ class LocationService {
         }
       } 
       else if (subType === 'monitor') {
-        Logger.info(`[Surgical] T-5 Session Start check for ${place.name}`);
+        Logger.info(`[Surgical] T-5 Session Start for ${place.name}`);
         
-        const location = await this.getQuickLocation();
-        if (location) {
-          const distance = LocationValidator.calculateDistance(
-            location.latitude,
-            location.longitude,
-            (place as any).latitude,
-            (place as any).longitude
-          );
-
-          if (distance <= 2000) {
-            Logger.info(`[Surgical] User is nearby (${Math.round(distance)}m), starting monitoring`);
-            const deadline = this.calculateDeadlineForPlace(placeId);
-            await this.startActivePrayerSession(placeId, prayerIndex, deadline);
-          } else {
-            Logger.info(`[Surgical] User is far (${Math.round(distance)}m), staying in passive mode`);
-          }
-        } else {
-          Logger.info('[Surgical] No location for T-5 check, skipping session start');
-        }
+        // ALWAYS start monitoring at T-5, regardless of distance
+        // This ensures check-in works even if user is arriving during the gap
+        const deadline = this.calculateDeadlineForPlace(placeId);
+        await this.startActivePrayerSession(placeId, prayerIndex, deadline);
       } 
       else if (subType === 'cleanup') {
         Logger.info(`[Surgical] End-time Cleanup for ${place.name}`);
@@ -1005,7 +994,7 @@ class LocationService {
           await this.handleGeofenceExit(placeId, true);
         } else {
           // If it's a legacy start alarm, we still need sync for now
-          await this.syncGeofences();
+          await this.syncGeofences(true);
         }
       }
 
@@ -1180,28 +1169,6 @@ class LocationService {
 
       await this.handleScheduleCleanup(activePlaces);
       await this.handleNewEntries(insidePlaces);
-
-      // --- ADAPTIVE GPS FREQUENCY ---
-      // If we are currently watching, adjust interval based on distance
-      if (gpsManager.isWatching()) {
-        let minDistance = Infinity;
-        // Check distance to all enabled places (or active/approaching ones)
-        for (const place of enabledPlaces) {
-          const dist = LocationValidator.calculateDistance(
-            location.latitude,
-            location.longitude,
-            (place as any).latitude,
-            (place as any).longitude
-          );
-          if (dist < minDistance) minDistance = dist;
-        }
-
-        if (minDistance !== Infinity) {
-          const isFar = minDistance > 2000;
-          const targetInterval = isFar ? 60000 : 30000;
-          await gpsManager.updateConfig({ interval: targetInterval });
-        }
-      }
 
       // Schedule auto-stop when schedule ends
       this.scheduleAutoStop(activePlaces);
@@ -1416,8 +1383,8 @@ class LocationService {
             Logger.warn(`[LocationService] Quick location fail: ${error.message}`);
             resolve(null);
           },
-          1,
-          1 // Single attempt
+          3, // Strengthened for background cold-starts
+          3  // 3 attempts
         );
       });
     } catch (error) {

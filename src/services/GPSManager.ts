@@ -29,7 +29,6 @@ export class GPSManager {
 
   private onLocationUpdate: LocationCallback | null = null;
   private onError: LocationErrorCallback | null = null;
-  private activeConfig: GPSConfig | null = null;
 
   /**
    * Start watching position with verification
@@ -58,8 +57,6 @@ export class GPSManager {
       forceRequestLocation: true,
       ...config,
     };
-
-    this.activeConfig = defaultConfig;
 
     Logger.info('[GPSManager] Starting location watcher');
 
@@ -106,37 +103,6 @@ export class GPSManager {
 
     // Start verification process
     await this.startVerification(deadline);
-  }
-
-  /**
-   * Update active GPS configuration on the fly
-   */
-  async updateConfig(newConfig: Partial<GPSConfig>): Promise<void> {
-    if (!this.watchId || !this.activeConfig) {
-      Logger.warn('[GPSManager] Cannot update config: No active watcher or config');
-      return;
-    }
-
-    const updatedConfig: GPSConfig = {
-      ...this.activeConfig,
-      ...newConfig,
-    };
-
-    // Check if anything actually changed to avoid redundant restarts
-    if (
-      updatedConfig.interval === this.activeConfig.interval &&
-      updatedConfig.fastestInterval === this.activeConfig.fastestInterval &&
-      updatedConfig.distanceFilter === this.activeConfig.distanceFilter &&
-      updatedConfig.enableHighAccuracy === this.activeConfig.enableHighAccuracy
-    ) {
-      return;
-    }
-
-    Logger.info(`[GPSManager] Updating active config: interval=${updatedConfig.interval}ms`);
-    
-    // Restart the watcher with merged config
-    // Note: this.onLocationUpdate and this.onError are preserved
-    await this.startWatching(this.onLocationUpdate!, this.onError!, undefined, updatedConfig);
   }
 
   /**
