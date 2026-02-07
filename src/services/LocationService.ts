@@ -393,8 +393,8 @@ class LocationService {
                 });
 
                 setTimeout(async () => {
-                  // For auto-enabling tracking, we sync everything
-                  await this.syncGeofences(true);
+                  // Auto-enable doesn't need to reset alarms - place changes handle that
+                  await this.syncGeofences(false);
                   await this.safetyCheckMonitoring();
                 }, 300);
 
@@ -450,7 +450,8 @@ class LocationService {
       prefs.addListener(() => {
         (async () => {
           Logger.info('[LocationService] Preferences changed, syncing');
-          await this.syncGeofences(true);
+          // Don't force alarm reset on preference changes - only sync geofences
+          await this.syncGeofences(false);
           await this.safetyCheckMonitoring();
         })();
       });
