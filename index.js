@@ -151,11 +151,16 @@ const showBackgroundErrorNotification = async (errorMessage) => {
 // BUSINESS LOGIC: Alarm Event Handler
 // ============================================================================
 
-notifee.onBackgroundEvent(async ({ type, detail }) => {
-  const { notification, pressAction } = detail;
 
-  // 1. EXTRACT ACTION FROM ID (If missing from data)
-  // This must happen BEFORE the isAlarmAction check
+
+
+/**
+ * SHARED HANDNER FOR ALARM EVENTS
+ */
+const handleAlarmEvent = async ({ type, detail }) => {
+  const { notification } = detail;
+
+  // Extraction and verification logic (same as background)
   const isTriggerNotification = notification?.id?.includes('place-') && 
                                  (notification?.id?.includes('-type-monitor') || 
                                   notification?.id?.includes('-type-start') || 
@@ -170,107 +175,46 @@ notifee.onBackgroundEvent(async ({ type, detail }) => {
           if (actionType === 'monitor') notification.data = { ...data, action: 'START_MONITORING' };
           if (actionType === 'start') notification.data = { ...data, action: 'START_SILENCE' };
           if (actionType === 'end') notification.data = { ...data, action: 'STOP_SILENCE' };
-          console.log(`[Background] 🧩 Extracted action from ID: ${notification.data.action}`);
       }
   }
 
-  // 2. QUICK CHECKS
   const isAlarmAction = notification?.data?.action === 'START_MONITORING' || 
                         notification?.data?.action === 'START_SILENCE' || 
                         notification?.data?.action === 'STOP_SILENCE';
 
   // Log raw events for debugging
-  console.log(`[Background] Event: type=${type}, id=${notification?.id || 'none'}, action=${notification?.data?.action || 'none'}`);
+  console.log(`[AlarmHandler] Event: type=${type}, id=${notification?.id || 'none'}, action=${notification?.data?.action || 'none'}`);
 
-  // 3. FILTER RELEVANT EVENTS
-  // Skip creation events (Type 7) to avoid redundant processing logic
-  if (type === EventType.TRIGGER_NOTIFICATION_CREATED) {
+  if (type === EventType.TRIGGER_NOTIFICATION_CREATED || !isAlarmAction) {
     return;
   }
 
-  // Only proceed if this is an explicit alarm action we handle
-  if (!isAlarmAction) {
+  const alarmId = notification.id || `fallback-${notification.data?.placeId}`;
+
+  if (wasRecentlyProcessed(alarmId) || isCurrentlyProcessing(alarmId)) {
     return;
   }
 
-  // Final check after extraction
-  const alarmType = notification.data.action;
-  const placeId = notification.data?.placeId || 'unknown';
-  const alarmId = notification.id || `fallback-${placeId}-${alarmType}`;
-
-  // STEP 1: Check if recently processed (deduplication)
-  if (wasRecentlyProcessed(alarmId)) {
-    console.log(`[Background] ⏭️ SKIPPED: Alarm ${alarmId} processed ${Math.round((Date.now() - processedAlarms.get(alarmId)) / 1000)}s ago`);
-    return;
-  }
-
-  // STEP 2: Check if currently processing (concurrency control)
-  if (isCurrentlyProcessing(alarmId)) {
-    console.log(`[Background] ⏭️ SKIPPED: Alarm ${alarmId} already processing`);
-    return;
-  }
-
-  // STEP 3: Mark as processing
   markAlarmProcessing(alarmId);
-  console.log(`[Background] ⏰ PROCESSING: ${alarmType} for place ${placeId} (type=${type})`);
-
-  let realm = null;
 
   try {
-      // STEP 4: Get Realm (cached for performance)
-      console.log('[Background] Opening Realm...');
-      realm = await getRealm();
-      console.log('[Background] ✅ Realm ready');
-
-      // STEP 5: Initialize LocationService (LIGHT initialization for background)
-      console.log('[Background] Initializing LocationService (Light)...');
+      console.log(`[AlarmHandler] ⏰ PROCESSING: ${notification.data.action} for place ${notification.data.placeId}`);
+      const realm = await getRealm();
       await locationService.initializeLight(realm);
-      console.log('[Background] ✅ LocationService ready (Targeted context)');
-
-      // STEP 6: Handle the specific alarm
-      console.log('[Background] Handling alarm...');
       await locationService.handleAlarmFired({
-          notification: {
-              id: notification.id,
-              data: notification.data,
-          },
+          notification: { id: notification.id, data: notification.data },
       });
-      console.log('[Background] ✅ Alarm handled successfully');
-
-      // STEP 7: Mark as processed (deduplication + cleanup)
+      console.log('[AlarmHandler] ✅ Alarm handled successfully');
       markAlarmProcessed(alarmId);
-
   } catch (err) {
-      console.error('[Background] ❌ FAILED:', err);
-      console.error('[Background] Stack:', err.stack);
-
-      // Mark as processed even on error to prevent retry loops
+      console.error('[AlarmHandler] ❌ Error:', err);
       markAlarmProcessed(alarmId);
-
-      // Retry once on Realm errors
-      if (err.message?.includes('Realm')) {
-          console.log('[Background] Retrying after Realm error...');
-          await new Promise(r => setTimeout(r, 2000));
-          try {
-              realm = await getRealm();
-              await locationService.initializeLight(realm);
-              await locationService.handleAlarmFired({
-                notification: { id: notification.id, data: notification.data },
-              });
-              console.log('[Background] ✅ Retry successful');
-          } catch (reErr) {
-              console.error('[Background] ❌ Retry failed:', reErr);
-              await showBackgroundErrorNotification(
-                  `Failed to activate ${alarmType}. Please open Silent Zone.`
-              );
-          }
-      } else {
-          await showBackgroundErrorNotification(
-              `Failed to activate ${alarmType}. Please open Silent Zone.`
-          );
-      }
   }
-});
+};
+
+// Register handlers
+notifee.onBackgroundEvent(handleAlarmEvent);
+notifee.onForegroundEvent(handleAlarmEvent);
 
 // ============================================================================
 // Geofencing Handler

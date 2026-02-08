@@ -1,5 +1,6 @@
 import { notificationManager } from './NotificationManager';
 import { Logger } from './Logger';
+import { CONFIG } from '../config/config';
 
 export type NotificationEventType = 
   | 'CHECK_IN'               // NEW: Immediate check-in confirmation
@@ -98,7 +99,7 @@ class NotificationEventBus {
       case 'SCHEDULE_APPROACHING':
         notificationManager.showNotification(
           'Upcoming Silence',
-          `${event.placeName} starting in 15 minutes`,
+          `${event.placeName} starting in ${CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES} minutes`,
           notifId,
           false,
           true

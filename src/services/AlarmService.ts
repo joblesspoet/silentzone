@@ -51,7 +51,7 @@ class AlarmService {
       const { startTime, endTime } = nextOccurrence;
       const dayOffset = nextOccurrence.dayOffset;
 
-      // --- ALARM 1: MONITORING START (15 mins before) ---
+      // --- ALARM 1: MONITORING START (PRE_ACTIVATION_MINUTES before) ---
       const preActivationMillis = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
       const monitorTime = startTime.getTime() - preActivationMillis;
 
@@ -140,8 +140,8 @@ class AlarmService {
               ...extraData
             },
             android: {
-              channelId: CONFIG.CHANNELS.ALERTS, // Use Alerts channel for triggers
-              importance: AndroidImportance.LOW,
+              channelId: CONFIG.CHANNELS.ALERTS,
+              importance: AndroidImportance.MIN, // CRITICAL: Stop Android from showing trigger preview
               category: AndroidCategory.ALARM,
               groupId: 'com.qybirx.silentzone.group',
               smallIcon: 'ic_launcher',
@@ -289,8 +289,13 @@ class AlarmService {
    * Only sets what is needed based on current time.
    */
   async restoreGapsOnBoot(places: any[]) {
-    if (places.length === 0) return;
-    Logger.info(`[AlarmService] Starting Gap-Filling Restore for ${places.length} places...`);
+  if (places.length === 0) return;
+  
+  try {
+    const existingNotifications = await notifee.getTriggerNotifications();
+    const existingIds = new Set(existingNotifications.map(tn => tn.notification.id));
+    
+    Logger.info(`[AlarmService] Gap-filling restore: Found ${existingIds.size} existing triggers`);
     const now = new Date();
 
     for (const place of places) {
@@ -310,20 +315,27 @@ class AlarmService {
           todayEnd.setDate(todayEnd.getDate() + 1);
         }
 
-        if (todayEnd.getTime() > now.getTime()) {
-          // 1. Still upcoming today or currently active
-          Logger.info(`[Restore] Scheduling ${place.name} (#${i}) for TODAY`);
-          await this.schedulePrayerSurgically(place, i, now);
-        } else {
-          // 2. Already passed today
-          Logger.info(`[Restore] Scheduling ${place.name} (#${i}) for TOMORROW`);
-          const tomorrow = new Date(now);
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          await this.schedulePrayerSurgically(place, i, tomorrow);
+        const isToday = todayEnd.getTime() > now.getTime();
+        const targetDate = isToday ? now : new Date(now.getTime() + 86400000); // 86400000 ms = 1 day
+        const dayOffset = isToday ? 0 : 1;
+
+        // CRITICAL CHECK: Does this prayer slot already have its core alarms?
+        // We check for the 'end' type alarm as it's the anchor for the cycle.
+        const endAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-end`;
+        
+        if (existingIds.has(endAlarmId)) {
+          Logger.info(`[Restore] Skipping ${place.name} (#${i}) - Alarms already present for ${isToday ? 'TODAY' : 'TOMORROW'}`);
+          continue;
         }
+
+        Logger.info(`[Restore] Scheduling ${place.name} (#${i}) for ${isToday ? 'TODAY' : 'TOMORROW'}`);
+        await this.schedulePrayerSurgically(place, i, targetDate);
       }
     }
+  } catch (error) {
+    Logger.error('[AlarmService] Gap-filling failed:', error);
   }
+}
 
   private isTomorrow(date: Date): boolean {
     const tomorrow = new Date();

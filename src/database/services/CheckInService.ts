@@ -35,7 +35,7 @@ export const CheckInService = {
           place.isInside = true; // Mark as active
         }
 
-        console.log(`[CheckInService] Logged check-in: ${placeId}`);
+        console.log(`[CheckInService] ✅ PERSISTED check-in: ${placeId} (ID: ${log.id})`);
         return log;
       },
       `logCheckIn:${placeId}`
@@ -69,7 +69,7 @@ export const CheckInService = {
         }
 
         console.log(
-          `[CheckInService] Logged check-out: ${log.placeId} (${log.durationMinutes}m)`
+          `[CheckInService] ✅ PERSISTED check-out: ${log.placeId} (ID: ${logId})`
         );
         return true;
       },

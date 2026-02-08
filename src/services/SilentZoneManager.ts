@@ -205,6 +205,7 @@ export class SilentZoneManager {
 
     if (totalActive === 1) {
       // LAST ZONE: Restore sound
+      console.log(`[SilentZoneManager] Attempting check-out for log: ${thisLog.id} (Place: ${placeName})`);
       return await this.handleLastZoneExit(thisLog.id as string, placeId, placeName);
     } else {
       // OVERLAPPING: Still in other zones, stay silent
@@ -220,9 +221,11 @@ export class SilentZoneManager {
 
     try {
       if (Platform.OS === 'android') {
+        console.log(`[SilentZoneManager] Restoring sound for ${placeName} via log ${logId}`);
         await this.restoreRingerMode(logId);
       }
-      CheckInService.logCheckOut(this.realm!, logId);
+      const success = CheckInService.logCheckOut(this.realm!, logId);
+      console.log(`[SilentZoneManager] Check-out ${success ? 'SUCCEEDED' : 'FAILED'} for ${placeName}`);
 
       // Check if this was a manual early exit or a scheduled end
       // If we are currently in a schedule window, this exit is likely MANUAL (user left early)

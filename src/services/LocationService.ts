@@ -291,7 +291,7 @@ class LocationService {
     const enabledPlaces = PlaceService.getEnabledPlaces(this.realm);
     const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(Array.from(enabledPlaces));
 
-    const hasActiveWork = activeLogs.length > 0 || upcomingSchedules.length > 0;
+    const hasActiveWork = activeLogs.length > 0 || this.isInScheduleWindow;
 
     if (!hasActiveWork) {
       Logger.info('[LocationService] No active work left, stopping foreground service');
@@ -516,7 +516,7 @@ class LocationService {
       this.upcomingSchedules = upcomingSchedules;
       
       // NARROW LOGIC: Only in window if we are SENSING (T-15) or ACTIVE
-      const sensingThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
+      const sensingThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES; 
       const isSensingSoon = upcomingSchedules.length > 0 && 
                            upcomingSchedules[0].minutesUntilStart <= sensingThreshold;
                            
@@ -922,7 +922,7 @@ class LocationService {
       if (this.isVisitCompleted(nextSchedule.placeId, nextSchedule)) {
          Logger.info(`[Monitor Check] Upcoming ${nextSchedule.placeName} already completed`);
       } else {
-        const safetyThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES + 5;
+        const safetyThreshold = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES; // Align with T-15 alarm
 
         if (nextSchedule.minutesUntilStart <= safetyThreshold) {
           Logger.info(
@@ -1011,6 +1011,14 @@ class LocationService {
         return;
       }
 
+      // --- STALE ALARM PROTECTION ---
+      // If the alarm is more than 5 minutes off (late or early), it's likely 
+      // a "ghost" alarm or for a different day. Ignore it.
+      if (Math.abs(scheduledDiff) > 300) {
+        Logger.warn(`[LocationService] Ignoring STALE/MISALIGNED alarm: ${alarmId} (${scheduledDiff}s diff)`);
+        return;
+      }
+
       const place = PlaceService.getPlaceById(this.realm, placeId);
       if (!place) {
         Logger.error(`[LocationService] Place ${placeId} not found for alarm`);
@@ -1020,7 +1028,7 @@ class LocationService {
       // --- SURGICAL LOGIC SELECTION ---
       
       if (subType === 'notify') {
-        Logger.info(`[Surgical] T-15 Notify check for ${place.name}`);
+        Logger.info(`[Surgical] T-${CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES} Notify check for ${place.name}`);
         
         // Silent location check
         const location = await this.getQuickLocation();
@@ -1049,9 +1057,9 @@ class LocationService {
         }
       } 
       else if (subType === 'monitor') {
-        Logger.info(`[Surgical] T-5 Session Start for ${place.name}`);
+        Logger.info(`[Surgical] Activation Session Start for ${place.name}`);
         
-        // ALWAYS start monitoring at T-5, regardless of distance
+        // ALWAYS start monitoring at T-0, regardless of distance
         // This ensures check-in works even if user is arriving during the gap
         const deadline = this.calculateDeadlineForPlace(placeId);
         await this.startActivePrayerSession(placeId, prayerIndex, deadline);
@@ -1376,8 +1384,8 @@ class LocationService {
     const endTime = currentSchedule.endTime.getTime();
 
     // 1. EARLY ARRIVAL CHECK
-    // Allow auto-silence up to 6 minutes early (covers the T-5 active session window)
-    if (now < startTime - (6 * 60 * 1000)) {
+    // Allow auto-silence up to 1 minute early for a smooth transition
+    if (now < startTime - (60 * 1000)) {
       const msUntilStart = startTime - now;
       Logger.info(
         `[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`

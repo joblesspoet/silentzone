@@ -41,7 +41,7 @@ export const CONFIG = {
   
   // Schedule settings
   SCHEDULE: {
-    PRE_ACTIVATION_MINUTES: 5,   // Start checking 5 min before schedule
+    PRE_ACTIVATION_MINUTES: 15,   // Start checking 15 min before schedule
     POST_GRACE_MINUTES: 0,        // Strict end time (was 5)
     SMALL_RADIUS_THRESHOLD: 60,  // Consider "small" if under this
   },
