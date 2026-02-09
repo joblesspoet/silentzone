@@ -21,10 +21,8 @@ const AppContent = () => {
             
             // Load logging preference
             SettingsService.getLoggingEnabled().then(enabled => {
-                
-                // Auto-enable in DEV if needed, or just let user toggle
+                Logger.setEnabled(enabled);
                 if (__DEV__) {
-                  Logger.setEnabled(enabled);
                     console.log(`[App] Dev mode detected. Logging enabled: ${enabled}`);
                 }
             });

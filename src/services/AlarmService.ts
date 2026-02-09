@@ -66,8 +66,9 @@ class AlarmService {
   ) {
       try {
         // --- CHECK-BEFORE-SET OPTIMIZATION ---
-        if (existingIds ? existingIds.has(id) : (await notifee.getTriggerNotifications()).some(tn => tn.notification.id === id)) {
-            // Suppress logs for redundant healing checks to keep console clean
+        // If we have a cached set of IDs, check against it first
+        if (existingIds && existingIds.has(id)) {
+            // Logger.info(`[AlarmService] Skipping ${id} - Already set`);
             return;
         }
 
@@ -86,7 +87,7 @@ class AlarmService {
             },
             android: {
               channelId: CONFIG.CHANNELS.ALERTS,
-              importance: AndroidImportance.MIN, // CRITICAL: Stop Android from showing trigger preview
+              importance: AndroidImportance.DEFAULT, // BUMP to ensure background handling
               category: AndroidCategory.ALARM,
               groupId: 'com.qybirx.silentzone.group',
               smallIcon: 'ic_launcher',
@@ -124,24 +125,20 @@ class AlarmService {
   /**
    * Cancel all alarms for a specific place
    */
-  async cancelAlarmsForPlace(placeId: string, scheduleCount: number = 10) {
-    // Cancel alarms for today (day-0) and tomorrow (day-1) for each schedule index
-    for (let i = 0; i < scheduleCount; i++) {
-        const types = ['monitor', 'start', 'end'];
-        // The IDs now use date string instead of dayOffset
-        const today = new Date();
-        const tomorrow = new Date(today.getTime() + 86400000);
-        const todayStr = today.toISOString().split('T')[0];
-        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  async cancelAlarmsForPlace(placeId: string) {
+    try {
+        const triggers = await notifee.getTriggerNotifications();
+        const toCancel = triggers
+            .filter(tn => tn.notification.id?.startsWith(`place-${placeId}`))
+            .map(tn => tn.notification.id as string);
 
-        for (const type of types) {
-             const idDay0 = `place-${placeId}-sched-${i}-date-${todayStr}-type-${type}`;
-             const idDay1 = `place-${placeId}-sched-${i}-date-${tomorrowStr}-type-${type}`;
-             try { await notifee.cancelTriggerNotification(idDay0); } catch (e) {}
-             try { await notifee.cancelTriggerNotification(idDay1); } catch (e) {}
+        for (const id of toCancel) {
+            await notifee.cancelTriggerNotification(id);
         }
+        Logger.info(`[AlarmService] Cancelled ${toCancel.length} alarms for place ${placeId}`);
+    } catch (e) {
+        Logger.error('[AlarmService] Failed to cancel alarms', e);
     }
-    Logger.info(`[AlarmService] Cancelled alarms for place ${placeId}`);
   }
 
   /**
@@ -255,36 +252,8 @@ class AlarmService {
     for (const place of places) {
       if (!place.isEnabled || !place.schedules) continue;
 
-      for (let i = 0; i < place.schedules.length; i++) {
-        const schedule = place.schedules[i];
-        const [endHour, endMin] = schedule.endTime.split(':').map(Number);
-        
-        // Use today's date for comparison
-        const todayEnd = new Date(now);
-        todayEnd.setHours(endHour, endMin, 0, 0);
-        
-        // Handle overnight end time
-        const [startHour, startMin] = schedule.startTime.split(':').map(Number);
-        if ((endHour * 60 + endMin) < (startHour * 60 + startMin)) {
-          todayEnd.setDate(todayEnd.getDate() + 1);
-        }
-
-        const isToday = todayEnd.getTime() > now.getTime();
-        const targetDate = isToday ? now : new Date(now.getTime() + 86400000); // 86400000 ms = 1 day
-        const dayOffset = isToday ? 0 : 1;
-
-        // CRITICAL CHECK: Does this prayer slot already have its core alarms?
-        // We check for the 'end' type alarm as it's the anchor for the cycle.
-        const endAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-end`;
-        
-        if (existingIds.has(endAlarmId)) {
-          Logger.info(`[Restore] Skipping ${place.name} (#${i}) - Alarms already present for ${isToday ? 'TODAY' : 'TOMORROW'}`);
-          continue;
-        }
-
-        Logger.info(`[Restore] Scheduling ${place.name} (#${i}) for ${isToday ? 'TODAY' : 'TOMORROW'}`);
-        await this.schedulePrayerSurgically(place, i, targetDate);
-      }
+      // scheduleAlarmsForPlace now handles 48-hour buffer and exists checks efficiently
+      await this.scheduleAlarmsForPlace(place);
     }
   } catch (error) {
     Logger.error('[AlarmService] Gap-filling failed:', error);
@@ -401,88 +370,6 @@ class AlarmService {
     }
   }
 
-  /**
-   * Calculate the next occurrence of a schedule
-   * Returns the next start and end times, or null if no future occurrence
-   */
-  private getNextScheduleOccurrence(
-    now: Date,
-    startHour: number,
-    startMin: number,
-    endHour: number,
-    endMin: number
-  ): { startTime: Date; endTime: Date; dayOffset: number } | null {
-    const currentHour = now.getHours();
-    const currentMin = now.getMinutes();
-    const currentTotal = currentHour * 60 + currentMin;
-    const startTotal = startHour * 60 + startMin;
-    const endTotal = endHour * 60 + endMin;
-
-    // Check if schedule is currently active (we're between start and end time)
-    let isCurrentlyActive = false;
-    if (endTotal >= startTotal) {
-      // Normal schedule (e.g., 17:35 to 17:56)
-      isCurrentlyActive = currentTotal >= startTotal && currentTotal < endTotal;
-    } else {
-      // Overnight schedule (e.g., 23:00 to 01:00)
-      isCurrentlyActive = currentTotal >= startTotal || currentTotal < endTotal;
-    }
-
-    // If currently active, the "next" occurrence is actually the current one
-    if (isCurrentlyActive) {
-      const startTime = new Date(now);
-      startTime.setHours(startHour, startMin, 0, 0);
-
-      // If start time is later today, it means we crossed midnight for overnight schedule
-      if (endTotal < startTotal && currentTotal < endTotal) {
-        startTime.setDate(startTime.getDate() - 1);
-      }
-
-      const endTime = new Date(startTime);
-      if (endTotal >= startTotal) {
-        endTime.setHours(endHour, endMin, 0, 0);
-      } else {
-        // Overnight: end time is tomorrow
-        endTime.setDate(endTime.getDate() + 1);
-        endTime.setHours(endHour, endMin, 0, 0);
-      }
-
-      return { startTime, endTime, dayOffset: 0 };
-    }
-
-    // Check if schedule starts later today
-    if (startTotal > currentTotal) {
-      const startTime = new Date(now);
-      startTime.setHours(startHour, startMin, 0, 0);
-
-      const endTime = new Date(startTime);
-      if (endTotal >= startTotal) {
-        endTime.setHours(endHour, endMin, 0, 0);
-      } else {
-        // Overnight: end time is tomorrow
-        endTime.setDate(endTime.getDate() + 1);
-        endTime.setHours(endHour, endMin, 0, 0);
-      }
-
-      return { startTime, endTime, dayOffset: 0 };
-    }
-
-    // Schedule already passed today, return tomorrow's occurrence
-    const startTime = new Date(now);
-    startTime.setDate(startTime.getDate() + 1);
-    startTime.setHours(startHour, startMin, 0, 0);
-
-    const endTime = new Date(startTime);
-    if (endTotal >= startTotal) {
-      endTime.setHours(endHour, endMin, 0, 0);
-    } else {
-      // Overnight: end time is the day after start
-      endTime.setDate(endTime.getDate() + 1);
-      endTime.setHours(endHour, endMin, 0, 0);
-    }
-
-    return { startTime, endTime, dayOffset: 1 };
-  }
 }
 
 export const alarmService = new AlarmService();

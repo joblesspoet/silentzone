@@ -76,7 +76,7 @@ export const LogViewerScreen = ({ navigation }: any) => {
         </View>
         <Text style={styles.logMessage}>{item.message}</Text>
         {item.details && (
-            <Text style={styles.logDetails} numberOfLines={2}>{item.details}</Text>
+            <Text style={styles.logDetails}>{item.details}</Text>
         )}
     </View>
   );

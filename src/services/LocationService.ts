@@ -1027,6 +1027,13 @@ class LocationService {
 
       // --- SURGICAL LOGIC SELECTION ---
       
+      // --- SELF-HEALING TRIGGER (Trigger-time Healing) ---
+      // Every alarm (T-15, T-5, End) now acts as a safety check to seed tomorrow's slots
+      // if they are missing. This fixes the "Broken Chain" issue.
+      if (place.isEnabled) {
+        await alarmService.scheduleAlarmsForPlace(place);
+      }
+
       if (subType === 'notify') {
         Logger.info(`[Surgical] Pre-activation Notification check for ${place.name}`);
         
@@ -1080,7 +1087,6 @@ class LocationService {
         }
         
         await this.stopActivePrayerSession(placeId);
-        // Note: Rescheduling for tomorrow is now handled by the "Self-Healing Trigger" above
       }
       else {
         // Fallback for legacy alarms

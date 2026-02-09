@@ -13,6 +13,8 @@ import { crashHandler } from './src/utils/CrashHandler';
 crashHandler.initialize();
 
 const { locationService } = require('./src/services/LocationService');
+const { Logger } = require('./src/services/Logger');
+const { SettingsService } = require('./src/services/SettingsService');
 
 // ============================================================================
 // BUSINESS LOGIC: Alarm Processing State Management
@@ -106,6 +108,12 @@ const getRealm = async () => {
             schema: schemas,
             schemaVersion: SCHEMA_VERSION,
         });
+        
+        // --- INITIALIZE LOGGER FOR BACKGROUND ---
+        Logger.setRealm(realm);
+        const loggingEnabled = await SettingsService.getLoggingEnabled();
+        Logger.setEnabled(loggingEnabled);
+
         cachedRealm = realm;
         realmOpenPromise = null;
         return realm;
