@@ -30,87 +30,25 @@ class AlarmService {
 
     let alarmsScheduled = 0;
     const now = new Date();
-    const alarmIds: string[] = [];
+    const tomorrow = new Date(now.getTime() + 86400000);
+    
+    // Fetch once to minimize system bridge traffic
+    const triggerNotifications = await notifee.getTriggerNotifications();
+    const existingIds = new Set(triggerNotifications.map(tn => tn.notification.id));
+
+    Logger.info(`[AlarmService] Refreshing 48-hour alarm buffer for ${place.name} (found ${existingIds.size} existing triggers)`);
 
     // Loop through each user-defined schedule (e.g., 5 prayers)
     for (let i = 0; i < place.schedules.length; i++) {
-      const schedule = place.schedules[i];
-      const [startHour, startMin] = schedule.startTime.split(':').map(Number);
-      const [endHour, endMin] = schedule.endTime.split(':').map(Number);
-      
-      // Calculate next occurrence of this schedule
-      const nextOccurrence = this.getNextScheduleOccurrence(
-        now, startHour, startMin, endHour, endMin
-      );
-      
-      if (!nextOccurrence) {
-        Logger.info(`[AlarmService] Schedule ${i} for ${place.name} has no future occurrences`);
-        continue;
-      }
-      
-      const { startTime, endTime } = nextOccurrence;
-      const dayOffset = nextOccurrence.dayOffset;
-
-      // --- ALARM 1: MONITORING START (PRE_ACTIVATION_MINUTES before) ---
-      const preActivationMillis = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
-      const monitorTime = startTime.getTime() - preActivationMillis;
-
-      if (monitorTime > Date.now()) {
-          const monitorAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-monitor`;
-          await this.scheduleSingleAlarm(
-              monitorAlarmId,
-              monitorTime,
-              place.id,
-              ALARM_ACTIONS.START_MONITORING,
-              'Location Monitoring',
-              '', // suppressed body
-              { subType: 'notify', silent: 'true' }
-          );
-          alarmsScheduled++;
-          alarmIds.push(monitorAlarmId);
-      }
-
-      // --- ALARM 2: ACTIVATE SILENCE (Exact Start) ---
-      if (startTime.getTime() > Date.now()) {
-          const startAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-start`;
-          await this.scheduleSingleAlarm(
-              startAlarmId,
-              startTime.getTime(),
-              place.id,
-              ALARM_ACTIONS.START_SILENCE,
-              'Start Monitoring', // Unified Title
-              'Geofencing going to start', // Unified Body
-              { subType: 'monitor', prayerIndex: i, silent: 'true' }
-          );
-          alarmsScheduled++;
-          alarmIds.push(startAlarmId);
-      }
-
-      // --- ALARM 3: DEACTIVATE SILENCE (Exact End) ---
-      if (endTime.getTime() > Date.now()) {
-          const endAlarmId = `place-${place.id}-sched-${i}-day-${dayOffset}-type-end`;
-          await this.scheduleSingleAlarm(
-              endAlarmId,
-              endTime.getTime(),
-              place.id,
-              ALARM_ACTIONS.STOP_SILENCE,
-              'End Monitoring', // Unified Title
-              'Geofencing going to end', // Unified Body
-              { subType: 'cleanup', prayerIndex: i, silent: 'true' }
-          );
-          alarmsScheduled++;
-          alarmIds.push(endAlarmId);
-      }
+        // Seed Today
+        await this.schedulePrayerSurgically(place, i, now, existingIds);
+        // Seed Tomorrow
+        await this.schedulePrayerSurgically(place, i, tomorrow, existingIds);
     }
     
-    Logger.info(`[AlarmService] Scheduled ${alarmsScheduled} alarms for ${place.name}`);
-
-    // Verify alarms were actually scheduled
-    if (alarmsScheduled > 0) {
-      // Small delay to ensure system has processed the requests
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
-      await this.verifyScheduledAlarms(alarmIds);
-    }
+    // The original logic for scheduling individual alarms and verification is replaced by the surgical calls.
+    // The `alarmsScheduled` variable is no longer directly incremented here.
+    // The `verifyScheduledAlarms` call is also removed from here as surgical scheduling handles idempotency.
   }
 
   /**
@@ -123,9 +61,16 @@ class AlarmService {
       action: string,
       title: string, 
       body: string,
-      extraData?: object
+      extraData?: object,
+      existingIds?: Set<string | undefined>
   ) {
       try {
+        // --- CHECK-BEFORE-SET OPTIMIZATION ---
+        if (existingIds ? existingIds.has(id) : (await notifee.getTriggerNotifications()).some(tn => tn.notification.id === id)) {
+            // Suppress logs for redundant healing checks to keep console clean
+            return;
+        }
+
         const isSilent = (extraData as any)?.silent === 'true';
         
         await notifee.createTriggerNotification(
@@ -183,9 +128,15 @@ class AlarmService {
     // Cancel alarms for today (day-0) and tomorrow (day-1) for each schedule index
     for (let i = 0; i < scheduleCount; i++) {
         const types = ['monitor', 'start', 'end'];
+        // The IDs now use date string instead of dayOffset
+        const today = new Date();
+        const tomorrow = new Date(today.getTime() + 86400000);
+        const todayStr = today.toISOString().split('T')[0];
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
         for (const type of types) {
-             const idDay0 = `place-${placeId}-sched-${i}-day-0-type-${type}`;
-             const idDay1 = `place-${placeId}-sched-${i}-day-1-type-${type}`;
+             const idDay0 = `place-${placeId}-sched-${i}-date-${todayStr}-type-${type}`;
+             const idDay1 = `place-${placeId}-sched-${i}-date-${tomorrowStr}-type-${type}`;
              try { await notifee.cancelTriggerNotification(idDay0); } catch (e) {}
              try { await notifee.cancelTriggerNotification(idDay1); } catch (e) {}
         }
@@ -197,11 +148,11 @@ class AlarmService {
    * CANCEL surgical triggers for a specific prayer slot
    */
   async cancelPrayerSurgically(placeId: string, prayerIndex: number, date: Date) {
-    const dayOffset = this.isTomorrow(date) ? 1 : 0;
+    const dateStr = date.toISOString().split('T')[0];
     const types = ['monitor', 'start', 'end'];
     
     for (const type of types) {
-      const id = `place-${placeId}-sched-${prayerIndex}-day-${dayOffset}-type-${type}`;
+      const id = `place-${placeId}-sched-${prayerIndex}-date-${dateStr}-type-${type}`;
       try {
         await notifee.cancelTriggerNotification(id);
       } catch (e) {}
@@ -212,7 +163,7 @@ class AlarmService {
    * SCHEDULE surgical triggers for a specific prayer slot
    * Sets T-15 (Notify), T-5 (Monitor), and End-time (Cleanup)
    */
-  async schedulePrayerSurgically(place: any, prayerIndex: number, targetDate: Date) {
+  async schedulePrayerSurgically(place: any, prayerIndex: number, targetDate: Date, existingIds?: Set<string | undefined>) {
     const schedule = place.schedules[prayerIndex];
     if (!schedule) return;
 
@@ -233,24 +184,25 @@ class AlarmService {
       endTime.setDate(endTime.getDate() + 1);
     }
 
-    const dayOffset = this.isTomorrow(targetDate) ? 1 : 0;
+    const dateStr = targetDate.toISOString().split('T')[0]; // Use date string for ID
     const alarmBaseData = {
       placeId: place.id,
       prayerIndex,
-      dayOffset,
+      dateStr,
     };
 
     // --- TRIGGER 1: NOTIFY (T-15) ---
     const notifyTime = startTime.getTime() - (15 * 60 * 1000);
     if (notifyTime > Date.now()) {
       await this.scheduleSingleAlarm(
-        `place-${place.id}-sched-${prayerIndex}-day-${dayOffset}-type-monitor`,
+        `place-${place.id}-sched-${prayerIndex}-date-${dateStr}-type-monitor`,
         notifyTime,
         place.id,
         ALARM_ACTIONS.START_MONITORING,
         'Location Monitoring',
         '', // Suppress body
-        { ...alarmBaseData, subType: 'notify', silent: 'true' }
+        { ...alarmBaseData, subType: 'notify', silent: 'true' },
+        existingIds
       );
     }
 
@@ -258,26 +210,28 @@ class AlarmService {
     const monitorStartTime = startTime.getTime() - (5 * 60 * 1000);
     if (monitorStartTime > Date.now()) {
       await this.scheduleSingleAlarm(
-        `place-${place.id}-sched-${prayerIndex}-day-${dayOffset}-type-start`,
+        `place-${place.id}-sched-${prayerIndex}-date-${dateStr}-type-start`,
         monitorStartTime,
         place.id,
         ALARM_ACTIONS.START_SILENCE,
         'Start Monitoring', // Silent
         'Geofencing going to start', // Silent
-        { ...alarmBaseData, subType: 'monitor', silent: 'true' }
+        { ...alarmBaseData, subType: 'monitor', silent: 'true' },
+        existingIds
       );
     }
 
     // --- TRIGGER 3: END & HEAL (End Time) ---
     if (endTime.getTime() > Date.now()) {
       await this.scheduleSingleAlarm(
-        `place-${place.id}-sched-${prayerIndex}-day-${dayOffset}-type-end`,
+        `place-${place.id}-sched-${prayerIndex}-date-${dateStr}-type-end`,
         endTime.getTime(),
         place.id,
         ALARM_ACTIONS.STOP_SILENCE,
         'End Monitoring', // Silent
         'Geofencing going to end', // Silent
-        { ...alarmBaseData, subType: 'cleanup', silent: 'true' }
+        { ...alarmBaseData, subType: 'cleanup', silent: 'true' },
+        existingIds
       );
     }
 

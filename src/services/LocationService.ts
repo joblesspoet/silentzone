@@ -1028,9 +1028,9 @@ class LocationService {
       // --- SURGICAL LOGIC SELECTION ---
       
       if (subType === 'notify') {
-        Logger.info(`[Surgical] T-${CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES} Notify check for ${place.name}`);
+        Logger.info(`[Surgical] Pre-activation Notification check for ${place.name}`);
         
-        // Silent location check
+        // Only notify if user is distant (saving them from surprise silence)
         const location = await this.getQuickLocation();
         if (location) {
           const distance = LocationValidator.calculateDistance(
@@ -1040,8 +1040,8 @@ class LocationService {
             (place as any).longitude
           );
 
-          if (distance <= 2000) { // 2km threshold
-            Logger.info(`[Surgical] User is nearby (${Math.round(distance)}m), showing notification`);
+          if (distance > (place as any).radius + CONFIG.GEOFENCE_RADIUS_BUFFER) {
+            Logger.info(`[Surgical] User is far (${Math.round(distance)}m), sending pre-notification`);
             notificationBus.emit({
               type: 'SCHEDULE_APPROACHING',
               placeId,
@@ -1050,10 +1050,10 @@ class LocationService {
               source: 'alarm'
             });
           } else {
-            Logger.info(`[Surgical] User is far (${Math.round(distance)}m), skipping notification`);
+            Logger.info(`[Surgical] User is already close (${Math.round(distance)}m), skipping pre-notification`);
           }
         } else {
-          Logger.warn('[Surgical] Could not get location for T-15 check, skipping notification');
+          Logger.warn('[Surgical] Could not get location for T-15 check, skipping pre-notification');
         }
       } 
       else if (subType === 'monitor') {
@@ -1077,21 +1077,10 @@ class LocationService {
             timestamp: Date.now(),
             source: 'alarm'
           });
-        } else {
-          Logger.info(`[Surgical] Skipping cleanup notification (no active check-in for ${place.name})`);
         }
         
         await this.stopActivePrayerSession(placeId);
-        
-        // Surgical reschedule for tomorrow (ONLY if place is still enabled)
-        if (place.isEnabled) {
-          const tomorrow = new Date();
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          await alarmService.schedulePrayerSurgically(place, prayerIndex, tomorrow);
-          Logger.info(`[Surgical] Rescheduled ${place.name} (#${prayerIndex}) for tomorrow`);
-        } else {
-          Logger.info(`[Surgical] Skipping reschedule for ${place.name} - place is disabled`);
-        }
+        // Note: Rescheduling for tomorrow is now handled by the "Self-Healing Trigger" above
       }
       else {
         // Fallback for legacy alarms
