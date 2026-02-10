@@ -45,17 +45,20 @@ export class GPSManager {
     // Clear any existing watchers
     this.stopWatching();
 
+    // ✅ Add user feedback before waiting
+    Logger.info('[GPSManager] 📡 Acquiring GPS signal...');
+
     // Give time for foreground service to be ready
-    await new Promise<void>(resolve => setTimeout(() => resolve(), 2000));
+    await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
 
     const defaultConfig: GPSConfig = {
-      enableHighAccuracy: true,
-      distanceFilter: CONFIG.DISTANCE.VERY_CLOSE / 2,
-      interval: 10000,
-      fastestInterval: 5000,
-      showLocationDialog: false,
-      forceRequestLocation: true,
-      ...config,
+        enableHighAccuracy: true,
+        distanceFilter: CONFIG.DISTANCE.VERY_CLOSE / 2,
+        interval: 10000,
+        fastestInterval: 5000,
+        showLocationDialog: true, // ✅ Enable dialog
+        forceRequestLocation: true,
+        ...config,
     };
 
     Logger.info('[GPSManager] Starting location watcher');

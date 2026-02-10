@@ -19,6 +19,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { sortSchedules, validateLimit, findOverlappingSchedules, findInvalidTimeRanges, ScheduleSlot as UtilScheduleSlot } from '../utils/ScheduleUtils';
 import { PrayerTimeService, PrayerConfig } from '../services/PrayerTimeService';
 import { Modal } from 'react-native';
+import { Logger } from '../services/Logger';
+import { alarmService } from '../services/AlarmService';
 
 // Use shared interface or map to it
 interface ScheduleSlot extends UtilScheduleSlot {}
@@ -264,7 +266,8 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
     }
 
     try {
-      PlaceService.createPlace(realm, {
+      // ✅ createPlace returns the full place object, not just ID
+      const newPlace = PlaceService.createPlace(realm, {
         name: placeName.trim(),
         latitude: region.latitude,
         longitude: region.longitude,
@@ -273,16 +276,21 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         icon: selectedCategory.icon,
         isEnabled: isSilencingEnabled,
         schedules: sortSchedules(schedules).map(s => ({
-            startTime: s.startTime,
-            endTime: s.endTime,
-            days: s.days,
-            label: s.label
+          startTime: s.startTime,
+          endTime: s.endTime,
+          days: s.days,
+          label: s.label
         })),
       });
       
-      locationService.syncGeofences();
+      // ✅ NEW: Immediately schedule alarms for the new place
+      // No need to call getPlaceById - we already have the full object!
+      if (isSilencingEnabled && newPlace) {
+        await alarmService.scheduleAlarmsForPlace(newPlace, false);
+        Logger.info(`[AddPlace] ✅ Scheduled alarms for new place: ${placeName.trim()}`);
+      }
       
-      // CRITICAL: Immediately check if we are ALREADY inside the place we just added
+      locationService.syncGeofences();
       locationService.forceLocationCheck();
 
       const prefs = PreferencesService.getPreferences(realm);
@@ -290,11 +298,11 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         PreferencesService.updatePreferences(realm, { trackingEnabled: true });
       }
 
-      navigation.goBack();
-    } catch (error) {
-      console.error("Failed to save place:", error);
-      Alert.alert("Error", "Failed to save place. Please try again.");
-    }
+        navigation.goBack();
+      } catch (error) {
+        console.error("Failed to save place:", error);
+        Alert.alert("Error", "Failed to save place. Please try again.");
+      }
   };
 
   const getRadiusText = (r: number) => {

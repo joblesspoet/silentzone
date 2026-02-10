@@ -81,22 +81,7 @@ export class LocationValidator {
         (place as any).longitude
       );
       
-      // CRITICAL VALIDATION #1: Accuracy must be better than 50% of radius
-      // REMOVED: This was too strict for indoors (often 30-50m accuracy).
-      // The effectiveDistance check below (effective = distance - accuracy) 
-      // is robust enough to prevent fast-toggling while allowing "good enough" fixes.
-      /*
-      const requiredAccuracy = radius * 0.5;
       
-      if (location.accuracy > requiredAccuracy) {
-        Logger.warn(
-          `[Location] ⚠️ Skipping ${placeName}: ` +
-          `GPS accuracy too low (${Math.round(location.accuracy)}m > ` +
-          `required)`
-        );
-        continue;
-      }
-      */
       
       // CRITICAL CALCULATION #2: Account for GPS uncertainty
       // effectiveDistance = minimum possible distance (best case)

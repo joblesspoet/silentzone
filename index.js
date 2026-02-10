@@ -5,6 +5,7 @@
 
 import { AppRegistry } from 'react-native';
 import notifee, { EventType } from '@notifee/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import App from './App';
 import { name as appName } from './app.json';
 import { crashHandler } from './src/utils/CrashHandler';
@@ -25,7 +26,58 @@ const { SettingsService } = require('./src/services/SettingsService');
  * Key: alarmId, Value: timestamp when processed
  */
 const processedAlarms = new Map();
-const ALARM_DEBOUNCE_MS = 5000; // 5 seconds
+const ALARM_DEBOUNCE_MS = 6000; // 6 seconds
+
+// AsyncStorage key for persistent alarm tracking
+const PROCESSED_ALARMS_KEY = 'silentzone_processed_alarms';
+
+
+/**
+ * Load processed alarms from persistent storage
+ * Call this once at app startup
+ */
+const loadProcessedAlarmsFromStorage = async () => {
+  try {
+    const stored = await AsyncStorage.getItem(PROCESSED_ALARMS_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      const now = Date.now();
+      const cutoff = now - ALARM_DEBOUNCE_MS;
+      
+      // Only load recent entries (within debounce window)
+      for (const [id, timestamp] of Object.entries(parsed)) {
+        if (timestamp > cutoff) {
+          processedAlarms.set(id, timestamp);
+        }
+      }
+      console.log(`[AlarmDeduplicate] Loaded ${processedAlarms.size} recent alarms from storage`);
+    }
+  } catch (e) {
+    console.error('[AlarmDeduplicate] Failed to load from storage:', e);
+  }
+};
+
+/**
+ * Save processed alarms to persistent storage
+ */
+const saveProcessedAlarmsToStorage = async () => {
+  try {
+    const now = Date.now();
+    const cutoff = now - ALARM_DEBOUNCE_MS;
+    const toSave = {};
+    
+    // Only save recent entries
+    for (const [id, timestamp] of processedAlarms.entries()) {
+      if (timestamp > cutoff) {
+        toSave[id] = timestamp;
+      }
+    }
+    
+    await AsyncStorage.setItem(PROCESSED_ALARMS_KEY, JSON.stringify(toSave));
+  } catch (e) {
+    console.error('[AlarmDeduplicate] Failed to save to storage:', e);
+  }
+};
 
 /**
  * Tracks currently processing alarms to prevent concurrent processing
@@ -53,10 +105,13 @@ const isCurrentlyProcessing = (alarmId) => {
 /**
  * Mark alarm as processed and cleanup old entries
  */
-const markAlarmProcessed = (alarmId) => {
+const markAlarmProcessed = async (alarmId) => {
   processedAlarms.set(alarmId, Date.now());
   processingAlarms.delete(alarmId); // Remove from processing set
   
+  // Save to persistent storage
+  await saveProcessedAlarmsToStorage();
+
   // Cleanup old entries to prevent memory leak
   if (processedAlarms.size > 100) {
     const cutoff = Date.now() - ALARM_DEBOUNCE_MS * 2;
@@ -74,6 +129,9 @@ const markAlarmProcessed = (alarmId) => {
 const markAlarmProcessing = (alarmId) => {
   processingAlarms.add(alarmId);
 };
+
+// Load processed alarms at startup
+loadProcessedAlarmsFromStorage();
 
 // ============================================================================
 // BUSINESS LOGIC: Realm Instance Management
@@ -213,7 +271,7 @@ const handleAlarmEvent = async ({ type, detail }) => {
           notification: { id: notification.id, data: notification.data },
       });
       console.log('[AlarmHandler] ✅ Alarm handled successfully');
-      markAlarmProcessed(alarmId);
+      await markAlarmProcessed(alarmId); // Now async
   } catch (err) {
       console.error('[AlarmHandler] ❌ Error:', err);
       markAlarmProcessed(alarmId);

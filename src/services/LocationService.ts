@@ -41,6 +41,7 @@ class LocationService {
   // Concurrency control
   private isProcessingAlarm = false;
   private alarmQueue: any[] = [];
+    private isAlarmProcessing = false;  // Add this new flag
 
   // Optimization
   private lastTriggerTime: { [key: string]: number } = {};
@@ -58,6 +59,8 @@ class LocationService {
   // Service restart check
   private restartCheckInterval: ReturnType<typeof setInterval> | null = null;
 
+  private syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  
   /**
    * Initialize the location service
    */
@@ -94,13 +97,12 @@ class LocationService {
    * Sets up context without triggering global system resets or syncs.
    */
   async initializeLight(realmInstance: Realm) {
-    this.realm = realmInstance;
-    silentZoneManager.setRealm(realmInstance);
-    
-    // Set ready but SKIP full sync/restore tasks
-    this.isReady = true;
-    Logger.info('[LocationService] Light initialization complete (Background context)');
+  if (this.isReady && this.realm === realmInstance) {
+    return; // Already initialized
   }
+  this.realm = realmInstance;
+  this.isReady = true;
+}
 
   /**
    * CRITICAL: Restore runtime state from database
@@ -364,14 +366,23 @@ class LocationService {
     return prefs?.trackingEnabled ?? true;
   }
 
-  /**
-   * Set up reactive database listeners
-   */
-  private setupReactiveSync() {
-    if (!this.realm || this.realm.isClosed) return;
+  
 
-    const places = this.realm.objects('Place');
-    places.addListener((collection, changes) => {
+/**
+ * Set up reactive database listeners
+ */
+private setupReactiveSync() {
+  if (!this.realm || this.realm.isClosed) return;
+
+  const places = this.realm.objects('Place');
+  places.addListener((collection, changes) => {
+    // Debounce rapid changes
+    if (this.syncDebounceTimer) {
+      clearTimeout(this.syncDebounceTimer);
+    }
+    
+    // Move ALL the logic INSIDE the debounce timer
+    this.syncDebounceTimer = setTimeout(() => {
       (async () => {
         try {
           if (
@@ -393,7 +404,6 @@ class LocationService {
                 });
 
                 setTimeout(async () => {
-                  // Auto-enable doesn't need to reset alarms - place changes handle that
                   await this.syncGeofences(false);
                   await this.safetyCheckMonitoring();
                 }, 300);
@@ -416,12 +426,12 @@ class LocationService {
             // Extract IDs of inserted and modified places for targeted alarm sync
             const affectedIds: string[] = [];
             changes.insertions.forEach(index => {
-                const place = collection[index] as any;
-                if (place?.id) affectedIds.push(place.id);
+              const place = collection[index] as any;
+              if (place?.id) affectedIds.push(place.id);
             });
             changes.newModifications.forEach(index => {
-                const place = collection[index] as any;
-                if (place?.id) affectedIds.push(place.id);
+              const place = collection[index] as any;
+              if (place?.id) affectedIds.push(place.id);
             });
 
             await this.syncGeofences(false, affectedIds);
@@ -431,32 +441,42 @@ class LocationService {
           Logger.error('[LocationService] Reactive sync failed:', error);
         }
       })();
-    });
+    }, 500); // 500ms debounce
+  });
 
-    // Listen for CheckInLog changes
-    const checkIns = this.realm.objects('CheckInLog');
-    checkIns.addListener((collection, changes) => {
+  // Listen for CheckInLog changes (also add debounce here)
+  const checkIns = this.realm.objects('CheckInLog');
+  checkIns.addListener((collection, changes) => {
+    if (this.syncDebounceTimer) {
+      clearTimeout(this.syncDebounceTimer);
+    }
+    this.syncDebounceTimer = setTimeout(() => {
       (async () => {
         if (changes.insertions.length > 0 || changes.deletions.length > 0) {
           Logger.info('[LocationService] CheckIns changed, updating notification');
           await this.startForegroundService();
         }
       })();
-    });
+    }, 500);
+  });
 
-    // Listen for preferences changes
-    const prefs = this.realm.objectForPrimaryKey<Preferences>('Preferences', 'USER_PREFS');
-    if (prefs) {
-      prefs.addListener(() => {
+  // Listen for preferences changes (also add debounce here)
+  const prefs = this.realm.objectForPrimaryKey<Preferences>('Preferences', 'USER_PREFS');
+  if (prefs) {
+    prefs.addListener(() => {
+      if (this.syncDebounceTimer) {
+        clearTimeout(this.syncDebounceTimer);
+      }
+      this.syncDebounceTimer = setTimeout(() => {
         (async () => {
           Logger.info('[LocationService] Preferences changed, syncing');
-          // Don't force alarm reset on preference changes - only sync geofences
           await this.syncGeofences(false);
           await this.safetyCheckMonitoring();
         })();
-      });
-    }
+      }, 500);
+    });
   }
+}
 
   /**
    * Safety check: Ensure monitoring is active if needed
@@ -481,6 +501,12 @@ class LocationService {
    */
   async syncGeofences(forceAlarmSync: boolean = false, specificPlaceIds?: string[]) {
     if (!this.realm || this.realm.isClosed || this.isSyncing) return;
+
+    // Skip if alarm is currently being processed (will be handled after alarm completes)
+    if (this.isAlarmProcessing && !forceAlarmSync) {
+      Logger.info('[LocationService] Skipping sync - alarm processing in progress');
+      return;
+    }
 
     this.isSyncing = true;
 
@@ -582,17 +608,29 @@ class LocationService {
         await this.startForegroundService();
         this.geofencesActive = true;
 
-        // Condition-based alarm sync (Targeted or Global)
+        // ✅ SMART ALARM SCHEDULING:
+        // - specificPlaceIds: Reset alarms for specific places (update scenario)
+        // - forceAlarmSync: Reset alarms for all places (global sync)
+        // - Neither: Verify/fill gaps for all places (normal operation)
+        
         if (specificPlaceIds && specificPlaceIds.length > 0) {
-            Logger.info(`[LocationService] Syncing alarms for specific places: ${specificPlaceIds.join(', ')}`);
+            // UPDATE scenario: Force reset for specific places
+            Logger.info(`[LocationService] Resetting alarms for updated places: ${specificPlaceIds.join(', ')}`);
             for (const id of specificPlaceIds) {
                 const place = enabledPlaces.find((p: any) => p.id === id);
-                if (place) await alarmService.scheduleAlarmsForPlace(place);
+                if (place) await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
             }
         } else if (forceAlarmSync) {
-            Logger.info('[LocationService] Forcing global alarm sync for all enabled places');
+            // GLOBAL RESET scenario: Force reset for all enabled places
+            Logger.info('[LocationService] Forcing global alarm reset for all enabled places');
             for (const place of enabledPlaces) {
-                await alarmService.scheduleAlarmsForPlace(place);
+                await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
+            }
+        } else {
+            // NORMAL scenario: Just verify/fill gaps (don't reset existing)
+            Logger.info('[LocationService] Verifying alarms for all enabled places (no reset)');
+            for (const place of enabledPlaces) {
+                await alarmService.scheduleAlarmsForPlace(place, false); // ✅ forceReset = false
             }
         }
 
@@ -618,17 +656,25 @@ class LocationService {
           this.geofencesActive = false;
         }
 
-        // Condition-based alarm sync (Targeted or Global)
+        // ✅ SMART ALARM SCHEDULING (Passive Mode):
         if (specificPlaceIds && specificPlaceIds.length > 0) {
-            Logger.info(`[LocationService] Syncing alarms (passive) for specific places: ${specificPlaceIds.join(', ')}`);
+            // UPDATE scenario: Force reset for specific places
+            Logger.info(`[LocationService] Resetting alarms (passive) for updated places: ${specificPlaceIds.join(', ')}`);
             for (const id of specificPlaceIds) {
                 const place = enabledPlaces.find((p: any) => p.id === id);
-                if (place) await alarmService.scheduleAlarmsForPlace(place);
+                if (place) await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
             }
         } else if (forceAlarmSync) {
-            Logger.info('[LocationService] Forcing global (passive) alarm sync');
+            // GLOBAL RESET scenario: Force reset all
+            Logger.info('[LocationService] Forcing global alarm reset (passive)');
             for (const place of enabledPlaces) {
-                await alarmService.scheduleAlarmsForPlace(place);
+                await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
+            }
+        } else {
+            // NORMAL scenario: Just verify/fill gaps
+            Logger.info('[LocationService] Verifying alarms (passive) for all enabled places');
+            for (const place of enabledPlaces) {
+                await alarmService.scheduleAlarmsForPlace(place, false); // ✅ forceReset = false
             }
         }
       }
@@ -984,6 +1030,7 @@ class LocationService {
     }
 
     this.isProcessingAlarm = true;
+    this.isAlarmProcessing = true;  // Set the guard flag
 
     try {
       const now = Date.now();
@@ -1030,8 +1077,8 @@ class LocationService {
       // --- SELF-HEALING TRIGGER (Trigger-time Healing) ---
       // Every alarm (T-15, T-5, End) now acts as a safety check to seed tomorrow's slots
       // if they are missing. This fixes the "Broken Chain" issue.
-      if (place.isEnabled) {
-        await alarmService.scheduleAlarmsForPlace(place);
+      if (place.isEnabled && subType === 'cleanup') {
+        await alarmService.scheduleAlarmsForPlace(place, false); // false = don't force reset
       }
 
       if (subType === 'notify') {
@@ -1104,6 +1151,7 @@ class LocationService {
       Logger.error('[LocationService] Error processing alarm:', error);
     } finally {
       this.isProcessingAlarm = false;
+      this.isAlarmProcessing = false;  // Clear the guard flag
 
       const queue = this.alarmQueue as any[];
       if (queue.length > 0) {

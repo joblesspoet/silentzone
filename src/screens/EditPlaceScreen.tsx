@@ -324,7 +324,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
       });
 
       if (success) {
-              await locationService.syncGeofences();
+              await locationService.syncGeofences(false, [placeId]);
               
               const prefs = PreferencesService.getPreferences(realm);
               if (isEnabled && prefs && !(prefs as any).trackingEnabled) {

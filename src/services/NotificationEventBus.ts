@@ -24,7 +24,7 @@ export interface NotificationEvent {
  */
 class NotificationEventBus {
   private recentEvents: Map<string, number> = new Map();
-  private readonly DEDUPE_WINDOW_MS = 60000; // 60 seconds (Increased from 30s)
+  private readonly DEDUPE_WINDOW_MS = 180000; // 3 minutes (increased from 60 seconds to reduce spam)
 
   /**
    * Emit a notification event

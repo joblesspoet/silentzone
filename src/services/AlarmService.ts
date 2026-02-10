@@ -1,4 +1,3 @@
-
 import notifee, {
   AndroidImportance,
   TriggerType,
@@ -17,42 +16,49 @@ export const ALARM_ACTIONS = {
 class AlarmService {
   /**
    * Schedule individual alarms for all schedules in a place (Next occurrence only)
-   * Optimized to schedule only the next upcoming occurrence for each schedule
+   * SMART MODE: Only creates missing alarms, doesn't reset existing ones unless forced
+   * 
+   * @param place - The place object with schedules
+   * @param forceReset - If true, cancels all existing alarms and recreates them (for updates)
+   *                     If false, only creates missing alarms (for new places or boot restore)
    */
-  async scheduleAlarmsForPlace(place: any) {
-    // CRITICAL: Always cancel existing alarms first to ensure clean state
-    await this.cancelAlarmsForPlace(place.id);
-
+  async scheduleAlarmsForPlace(place: any, forceReset: boolean = false) {
     if (!place.schedules || place.schedules.length === 0) {
       Logger.info(`[AlarmService] No schedules for ${place.name}, skipping alarm setup`);
       return;
     }
 
-    let alarmsScheduled = 0;
+    // Step 1: Fetch existing alarms FIRST (before any cancellation)
+    const triggerNotifications = await notifee.getTriggerNotifications();
+    const existingIds = new Set(triggerNotifications.map(tn => tn.notification.id));
+    
+    // Step 2: Only cancel if forced (e.g., place update/delete)
+    if (forceReset) {
+      await this.cancelAlarmsForPlace(place.id);
+      existingIds.clear(); // Clear the set since we just deleted everything
+      Logger.info(`[AlarmService] 🔄 Force reset alarms for ${place.name}`);
+    }
+
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 86400000);
     
-    // Fetch once to minimize system bridge traffic
-    const triggerNotifications = await notifee.getTriggerNotifications();
-    const existingIds = new Set(triggerNotifications.map(tn => tn.notification.id));
+    Logger.info(
+      `[AlarmService] ${forceReset ? 'Creating' : 'Verifying'} 48-hour alarm buffer for ${place.name} ` +
+      `(${existingIds.size} existing triggers)`
+    );
 
-    Logger.info(`[AlarmService] Refreshing 48-hour alarm buffer for ${place.name} (found ${existingIds.size} existing triggers)`);
-
-    // Loop through each user-defined schedule (e.g., 5 prayers)
+    // Step 3: Surgically schedule (will skip existing IDs via check-before-set)
     for (let i = 0; i < place.schedules.length; i++) {
-        // Seed Today
-        await this.schedulePrayerSurgically(place, i, now, existingIds);
-        // Seed Tomorrow
-        await this.schedulePrayerSurgically(place, i, tomorrow, existingIds);
+      await this.schedulePrayerSurgically(place, i, now, existingIds);
+      await this.schedulePrayerSurgically(place, i, tomorrow, existingIds);
     }
     
-    // The original logic for scheduling individual alarms and verification is replaced by the surgical calls.
-    // The `alarmsScheduled` variable is no longer directly incremented here.
-    // The `verifyScheduledAlarms` call is also removed from here as surgical scheduling handles idempotency.
+    Logger.info(`[AlarmService] ✅ Alarm scheduling complete for ${place.name}`);
   }
 
-  /**
+    /**
    * Helper to schedule a single alarm
+   * IDEMPOTENT: Calling this multiple times with the same ID will overwrite, not duplicate
    */
   async scheduleSingleAlarm(
       id: string, 
@@ -65,13 +71,10 @@ class AlarmService {
       existingIds?: Set<string | undefined>
   ) {
       try {
-        // --- CHECK-BEFORE-SET OPTIMIZATION ---
-        // If we have a cached set of IDs, check against it first
-        if (existingIds && existingIds.has(id)) {
-            // Logger.info(`[AlarmService] Skipping ${id} - Already set`);
-            return;
-        }
-
+        // IDEMPOTENT: Always call createTriggerNotification - it will OVERWRITE existing
+        // Removing the check-before-set optimization prevents race conditions
+        // when scheduleAlarmsForPlace is called multiple times rapidly
+        
         const isSilent = (extraData as any)?.silent === 'true';
         
         await notifee.createTriggerNotification(
@@ -87,20 +90,19 @@ class AlarmService {
             },
             android: {
               channelId: CONFIG.CHANNELS.ALERTS,
-              importance: AndroidImportance.DEFAULT, // BUMP to ensure background handling
+              importance: AndroidImportance.DEFAULT,
               category: AndroidCategory.ALARM,
               groupId: 'com.qybirx.silentzone.group',
               smallIcon: 'ic_launcher',
               largeIcon: 'ic_launcher',
               color: '#8B5CF6',
-              autoCancel: true, // Allow user to dismiss
-              ongoing: false,   // Don't pin it
+              autoCancel: true,
+              ongoing: false,
               loopSound: false,
               pressAction: {
                 id: 'default',
                 launchActivity: 'default',
               },
-              // CRITICAL: Full screen intent ensures app wakes up even when killed
               fullScreenAction: {
                 id: 'default',
                 launchActivity: 'default',
@@ -188,7 +190,7 @@ class AlarmService {
       dateStr,
     };
 
-    // --- TRIGGER 1: NOTIFY (T-15) ---
+    // --- TRIGGER 1: NOTIFY (T-15) - SILENT SYSTEM TRIGGER ---
     const notifyTime = startTime.getTime() - (15 * 60 * 1000);
     if (notifyTime > Date.now()) {
       await this.scheduleSingleAlarm(
@@ -196,14 +198,14 @@ class AlarmService {
         notifyTime,
         place.id,
         ALARM_ACTIONS.START_MONITORING,
-        'Location Monitoring',
-        '', // Suppress body
+        '', // Empty - system only, user shouldn't see this
+        '', // Empty - system only
         { ...alarmBaseData, subType: 'notify', silent: 'true' },
         existingIds
       );
     }
 
-    // --- TRIGGER 2: MONITOR START (T-5) ---
+    // --- TRIGGER 2: MONITOR START (T-5) - SILENT SYSTEM TRIGGER ---
     const monitorStartTime = startTime.getTime() - (5 * 60 * 1000);
     if (monitorStartTime > Date.now()) {
       await this.scheduleSingleAlarm(
@@ -211,22 +213,22 @@ class AlarmService {
         monitorStartTime,
         place.id,
         ALARM_ACTIONS.START_SILENCE,
-        'Start Monitoring', // Silent
-        'Geofencing going to start', // Silent
+        '', // Empty - system only
+        '', // Empty - system only
         { ...alarmBaseData, subType: 'monitor', silent: 'true' },
         existingIds
       );
     }
 
-    // --- TRIGGER 3: END & HEAL (End Time) ---
+    // --- TRIGGER 3: END & HEAL (End Time) - SILENT SYSTEM TRIGGER ---
     if (endTime.getTime() > Date.now()) {
       await this.scheduleSingleAlarm(
         `place-${place.id}-sched-${prayerIndex}-date-${dateStr}-type-end`,
         endTime.getTime(),
         place.id,
         ALARM_ACTIONS.STOP_SILENCE,
-        'End Monitoring', // Silent
-        'Geofencing going to end', // Silent
+        '', // Empty - system only
+        '', // Empty - system only
         { ...alarmBaseData, subType: 'cleanup', silent: 'true' },
         existingIds
       );
@@ -237,28 +239,26 @@ class AlarmService {
 
   /**
    * GAP-FILLING RESTORE (For Reboots)
-   * Only sets what is needed based on current time.
+   * Only fills missing alarms, doesn't reset existing ones
    */
   async restoreGapsOnBoot(places: any[]) {
-  if (places.length === 0) return;
-  
-  try {
-    const existingNotifications = await notifee.getTriggerNotifications();
-    const existingIds = new Set(existingNotifications.map(tn => tn.notification.id));
+    if (places.length === 0) return;
     
-    Logger.info(`[AlarmService] Gap-filling restore: Found ${existingIds.size} existing triggers`);
-    const now = new Date();
-
-    for (const place of places) {
-      if (!place.isEnabled || !place.schedules) continue;
-
-      // scheduleAlarmsForPlace now handles 48-hour buffer and exists checks efficiently
-      await this.scheduleAlarmsForPlace(place);
+    try {
+      Logger.info(`[AlarmService] 🔧 Gap-filling restore for ${places.length} places`);
+      
+      for (const place of places) {
+        if (!place.isEnabled || !place.schedules) continue;
+        
+        // ✅ Pass false to NOT reset existing alarms (only fill gaps)
+        await this.scheduleAlarmsForPlace(place, false);
+      }
+      
+      Logger.info(`[AlarmService] ✅ Gap-filling complete`);
+    } catch (error) {
+      Logger.error('[AlarmService] Gap-filling failed:', error);
     }
-  } catch (error) {
-    Logger.error('[AlarmService] Gap-filling failed:', error);
   }
-}
 
   private isTomorrow(date: Date): boolean {
     const tomorrow = new Date();
