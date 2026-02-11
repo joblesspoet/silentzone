@@ -56,9 +56,9 @@ class AlarmService {
     Logger.info(`[AlarmService] ✅ Alarm scheduling complete for ${place.name}`);
   }
 
-    /**
+  /**
    * Helper to schedule a single alarm
-   * IDEMPOTENT: Calling this multiple times with the same ID will overwrite, not duplicate
+   * NOTE: Caller must check if alarm exists before calling
    */
   async scheduleSingleAlarm(
       id: string, 
@@ -68,13 +68,9 @@ class AlarmService {
       title: string, 
       body: string,
       extraData?: object,
-      existingIds?: Set<string | undefined>
+      existingIds?: Set<string | undefined>  // Kept for compatibility but not used internally
   ) {
       try {
-        // IDEMPOTENT: Always call createTriggerNotification - it will OVERWRITE existing
-        // Removing the check-before-set optimization prevents race conditions
-        // when scheduleAlarmsForPlace is called multiple times rapidly
-        
         const isSilent = (extraData as any)?.silent === 'true';
         
         await notifee.createTriggerNotification(
@@ -83,7 +79,7 @@ class AlarmService {
             title,
             body,
             data: {
-              action, // START_MONITORING or START_SILENCE or STOP_SILENCE
+              action,
               placeId,
               scheduledTime: new Date(timestamp).toISOString(),
               ...extraData
@@ -118,7 +114,7 @@ class AlarmService {
             },
           }
         );
-        Logger.info(`[AlarmService] ✅ Alarm set: ${action} @ ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})${isSilent ? ' [SILENT]' : ''}`);
+        Logger.info(`[AlarmService] ✅ Created: ${action} @ ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})${isSilent ? ' [SILENT]' : ''}`);
       } catch (error) {
         Logger.error(`[AlarmService] Failed to schedule alarm ${id}:`, error);
       }
@@ -158,83 +154,100 @@ class AlarmService {
     }
   }
 
-  /**
-   * SCHEDULE surgical triggers for a specific prayer slot
-   * Sets T-15 (Notify), T-5 (Monitor), and End-time (Cleanup)
+    /**
+   * Surgically schedule alarms for a specific prayer time
+   * SMART: Skips if alarm already exists (unless forceReset was used)
    */
-  async schedulePrayerSurgically(place: any, prayerIndex: number, targetDate: Date, existingIds?: Set<string | undefined>) {
-    const schedule = place.schedules[prayerIndex];
+  private async schedulePrayerSurgically(
+    place: any, 
+    scheduleIndex: number, 
+    baseDate: Date,
+    existingIds: Set<string | undefined>
+  ) {
+    const schedule = place.schedules[scheduleIndex];
     if (!schedule) return;
 
     const [startHour, startMin] = schedule.startTime.split(':').map(Number);
     const [endHour, endMin] = schedule.endTime.split(':').map(Number);
 
-    // 1. Calculate the exact times for THIS target date
-    const startTime = new Date(targetDate);
+    const startTime = new Date(baseDate);
     startTime.setHours(startHour, startMin, 0, 0);
 
     const endTime = new Date(startTime);
-    // If end time is before start time, it's an overnight schedule (e.g. 23:00 to 01:00)
     const endTotal = endHour * 60 + endMin;
     const startTotal = startHour * 60 + startMin;
-    
     endTime.setHours(endHour, endMin, 0, 0);
     if (endTotal < startTotal) {
       endTime.setDate(endTime.getDate() + 1);
     }
 
-    const dateStr = targetDate.toISOString().split('T')[0]; // Use date string for ID
+    const dateStr = baseDate.toISOString().split('T')[0];
     const alarmBaseData = {
       placeId: place.id,
-      prayerIndex,
-      dateStr,
+      prayerIndex: scheduleIndex,
     };
 
-    // --- TRIGGER 1: NOTIFY (T-15) - SILENT SYSTEM TRIGGER ---
+    // --- TRIGGER 1: NOTIFY (T-15) ---
     const notifyTime = startTime.getTime() - (15 * 60 * 1000);
+    const notifyId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-monitor`;
     if (notifyTime > Date.now()) {
-      await this.scheduleSingleAlarm(
-        `place-${place.id}-sched-${prayerIndex}-date-${dateStr}-type-monitor`,
-        notifyTime,
-        place.id,
-        ALARM_ACTIONS.START_MONITORING,
-        '', // Empty - system only, user shouldn't see this
-        '', // Empty - system only
-        { ...alarmBaseData, subType: 'notify', silent: 'true' },
-        existingIds
-      );
+      // ✅ CHECK BEFORE SET - Skip if exists
+      if (existingIds.has(notifyId)) {
+        // Logger.info(`[AlarmService] ⏭️ Skipping ${notifyId} - already exists`);
+      } else {
+        await this.scheduleSingleAlarm(
+          notifyId,
+          notifyTime,
+          place.id,
+          ALARM_ACTIONS.START_MONITORING,
+          '',
+          '',
+          { ...alarmBaseData, dateStr, subType: 'notify', silent: 'true' },
+          existingIds
+        );
+      }
     }
 
-    // --- TRIGGER 2: MONITOR START (T-5) - SILENT SYSTEM TRIGGER ---
+    // --- TRIGGER 2: MONITOR START (T-5) ---
     const monitorStartTime = startTime.getTime() - (5 * 60 * 1000);
+    const startId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-start`;
     if (monitorStartTime > Date.now()) {
-      await this.scheduleSingleAlarm(
-        `place-${place.id}-sched-${prayerIndex}-date-${dateStr}-type-start`,
-        monitorStartTime,
-        place.id,
-        ALARM_ACTIONS.START_SILENCE,
-        '', // Empty - system only
-        '', // Empty - system only
-        { ...alarmBaseData, subType: 'monitor', silent: 'true' },
-        existingIds
-      );
+      // ✅ CHECK BEFORE SET - Skip if exists
+      if (existingIds.has(startId)) {
+        // Logger.info(`[AlarmService] ⏭️ Skipping ${startId} - already exists`);
+      } else {
+        await this.scheduleSingleAlarm(
+          startId,
+          monitorStartTime,
+          place.id,
+          ALARM_ACTIONS.START_SILENCE,
+          '',
+          '',
+          { ...alarmBaseData, dateStr, subType: 'monitor', silent: 'true' },
+          existingIds
+        );
+      }
     }
 
-    // --- TRIGGER 3: END & HEAL (End Time) - SILENT SYSTEM TRIGGER ---
+    // --- TRIGGER 3: END & HEAL (End Time) ---
+    const endId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-end`;
     if (endTime.getTime() > Date.now()) {
-      await this.scheduleSingleAlarm(
-        `place-${place.id}-sched-${prayerIndex}-date-${dateStr}-type-end`,
-        endTime.getTime(),
-        place.id,
-        ALARM_ACTIONS.STOP_SILENCE,
-        '', // Empty - system only
-        '', // Empty - system only
-        { ...alarmBaseData, subType: 'cleanup', silent: 'true' },
-        existingIds
-      );
+      // ✅ CHECK BEFORE SET - Skip if exists
+      if (existingIds.has(endId)) {
+        // Logger.info(`[AlarmService] ⏭️ Skipping ${endId} - already exists`);
+      } else {
+        await this.scheduleSingleAlarm(
+          endId,
+          endTime.getTime(),
+          place.id,
+          ALARM_ACTIONS.STOP_SILENCE,
+          '',
+          '',
+          { ...alarmBaseData, dateStr, subType: 'cleanup', silent: 'true' },
+          existingIds
+        );
+      }
     }
-
-    Logger.info(`[AlarmService] Surgical setup for ${place.name} (interval #${prayerIndex}) for ${targetDate.toLocaleDateString()}`);
   }
 
   /**

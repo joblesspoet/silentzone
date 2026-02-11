@@ -374,75 +374,6 @@ class LocationService {
 private setupReactiveSync() {
   if (!this.realm || this.realm.isClosed) return;
 
-  const places = this.realm.objects('Place');
-  places.addListener((collection, changes) => {
-    // Debounce rapid changes
-    if (this.syncDebounceTimer) {
-      clearTimeout(this.syncDebounceTimer);
-    }
-    
-    // Move ALL the logic INSIDE the debounce timer
-    this.syncDebounceTimer = setTimeout(() => {
-      (async () => {
-        try {
-          if (
-            changes.insertions.length > 0 ||
-            changes.deletions.length > 0 ||
-            changes.newModifications.length > 0
-          ) {
-            Logger.info('[LocationService] Places changed, syncing');
-
-            const enabledPlaces = Array.from(collection).filter((p: any) => p.isEnabled);
-
-            // Auto-enable tracking if places added
-            if (enabledPlaces.length > 0) {
-              const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
-              if (prefs && !prefs.trackingEnabled) {
-                Logger.info('[LocationService] Auto-enabling tracking (places added)');
-                this.realm!.write(() => {
-                  prefs.trackingEnabled = true;
-                });
-
-                setTimeout(async () => {
-                  await this.syncGeofences(false);
-                  await this.safetyCheckMonitoring();
-                }, 300);
-
-                return;
-              }
-            }
-
-            // Auto-disable tracking if no enabled places
-            if (enabledPlaces.length === 0) {
-              const prefs = this.realm!.objectForPrimaryKey('Preferences', 'USER_PREFS') as any;
-              if (prefs && prefs.trackingEnabled) {
-                Logger.info('[LocationService] Auto-disabling tracking (no enabled places)');
-                this.realm!.write(() => {
-                  prefs.trackingEnabled = false;
-                });
-              }
-            }
-
-            // Extract IDs of inserted and modified places for targeted alarm sync
-            const affectedIds: string[] = [];
-            changes.insertions.forEach(index => {
-              const place = collection[index] as any;
-              if (place?.id) affectedIds.push(place.id);
-            });
-            changes.newModifications.forEach(index => {
-              const place = collection[index] as any;
-              if (place?.id) affectedIds.push(place.id);
-            });
-
-            await this.syncGeofences(false, affectedIds);
-            await this.safetyCheckMonitoring();
-          }
-        } catch (error) {
-          Logger.error('[LocationService] Reactive sync failed:', error);
-        }
-      })();
-    }, 500); // 500ms debounce
-  });
 
   // Listen for CheckInLog changes (also add debounce here)
   const checkIns = this.realm.objects('CheckInLog');
@@ -609,26 +540,32 @@ private setupReactiveSync() {
         this.geofencesActive = true;
 
         // ✅ SMART ALARM SCHEDULING:
-        // - specificPlaceIds: Reset alarms for specific places (update scenario)
-        // - forceAlarmSync: Reset alarms for all places (global sync)
-        // - Neither: Verify/fill gaps for all places (normal operation)
-        
-        if (specificPlaceIds && specificPlaceIds.length > 0) {
-            // UPDATE scenario: Force reset for specific places
-            Logger.info(`[LocationService] Resetting alarms for updated places: ${specificPlaceIds.join(', ')}`);
-            for (const id of specificPlaceIds) {
-                const place = enabledPlaces.find((p: any) => p.id === id);
-                if (place) await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
-            }
-        } else if (forceAlarmSync) {
+        // - specificPlaceIds: Reset alarms for specific places (update scenario - force reset)
+        // - forceAlarmSync: Reset alarms for all places (global reset - force reset)
+        // - Neither: Only create missing alarms (normal operation - NO reset)
+       
+        // commented on Feb 11-02-2026 
+              // 
+              // this block only focus on forcealramsync
+              //if (specificPlaceIds && specificPlaceIds.length > 0) {
+              //    // UPDATE scenario: Force reset for specific places (schedules changed)
+              //    Logger.info(`[LocationService] Resetting alarms for updated places: ${specificPlaceIds.join(', ')}`);
+              //    for (const id of specificPlaceIds) {
+              //        const place = enabledPlaces.find((p: any) => p.id === id);
+              //        if (place) await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
+              //    }
+              //} else 
+        // end of comment feb 11-02-2026
+
+          if (forceAlarmSync) {
             // GLOBAL RESET scenario: Force reset for all enabled places
             Logger.info('[LocationService] Forcing global alarm reset for all enabled places');
             for (const place of enabledPlaces) {
                 await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
             }
         } else {
-            // NORMAL scenario: Just verify/fill gaps (don't reset existing)
-            Logger.info('[LocationService] Verifying alarms for all enabled places (no reset)');
+            // NORMAL scenario: Only create missing alarms (smart mode - NO reset)
+            Logger.info('[LocationService] Smart scheduling: checking for missing alarms');
             for (const place of enabledPlaces) {
                 await alarmService.scheduleAlarmsForPlace(place, false); // ✅ forceReset = false
             }
@@ -1073,13 +1010,6 @@ private setupReactiveSync() {
       }
 
       // --- SURGICAL LOGIC SELECTION ---
-      
-      // --- SELF-HEALING TRIGGER (Trigger-time Healing) ---
-      // Every alarm (T-15, T-5, End) now acts as a safety check to seed tomorrow's slots
-      // if they are missing. This fixes the "Broken Chain" issue.
-      if (place.isEnabled && subType === 'cleanup') {
-        await alarmService.scheduleAlarmsForPlace(place, false); // false = don't force reset
-      }
 
       if (subType === 'notify') {
         Logger.info(`[Surgical] Pre-activation Notification check for ${place.name}`);
@@ -1139,11 +1069,11 @@ private setupReactiveSync() {
         // Fallback for legacy alarms
         Logger.info(`[LocationService] Legacy alarm action: ${action}`);
         if (action === ALARM_ACTIONS.STOP_SILENCE) {
-          await this.handleGeofenceExit(placeId, true);
-        } else {
-          // If it's a legacy start alarm, we still need sync for now
-          await this.syncGeofences(true);
-        }
+  await this.handleGeofenceExit(placeId, true);
+} else {
+  // Legacy start alarm - only sync geofences, don't reset alarms
+  await this.syncGeofences(false);  // ✅ Smart mode - no alarm reset
+}
       }
 
       Logger.info(`[LocationService] Alarm ${alarmId} processed successfully`);
@@ -1218,9 +1148,9 @@ private setupReactiveSync() {
       Logger.info(`[LocationService] Auto-stop scheduled in ${Math.round(stopDelay / 60000)}m`);
 
       this.timerManager.schedule('auto-stop', stopDelay, async () => {
-        Logger.info('[LocationService] Schedule ended - stopping monitoring');
-        await this.syncGeofences();
-      });
+  Logger.info('[LocationService] Schedule ended - stopping monitoring');
+  await this.syncGeofences(false);  // ✅ Explicit: smart mode, no alarm reset
+});
     }
   }
 
@@ -1517,7 +1447,7 @@ private setupReactiveSync() {
     this.timerManager.schedule(`end-${placeId}`, delay, async () => {
       Logger.info(`[LocationService] End time arrived for 24/7 place ${placeId}`);
       await this.handleGeofenceExit(placeId, true);
-      await this.syncGeofences();
+      await this.syncGeofences(false);  // ✅ Explicit: smart mode
     });
   }
 
