@@ -11,7 +11,6 @@ import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
 import { PreferencesService } from '../database/services/PreferencesService';
 import { PermissionsManager } from '../permissions/PermissionsManager';
-import { usePermissions } from '../permissions/PermissionsContext';
 import { RESULTS } from 'react-native-permissions';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { locationService } from '../services/LocationService';
@@ -22,6 +21,8 @@ import { Modal } from 'react-native';
 import { Logger } from '../services/Logger';
 import { alarmService } from '../services/AlarmService';
 
+
+
 // Use shared interface or map to it
 interface ScheduleSlot extends UtilScheduleSlot {}
 
@@ -29,7 +30,6 @@ interface Props {
   navigation: any;
 }
 
-const { width } = Dimensions.get('window');
 
 // Default location (San Francisco)
 const DEFAULT_REGION = {
@@ -41,17 +41,22 @@ const DEFAULT_REGION = {
 
 export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
-  const { locationStatus, backgroundLocationStatus, dndStatus, refreshPermissions } = usePermissions();
+  
   const mapRef = useRef<MapView>(null);
   const insets = useSafeAreaInsets();
   
+  // Calculate dynamic map height
+  const screenHeight = Dimensions.get('window').height;
+  const headerHeight = 60 + insets.top; // Header + safe area
+  const availableHeight = screenHeight - headerHeight;
+  const mapHeight = Math.min(300, availableHeight * 0.35); // 35% of available space, max 300px
+
   const [region, setRegion] = useState(DEFAULT_REGION);
   const [placeName, setPlaceName] = useState('');
   const [radius, setRadius] = useState(150);
   const [isSilencingEnabled, setIsSilencingEnabled] = useState(true);
   
   const [hasLocationPermission, setHasLocationPermission] = useState(false);
-  const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState({ id: 'mosque', icon: 'mosque', label: 'Mosque' });
   
@@ -72,6 +77,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
   const [invalidTimeIds, setInvalidTimeIds] = useState<string[]>([]);
   const [limitError, setLimitError] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState(false);
+
 
   // Auto-validate whenever schedules change
   useEffect(() => {
@@ -101,6 +107,8 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
     checkPermission();
   }, []);
 
+
+  
   const checkPermission = async () => {
     const status = await PermissionsManager.getLocationStatus();
     if (status === RESULTS.GRANTED) {
@@ -148,7 +156,6 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         // Helper to update map state
         const updateMap = (lat: number, lng: number, acc: number) => {
           setAccuracy(acc);
-          setUserLocation({ latitude: lat, longitude: lng });
           const newRegion = { ...region, latitude: lat, longitude: lng };
           setRegion(newRegion);
           mapRef.current?.animateToRegion(newRegion, 1000);
@@ -161,7 +168,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                 updateMap(latitude, longitude, accuracy);
             },
             (error) => console.log('[Location] Quick pass failed:', error),
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 10000 }
+            { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
         );
 
         // 2. REFINEMENT PASS: Precise location refinement
@@ -174,9 +181,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
             (error) => {
                 console.log('[Location] Precise pass failed:', error);
                 setIsLocating(false);
-                if (!userLocation) {
-                  Alert.alert("Error", "Could not fetch precise location. Please ensure you are in a clear area.");
-                }
+                Alert.alert("Location Error", "Could not fetch precise location.");
             },
             { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
         );
@@ -309,6 +314,8 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
     return r >= 1000 ? `${(r / 1000).toFixed(1)}km` : `${Math.round(r)}m`;
   };
 
+
+
   return (
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
@@ -329,7 +336,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Map Section */}
-          <View style={styles.mapContainer}>
+          <View style={[styles.mapContainer, { height: mapHeight }]}>
             <MapView
               ref={mapRef}
               provider={PROVIDER_GOOGLE}
@@ -337,7 +344,6 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
               initialRegion={DEFAULT_REGION}
               region={region}
               onRegionChangeComplete={(newRegion) => {
-                // Throttle updates slightly to avoid jitter
                 if (
                   Math.abs(newRegion.latitude - region.latitude) > 0.00001 ||
                   Math.abs(newRegion.longitude - region.longitude) > 0.00001
@@ -346,7 +352,7 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                 }
               }}
               showsUserLocation={hasLocationPermission}
-              showsMyLocationButton={false} 
+              showsMyLocationButton={true} 
               zoomEnabled={true}
               zoomControlEnabled={true}
               scrollEnabled={true}
@@ -359,25 +365,12 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                 strokeWidth={2}
               />
             </MapView>
-
-            <TouchableOpacity 
-              style={styles.mapLocateButton}
-              onPress={handleGetCurrentLocation}
-              disabled={isLocating}
-            >
-              {isLocating ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              ) : (
-                <MaterialIcon name="my-location" size={24} color={theme.colors.primary} />
-              )}
-            </TouchableOpacity>
             
-            <View style={styles.centerPinContainer}>
+            {/* Visual Center Pin (Target) */}
+            <View style={styles.centerPinContainer} pointerEvents="none">
                <View style={styles.pinShadow} />
                <MaterialIcon name="location-pin" size={36} color={theme.colors.error} />
             </View>
-
-
           </View>
 
           {/* Form Content */}
@@ -835,27 +828,30 @@ const styles = StyleSheet.create({
     height: 300,
     width: '100%',
     position: 'relative',
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
+    borderRadius: theme.layout.borderRadius.md,
+    overflow: 'hidden',
   },
   centerPinContainer: {
     position: 'absolute',
     top: '50%',
     left: '50%',
     marginLeft: -18,
-    marginTop: -32,
+    marginTop: -36,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
   pinShadow: {
     position: 'absolute',
-    bottom: 2,
-    width: 14,
+    bottom: 0,
+    width: 12,
     height: 4,
-    borderRadius: 2,
+    borderRadius: 50,
     backgroundColor: 'rgba(0,0,0,0.3)',
-    marginBottom: 8,
+    transform: [{ scaleX: 0.8 }],
+  },
+  map: {
+    ...StyleSheet.absoluteFillObject,
   },
   mapLocateButton: {
     position: 'absolute',
@@ -877,6 +873,7 @@ const styles = StyleSheet.create({
   formContainer: {
     padding: theme.spacing.lg,
   },
+
   section: { marginBottom: theme.spacing.xl },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: theme.spacing.md },
   sectionLabel: { fontSize: theme.typography.sizes.sm, fontWeight: theme.typography.weights.semibold, color: theme.colors.text.primary.light, opacity: 0.8 },

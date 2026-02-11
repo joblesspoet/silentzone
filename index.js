@@ -26,7 +26,7 @@ const { SettingsService } = require('./src/services/SettingsService');
  * Key: alarmId, Value: timestamp when processed
  */
 const processedAlarms = new Map();
-const ALARM_DEBOUNCE_MS = 6000; // 6 seconds
+const ALARM_DEBOUNCE_MS = 180000; // 3 minutes (increased from 6s to handle Android's re-delivery delays)
 
 // AsyncStorage key for persistent alarm tracking
 const PROCESSED_ALARMS_KEY = 'silentzone_processed_alarms';

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { PermissionStatus, RESULTS } from 'react-native-permissions';
 import { PermissionsManager } from './PermissionsManager';
 import { locationService } from '../services/LocationService';
@@ -52,12 +52,26 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   );
 
   const refreshPermissions = async () => {
+    // Small delay to allow Android to properly apply permission changes when returning from settings
+    if (Platform.OS === 'android') {
+      await new Promise<void>(resolve => setTimeout(resolve, 500));
+    }
+    
     const loc = await PermissionsManager.getLocationStatus();
     const bg = await PermissionsManager.getBackgroundLocationStatus();
     const notif = await PermissionsManager.getNotificationStatus();
     const dnd = await PermissionsManager.getDndStatus();
     const battery = await PermissionsManager.isBatteryOptimizationEnabled();
     const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
+
+    console.log('[PermissionsContext] Refreshed permissions:', {
+      location: loc,
+      background: bg,
+      notification: notif,
+      dnd: dnd,
+      battery: battery,
+      exactAlarm: exactAlarm
+    });
 
     setLocationStatus(loc);
     setBgLocationStatus(bg);
@@ -104,7 +118,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       });
       
       if (hadAllPermissions && !hasAllNow) {
-        console.log('[PermissionsContext] Critical permissions revoked! Stopping geofencing and redirecting to permission screen...');
+        console.log(`[PermissionsContext] Critical permissions revoked! Stopping geofencing. Status: Loc=${loc}, Bg=${bg}, Notif=${notif}, Exact=${exactAlarm}`);
         
         // Stop background services/geofencing immediately and restore state
         locationService.purgeAllTracking();

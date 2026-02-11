@@ -158,6 +158,7 @@ class AlarmService {
    * Surgically schedule alarms for a specific prayer time
    * SMART: Skips if alarm already exists (unless forceReset was used)
    */
+  // In AlarmService.ts
   private async schedulePrayerSurgically(
     place: any, 
     scheduleIndex: number, 
@@ -174,79 +175,68 @@ class AlarmService {
     startTime.setHours(startHour, startMin, 0, 0);
 
     const endTime = new Date(startTime);
-    const endTotal = endHour * 60 + endMin;
-    const startTotal = startHour * 60 + startMin;
     endTime.setHours(endHour, endMin, 0, 0);
-    if (endTotal < startTotal) {
+    if (endTime.getTime() < startTime.getTime()) {
       endTime.setDate(endTime.getDate() + 1);
     }
 
     const dateStr = baseDate.toISOString().split('T')[0];
-    const alarmBaseData = {
-      placeId: place.id,
-      prayerIndex: scheduleIndex,
-    };
+    const now = Date.now();
 
     // --- TRIGGER 1: NOTIFY (T-15) ---
     const notifyTime = startTime.getTime() - (15 * 60 * 1000);
     const notifyId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-monitor`;
-    if (notifyTime > Date.now()) {
-      // ✅ CHECK BEFORE SET - Skip if exists
-      if (existingIds.has(notifyId)) {
-        // Logger.info(`[AlarmService] ⏭️ Skipping ${notifyId} - already exists`);
-      } else {
-        await this.scheduleSingleAlarm(
-          notifyId,
-          notifyTime,
-          place.id,
-          ALARM_ACTIONS.START_MONITORING,
-          '',
-          '',
-          { ...alarmBaseData, dateStr, subType: 'notify', silent: 'true' },
-          existingIds
-        );
-      }
+    
+    // ✅ FIXED: Schedule if in future OR we're currently in the window
+    const notifyWindowEnd = endTime.getTime();
+    const shouldScheduleNotify = notifyTime > now || (now >= notifyTime && now < notifyWindowEnd);
+    
+    if (shouldScheduleNotify && !existingIds.has(notifyId)) {
+      
+      await this.scheduleSingleAlarm(
+        notifyId,
+        notifyTime > now ? notifyTime : now + 1000, // Immediate if passed
+        place.id,
+        ALARM_ACTIONS.START_MONITORING,
+        'Upcoming Silent Zone',
+        `Silent mode for "${place.name}" starts in 15m`,
+        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'notify', silent: 'true' },
+        existingIds
+      );
     }
 
     // --- TRIGGER 2: MONITOR START (T-5) ---
     const monitorStartTime = startTime.getTime() - (5 * 60 * 1000);
     const startId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-start`;
-    if (monitorStartTime > Date.now()) {
-      // ✅ CHECK BEFORE SET - Skip if exists
-      if (existingIds.has(startId)) {
-        // Logger.info(`[AlarmService] ⏭️ Skipping ${startId} - already exists`);
-      } else {
-        await this.scheduleSingleAlarm(
-          startId,
-          monitorStartTime,
-          place.id,
-          ALARM_ACTIONS.START_SILENCE,
-          '',
-          '',
-          { ...alarmBaseData, dateStr, subType: 'monitor', silent: 'true' },
-          existingIds
-        );
-      }
+    
+    const shouldScheduleStart = monitorStartTime > now || (now >= monitorStartTime && now < endTime.getTime());
+    
+    if (shouldScheduleStart && !existingIds.has(startId)) {
+      await this.scheduleSingleAlarm(
+        startId,
+        monitorStartTime > now ? monitorStartTime : now + 1000,
+        place.id,
+        ALARM_ACTIONS.START_SILENCE,
+        'Silent Zone Active',
+        `Phone silenced for "${place.name}"`,
+        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'monitor', silent: 'true' },
+        existingIds
+      );
     }
 
     // --- TRIGGER 3: END & HEAL (End Time) ---
     const endId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-end`;
-    if (endTime.getTime() > Date.now()) {
-      // ✅ CHECK BEFORE SET - Skip if exists
-      if (existingIds.has(endId)) {
-        // Logger.info(`[AlarmService] ⏭️ Skipping ${endId} - already exists`);
-      } else {
-        await this.scheduleSingleAlarm(
-          endId,
-          endTime.getTime(),
-          place.id,
-          ALARM_ACTIONS.STOP_SILENCE,
-          '',
-          '',
-          { ...alarmBaseData, dateStr, subType: 'cleanup', silent: 'true' },
-          existingIds
-        );
-      }
+    if (endTime.getTime() > now && !existingIds.has(endId)) {
+      await this.scheduleSingleAlarm(
+        endId,
+        endTime.getTime(),
+        place.id,
+        ALARM_ACTIONS.STOP_SILENCE,
+        'Silent Zone Ended',
+        `Volume restored for "${place.name}"`,
+        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'cleanup', silent: 'true' },
+        existingIds
+      );
     }
   }
 

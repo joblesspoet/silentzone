@@ -52,7 +52,22 @@ export const PermissionsManager = {
       if (Platform.OS === 'ios') {
         return await check(PERMISSIONS.IOS.LOCATION_WHEN_IN_USE);
       } else {
-        return await check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
+        // Dual check for Android 16 compatibility
+        const rnpStatus = await check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
+        
+        // If RNP says DENIED/BLOCKED, double check with Core RN
+        if (rnpStatus !== RESULTS.GRANTED && rnpStatus !== RESULTS.LIMITED) {
+          try {
+            const coreStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+            if (coreStatus) {
+              console.log('[PermissionsManager] RNP reported', rnpStatus, 'but Core reported GRANTED for FINE_LOCATION');
+              return RESULTS.GRANTED;
+            }
+          } catch (coreError) {
+            console.error('[PermissionsManager] Core check failed for FINE_LOCATION:', coreError);
+          }
+        }
+        return rnpStatus;
       }
     } catch (error) {
       console.error('Error checking location status:', error);
@@ -65,7 +80,22 @@ export const PermissionsManager = {
       if (Platform.OS === 'ios') {
         return await check(PERMISSIONS.IOS.LOCATION_ALWAYS);
       } else {
-        return await check(PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION);
+        const rnpStatus = await check(PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION);
+        
+        // Dual check for Android 16 compatibility
+        if (rnpStatus !== RESULTS.GRANTED && rnpStatus !== RESULTS.LIMITED) {
+          try {
+            const coreStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
+            if (coreStatus) {
+              console.log('[PermissionsManager] RNP reported', rnpStatus, 'but Core reported GRANTED for BACKGROUND_LOCATION');
+              return RESULTS.GRANTED;
+            }
+          } catch (coreError) {
+            console.error('[PermissionsManager] Core check failed for BACKGROUND_LOCATION:', coreError);
+          }
+        }
+        
+        return rnpStatus;
       }
     } catch (error) {
       console.error('Error checking background location status:', error);

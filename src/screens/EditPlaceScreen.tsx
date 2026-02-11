@@ -21,6 +21,16 @@ import { PrayerTimeService, PrayerConfig } from '../services/PrayerTimeService';
 import { PreferencesService } from '../database/services/PreferencesService';
 import { Modal } from 'react-native';
 
+
+const DEFAULT_REGION = {
+  latitude: 37.78825,
+  longitude: -122.4324,
+  latitudeDelta: 0.01,
+  longitudeDelta: 0.01,
+};
+
+
+
 // Use shared interface or map to it
 interface ScheduleSlot extends UtilScheduleSlot {}
 
@@ -29,7 +39,7 @@ interface Props {
   route: any;
 }
 
-const { width } = Dimensions.get('window');
+
 
 export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
   const { placeId } = route.params;
@@ -37,6 +47,12 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
   const mapRef = useRef<MapView>(null);
   const insets = useSafeAreaInsets();
   
+  // Calculate dynamic map height
+  const screenHeight = Dimensions.get('window').height;
+  const headerHeight = 60 + insets.top; // Header + safe area
+  const availableHeight = screenHeight - headerHeight;
+  const mapHeight = Math.min(300, availableHeight * 0.35); // 35% of available space, max 300px
+
   const [region, setRegion] = useState<Region>({
     latitude: 37.78825,
     longitude: -122.4324,
@@ -100,6 +116,8 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
     checkPermission();
   }, []);
 
+
+
   const checkPermission = async () => {
     const status = await PermissionsManager.getLocationStatus();
     if (status === RESULTS.GRANTED) {
@@ -123,7 +141,6 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         };
         setRegion(initialRegion);
 
-        // Find and set current category
         const cat = CATEGORIES.find(c => c.id === place.category) || CATEGORIES[3];
         setSelectedCategory(cat);
 
@@ -324,7 +341,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
       });
 
       if (success) {
-              await locationService.syncGeofences(false, [placeId]);
+              locationService.syncGeofences(false, [placeId]);
               
               const prefs = PreferencesService.getPreferences(realm);
               if (isEnabled && prefs && !(prefs as any).trackingEnabled) {
@@ -333,7 +350,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
 
               // CRITICAL FIX: Immediately check if we are ALREADY inside the place we just edited
               // This fixes the case where user is stationary at home and adds a schedule
-              await locationService.forceLocationCheck();
+              locationService.forceLocationCheck();
 
           navigation.goBack();
       } else {
@@ -367,6 +384,8 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
     return r >= 1000 ? `${(r / 1000).toFixed(1)}km` : `${Math.round(r)}m`;
   };
 
+
+
   if (loading) return <View style={styles.container} />;
 
   return (
@@ -390,7 +409,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Map Section */}
-          <View style={styles.mapContainer}>
+          <View style={[styles.mapContainer, { height: mapHeight }]}>
             <MapView
               ref={mapRef}
               provider={PROVIDER_GOOGLE}
@@ -400,18 +419,16 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
               onRegionChangeComplete={(newRegion) => {
                 if (
                   Math.abs(newRegion.latitude - region.latitude) > 0.00001 ||
-                  Math.abs(newRegion.longitude - region.longitude) > 0.00001 ||
-                  Math.abs(newRegion.latitudeDelta - region.latitudeDelta) > 0.00001 ||
-                  Math.abs(newRegion.longitudeDelta - region.longitudeDelta) > 0.00001
+                  Math.abs(newRegion.longitude - region.longitude) > 0.00001
                 ) {
                   setRegion(newRegion);
                 }
               }}
+              showsUserLocation={hasLocationPermission}
+              showsMyLocationButton={true} 
               zoomEnabled={true}
               zoomControlEnabled={true}
               scrollEnabled={true}
-              showsUserLocation={hasLocationPermission}
-              showsMyLocationButton={false}
             >
               <Circle 
                 center={region}
@@ -421,25 +438,12 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                 strokeWidth={2}
               />
             </MapView>
-
-            <TouchableOpacity 
-              style={styles.mapLocateButton}
-              onPress={handleGetCurrentLocation}
-              disabled={isLocating}
-            >
-              {isLocating ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              ) : (
-                <MaterialIcon name="my-location" size={24} color={theme.colors.primary} />
-              )}
-            </TouchableOpacity>
             
-            <View style={styles.centerPinContainer}>
+             {/* Visual Center Pin (Target) */}
+            <View style={styles.centerPinContainer} pointerEvents="none">
                <View style={styles.pinShadow} />
                <MaterialIcon name="location-pin" size={36} color={theme.colors.error} />
             </View>
-
-
           </View>
 
           {/* Form Content */}
@@ -916,28 +920,32 @@ const styles = StyleSheet.create({
     height: 300,
     width: '100%',
     position: 'relative',
-  },
-  map: {
-    ...StyleSheet.absoluteFillObject,
+    borderRadius: theme.layout.borderRadius.md,
+    overflow: 'hidden',
   },
   centerPinContainer: {
     position: 'absolute',
     top: '50%',
     left: '50%',
     marginLeft: -18,
-    marginTop: -32,
+    marginTop: -36,
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
   pinShadow: {
     position: 'absolute',
-    bottom: 2,
-    width: 14,
+    bottom: 0,
+    width: 12,
     height: 4,
-    borderRadius: 2,
+    borderRadius: 50,
     backgroundColor: 'rgba(0,0,0,0.3)',
-    marginBottom: 8,
+    transform: [{ scaleX: 0.8 }],
   },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+
   mapLocateButton: {
     position: 'absolute',
     bottom: 16,

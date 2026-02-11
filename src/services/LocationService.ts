@@ -1,4 +1,5 @@
 import Geofencing from '@rn-org/react-native-geofencing';
+import notifee from '@notifee/react-native';
 import { Realm } from 'realm';
 import { PlaceService } from '../database/services/PlaceService';
 import { Preferences } from '../database/services/PreferencesService';
@@ -104,92 +105,97 @@ class LocationService {
   this.isReady = true;
 }
 
-  /**
-   * CRITICAL: Restore runtime state from database
-   * Called on every initialization to handle process death
-   */
-  private async restoreStateFromDatabase() {
-    if (!this.realm || this.realm.isClosed) {
-      Logger.error('[Restore] Cannot restore: realm not available');
-      return;
-    }
-
-    Logger.info('[Restore] Restoring state from database...');
-
-    try {
-      // 1. Restore active check-ins
-      const activeLogs = Array.from(CheckInService.getActiveCheckIns(this.realm));
-      Logger.info(`[Restore] Found ${activeLogs.length} active check-in(s)`);
-
-      // 2. Recalculate upcoming schedules
-      const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
-      const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
-      this.upcomingSchedules = upcomingSchedules;
-      Logger.info(`[Restore] Found ${this.upcomingSchedules.length} upcoming schedule(s)`);
-
-      // 3. Determine if we're currently in a schedule window
-      const now = new Date();
-      let foundActiveWindow = false;
-
-      for (const place of enabledPlaces) {
-        const currentSchedule = ScheduleManager.getCurrentOrNextSchedule(place);
-        if (currentSchedule && now >= currentSchedule.startTime && now < currentSchedule.endTime) {
-          if (!this.isVisitCompleted((place as any).id, currentSchedule)) {
-            foundActiveWindow = true;
-            Logger.info(`[Restore] Currently in active window: ${(place as any).name}`);
-            break;
-          } else {
-            Logger.info(`[Restore] Already completed visit for ${(place as any).name} in this window`);
-          }
-        }
-      }
-
-      this.isInScheduleWindow = foundActiveWindow;
-
-      // 4. Restore timers for active check-ins
-      await this.restoreActiveTimers();
-
-      // 5. SURGICAL RESTORE: Only fill gaps for missed or upcoming alarms
-      if (enabledPlaces.length > 0) {
-        Logger.info('[Restore] Performing surgical gap-filling restore...');
-        await alarmService.restoreGapsOnBoot(enabledPlaces);
-      }
-
-      // 6. CRITICAL: If we're in an active window but geofences aren't active, start monitoring
-      // This handles the case where phone was rebooted during an active schedule
-      if (foundActiveWindow && !this.geofencesActive) {
-        Logger.warn('[Restore] In active window but geofences not active - auto-starting monitoring');
-        await this.startForegroundService();
-        
-        // Force a location check to see if we're already inside the zone
-        const activePlaces = enabledPlaces.filter((place: any) => {
-          const schedules = place.schedules || [];
-          return schedules.some((schedule: any) => ScheduleManager.isScheduleActiveNow(schedule, now));
-        });
-        
-        if (activePlaces.length > 0) {
-          const deadline = this.calculateMaxEndTime(activePlaces);
-          Logger.info(`[Restore] Forcing location check for ${activePlaces.length} active place(s)`);
-          await gpsManager.forceLocationCheck(
-            (location) => this.processLocationUpdate(location),
-            (error) => this.handleLocationError(error),
-            1,
-            3,
-            deadline
-          );
-        }
-      }
-
-      Logger.info('[Restore] State restoration complete', {
-        activeCheckIns: activeLogs.length,
-        upcomingSchedules: this.upcomingSchedules.length,
-        isInScheduleWindow: this.isInScheduleWindow,
-        geofencesActive: this.geofencesActive,
-      });
-    } catch (error: any) {
-      Logger.error('[Restore] Failed to restore state:', error?.message || error);
-    }
+/**
+ * CRITICAL: Restore runtime state from database
+ * Called on every initialization to handle process death
+ */
+private async restoreStateFromDatabase() {
+  if (!this.realm || this.realm.isClosed) {
+    Logger.error('[Restore] Cannot restore: realm not available');
+    return;
   }
+
+  Logger.info('[Restore] Restoring state from database...');
+
+  try {
+    // 1. Restore active check-ins
+    const activeLogs = Array.from(CheckInService.getActiveCheckIns(this.realm));
+    Logger.info(`[Restore] Found ${activeLogs.length} active check-in(s)`);
+
+    // 2. Recalculate upcoming schedules
+    const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
+    const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
+    this.upcomingSchedules = upcomingSchedules;
+    Logger.info(`[Restore] Found ${this.upcomingSchedules.length} upcoming schedule(s)`);
+
+    // 3. Determine if we're currently in a schedule window
+    const now = new Date();
+    let foundActiveWindow = false;
+
+    for (const place of enabledPlaces) {
+      const currentSchedule = ScheduleManager.getCurrentOrNextSchedule(place);
+      if (currentSchedule && now >= currentSchedule.startTime && now < currentSchedule.endTime) {
+        if (!this.isVisitCompleted((place as any).id, currentSchedule)) {
+          foundActiveWindow = true;
+          Logger.info(`[Restore] Currently in active window: ${(place as any).name}`);
+          break;
+        } else {
+          Logger.info(`[Restore] Already completed visit for ${(place as any).name} in this window`);
+        }
+      }
+    }
+
+    this.isInScheduleWindow = foundActiveWindow;
+
+    // 4. Restore timers for active check-ins
+    await this.restoreActiveTimers();
+
+    // 5. SURGICAL RESTORE: Fill gaps for TODAY + tomorrow (full 48h)
+    if (enabledPlaces.length > 0) {
+      Logger.info('[Restore] Performing surgical gap-filling restore...');
+      for (const place of enabledPlaces) {
+        if (!place.isEnabled || !place.schedules) continue;
+        
+        // Force check for today + tomorrow (full 48h)
+        await alarmService.scheduleAlarmsForPlace(place, false);
+      }
+    }
+
+    // 6. CRITICAL: If we're in an active window but geofences aren't active, start monitoring
+    // This handles the case where phone was rebooted during an active schedule
+    if (foundActiveWindow && !this.geofencesActive) {
+      Logger.warn('[Restore] In active window but geofences not active - auto-starting monitoring');
+      await this.startForegroundService();
+      
+      // Force a location check to see if we're already inside the zone
+      const activePlaces = enabledPlaces.filter((place: any) => {
+        const schedules = place.schedules || [];
+        return schedules.some((schedule: any) => ScheduleManager.isScheduleActiveNow(schedule, now));
+      });
+      
+      if (activePlaces.length > 0) {
+        const deadline = this.calculateMaxEndTime(activePlaces);
+        Logger.info(`[Restore] Forcing location check for ${activePlaces.length} active place(s)`);
+        await gpsManager.forceLocationCheck(
+          (location) => this.processLocationUpdate(location),
+          (error) => this.handleLocationError(error),
+          1,
+          3,
+          deadline
+        );
+      }
+    }
+
+    Logger.info('[Restore] State restoration complete', {
+      activeCheckIns: activeLogs.length,
+      upcomingSchedules: this.upcomingSchedules.length,
+      isInScheduleWindow: this.isInScheduleWindow,
+      geofencesActive: this.geofencesActive,
+    });
+  } catch (error: any) {
+    Logger.error('[Restore] Failed to restore state:', error?.message || error);
+  }
+}
 
   /**
    * Start foreground service
@@ -202,10 +208,17 @@ class LocationService {
 
     const hasPermission = await PermissionsManager.hasCriticalPermissions();
     if (!hasPermission) {
-      Logger.error('[LocationService] Aborting start: Missing critical permissions in background');
+      // Detailed logging for debugging
+      const loc = await PermissionsManager.getLocationStatus();
+      const bg = await PermissionsManager.getBackgroundLocationStatus();
+      const notif = await PermissionsManager.getNotificationStatus();
+      const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
+      
+      Logger.error(`[LocationService] Aborting start: Missing critical permissions. Status -> Loc: ${loc}, Bg: ${bg}, Notif: ${notif}, Alarm: ${exactAlarm}`);
+      
       await notificationManager.showNotification(
         'Setup Required',
-        'Silent Zone failed to start. Please open app and check permissions.',
+        'Silent Zone failed to start. Please open app to fix permissions.',
         'permission-failure'
       );
       return;
@@ -1077,6 +1090,16 @@ private setupReactiveSync() {
       }
 
       Logger.info(`[LocationService] Alarm ${alarmId} processed successfully`);
+      
+      // ✅ CRITICAL FIX: Delete the trigger notification to prevent Android from re-delivering it
+      // Without this, Android will keep firing the same alarm every 10-120 seconds!
+      // This is the ROOT CAUSE of alarm duplication bugs
+      try {
+        await notifee.cancelTriggerNotification(alarmId);
+        Logger.info(`[LocationService] 🗑️ Deleted trigger: ${alarmId}`);
+      } catch (cancelError) {
+        Logger.warn(`[LocationService] Could not cancel trigger ${alarmId}:`, cancelError);
+      }
     } catch (error) {
       Logger.error('[LocationService] Error processing alarm:', error);
     } finally {
