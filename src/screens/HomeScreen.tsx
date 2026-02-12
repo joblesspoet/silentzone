@@ -1,16 +1,13 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
-import Geolocation from 'react-native-geolocation-service';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+
 import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
 import { theme } from '../theme';
 import { MaterialIcon } from '../components/MaterialIcon';
-import { RESULTS } from 'react-native-permissions';
 import { PlaceCard } from '../components/PlaceCard';
 import { StatusCard } from '../components/StatusCard';
-import { ToggleSwitch } from '../components/ToggleSwitch';
 import { getDistance, formatDistance } from '../utils/geo';
-import { PermissionsManager } from '../permissions/PermissionsManager';
 import { PreferencesService } from '../database/services/PreferencesService';
 import { usePermissions } from '../permissions/PermissionsContext';
 
@@ -19,7 +16,6 @@ interface Props {
 }
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { RealmWriteHelper } from '../database/helpers/RealmWriteHelper';
 import { CheckInService } from '../database/services/CheckInService';
 import { PermissionBlock } from '../components/PermissionBlock';
 import { locationService } from '../services/LocationService';
@@ -96,17 +92,33 @@ useEffect(() => {
       const loc = gpsManager.getLastKnownLocation();
       if (loc) {
         setUserLocation({ latitude: loc.latitude, longitude: loc.longitude });
+      } else if (hasFullPermissions) {
+        // PROACTIVE: If we have no cached location, ask for one once
+        gpsManager.getImmediateLocation(
+          (newLoc) => setUserLocation({ latitude: newLoc.latitude, longitude: newLoc.longitude }),
+          () => {}
+        );
       }
     };
 
     // Initial check
     updateLocationFromManager();
 
-    // Poll every 10 seconds for UI updates from the system watcher
-    // This is much safer than starting another native watch
-    const interval = setInterval(updateLocationFromManager, 10000);
+    // Poll every 5 seconds for UI updates from the system watcher (LocationService/GPSManager)
+    const interval = setInterval(updateLocationFromManager, 5000);
 
-    return () => clearInterval(interval);
+    // Also refresh on app focus
+    const { AppState } = require('react-native');
+    const subscription = AppState.addEventListener('change', (nextState: string) => {
+      if (nextState === 'active') {
+        updateLocationFromManager();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      subscription.remove();
+    };
   }, [hasFullPermissions]);
 
   // Separate effect for auto-pause logic (avoids listener conflicts)

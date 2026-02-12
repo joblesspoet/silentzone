@@ -56,9 +56,16 @@ export class ScheduleManager {
     const upcomingSchedules: UpcomingSchedule[] = [];
 
     for (const place of enabledPlaces) {
-      if (!place.schedules || place.schedules.length === 0) {
+      if (!place.schedules || !Array.isArray(place.schedules) || place.schedules.length === 0) {
         continue;
       }
+
+      // 3. Validation: Ensure schedule data is intact
+      const validSchedules = place.schedules.filter((s: any) => 
+          s.startTime && s.endTime && s.startTime.includes(':') && s.endTime.includes(':')
+      );
+
+      if (validSchedules.length === 0) continue; 
 
       // Check Yesterday (-1), Today (0), and Tomorrow (1)
       // -1 is critical for overnight schedules currently in progress
@@ -66,7 +73,7 @@ export class ScheduleManager {
          const targetDayIndex = (currentDayIndex + dayOffset + 7) % 7;
          const targetDayName = days[targetDayIndex];
 
-         for (const schedule of place.schedules) {
+         for (const schedule of validSchedules) {
             // Day filter: Does this schedule apply to the day being checked?
             if (schedule.days.length > 0 && !schedule.days.includes(targetDayName)) {
                continue;

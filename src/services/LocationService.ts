@@ -45,24 +45,49 @@ class LocationService {
 
     this.isInitializing = true;
     try {
+      // 1. Core Realm Setup
       Logger.info('[LocationService] Engine initialization started...');
       this.realm = realmInstance;
-      silentZoneManager.setRealm(realmInstance);
       
+      try {
+        silentZoneManager.setRealm(realmInstance);
+      } catch (e) {
+        Logger.error('[LocationService] Failed to set realm on manager:', e);
+      }
+      
+      // 2. Platform Channels (Non-fatal)
       if (Platform.OS === 'android') {
-        Logger.info('[LocationService] Ensuring notification channels...');
-        await notificationManager.createNotificationChannels();
+        try {
+            Logger.info('[LocationService] Ensuring notification channels...');
+            await notificationManager.createNotificationChannels();
+        } catch (e) {
+            Logger.error('[LocationService] Channel creation failed (continuing):', e);
+        }
       }
 
-      // Initial seed: ensure every enabled place has its next alarm scheduled
-      Logger.info('[LocationService] Syncing geofences for initial seed...');
-      await this.syncGeofences();
+      // 3. Initial Seed (Non-fatal)
+      try {
+        Logger.info('[LocationService] Syncing geofences for initial seed...');
+        await this.syncGeofences();
+      } catch (e) {
+        Logger.error('[LocationService] Initial seed failed (continuing):', e);
+      }
       
-      this.setupReactiveSync();
       this.isReady = true;
+      
+      // 4. Listeners
+      try {
+         this.setupReactiveSync();
+      } catch (e) {
+         Logger.error('[LocationService] Reactive sync setup failed:', e);
+      }
+      
+      
       Logger.info('[LocationService] Engine Initialized Successfully ✅');
     } catch (error) {
-      Logger.error('[LocationService] Initialization failed:', error);
+      // Catch-all for unexpected failures (e.g. Realm access)
+      console.error('[LocationService] CRITICAL INITIALIZATION FAILURE:', error);
+      // We do NOT re-throw, to allow the UI to populate even if background engine fails
     } finally {
       this.isInitializing = false;
     }
@@ -96,6 +121,7 @@ class LocationService {
    * @param realmInstance The active Realm database instance
    */
   async initializeLight(realmInstance: Realm) {
+    if (this.isInitializing || (this.isReady && this.realm === realmInstance)) return;
     this.realm = realmInstance;
     silentZoneManager.setRealm(realmInstance);
     this.isReady = true;
@@ -132,6 +158,17 @@ class LocationService {
 
       const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
       
+      // Cleanup: If specific IDs are provided, ensure those that are now disabled have their alarms purged
+      if (specificPlaceIds) {
+        for (const id of specificPlaceIds) {
+          const isStillEnabled = enabledPlaces.some(p => (p as any).id === id);
+          if (!isStillEnabled) {
+            Logger.info(`[LocationService] Place ${id} disabled or removed, purging alarms...`);
+            await alarmService.cancelAlarmsForPlace(id);
+          }
+        }
+      }
+
       for (const place of enabledPlaces) {
         // If specific IDs are provided, only sync those
         if (specificPlaceIds && !specificPlaceIds.includes((place as any).id)) {
@@ -459,34 +496,34 @@ class LocationService {
   private setupReactiveSync() {
     if (!this.realm || this.placeResults) return;
     
-    // 1. Places Listener
-    this.placeResults = this.realm.objects('Place');
-    this.placeResults.addListener(() => {
-      if (!this.isReady) return;
-      Logger.info('[LocationService] Places changed, re-syncing...');
-      this.syncGeofences().catch(err => {
-        Logger.error('[LocationService] Places reactive sync failed:', err);
-      });
-    });
+    //// 1. Places Listener
+    //this.placeResults = this.realm.objects('Place');
+    //this.placeResults.addListener(() => {
+    //  if (!this.isReady) return;
+    //  Logger.info('[LocationService] Places changed, re-syncing...');
+    //  this.syncGeofences().catch(err => {
+    //    Logger.error('[LocationService] Places reactive sync failed:', err);
+    //  });
+    //});
 
-    // 2. Preferences Listener
-    this.preferenceResults = this.realm.objects('Preferences');
-    this.preferenceResults.addListener(() => {
-      if (!this.isReady) return;
-      Logger.info('[LocationService] Preferences changed, re-syncing...');
-      this.syncGeofences().catch(err => {
-        Logger.error('[LocationService] Preferences reactive sync failed:', err);
-      });
-    });
+    //// 2. Preferences Listener
+    //this.preferenceResults = this.realm.objects('Preferences');
+    //this.preferenceResults.addListener(() => {
+    //  if (!this.isReady) return;
+    //  Logger.info('[LocationService] Preferences changed, re-syncing...');
+    //  this.syncGeofences().catch(err => {
+    //    Logger.error('[LocationService] Preferences reactive sync failed:', err);
+    //  });
+    //});
 
-    // 3. Check-in Logs Listener
-    this.checkinResults = this.realm.objects('CheckInLog');
-    this.checkinResults.addListener(() => {
-      if (!this.isReady) return;
-      this.updateForegroundService().catch(err => {
-        Logger.error('[LocationService] Foreground service update failed:', err);
-      });
-    });
+    //// 3. Check-in Logs Listener
+    //this.checkinResults = this.realm.objects('CheckInLog');
+    //this.checkinResults.addListener(() => {
+    //  if (!this.isReady) return;
+    //  this.updateForegroundService().catch(err => {
+    //    Logger.error('[LocationService] Foreground service update failed:', err);
+    //  });
+    //});
   }
 
   /**

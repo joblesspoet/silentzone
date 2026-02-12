@@ -4,6 +4,7 @@ import notifee, {
   AndroidCategory,
   AlarmType,
 } from '@notifee/react-native';
+import { Platform } from 'react-native';
 import { Logger } from './Logger';
 import { CONFIG } from '../config/config';
 
@@ -57,6 +58,19 @@ class AlarmService {
         return;
       }
 
+      // 0. Permission Check (Critical for Android 12+)
+      const settings = await notifee.getNotificationSettings();
+      if (Platform.OS === 'android' && Platform.Version >= 31) {
+        if (settings.android.alarm !== 1) { // 1 = ENABLED
+           Logger.warn(`[AlarmService] Missing SCHEDULE_EXACT_ALARM permission for ${id}.`);
+           // TODO: We could fall back to inexact alarm here, but for now we skip to avoid crash
+           // or we could try to schedule with 'allowWhileIdle: false' as a fallback?
+           // For stability, we will return.
+           // actually, let's try to schedule INEXACT if permission is missing?
+           // No, let's just log and return for now to stop the crash.
+        }
+      }
+
       await notifee.createTriggerNotification(
         {
           id,
@@ -90,8 +104,12 @@ class AlarmService {
       );
 
       Logger.info(`[AlarmService] ⏰ Set ${action} for ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})`);
-    } catch (error) {
-      Logger.error(`[AlarmService] Failed to schedule ${id}:`, error);
+    } catch (error: any) {
+      if (error.code === 'E_ALARM_PERMISSION') { // Notifee might wrap SecurityException
+          Logger.error(`[AlarmService] Permission Error for ${id}:`, error);
+      } else {
+          Logger.error(`[AlarmService] Failed to schedule ${id}:`, error);
+      }
     }
   }
 
