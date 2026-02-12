@@ -10,7 +10,7 @@ import {
   checkNotifications,
   requestNotifications
 } from 'react-native-permissions';
-import Geolocation from '@react-native-community/geolocation';
+import Geolocation from 'react-native-geolocation-service';
 
 const { BatteryOptimization, ExactAlarmModule } = NativeModules;
 

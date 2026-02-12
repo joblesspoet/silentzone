@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Dimensions, TouchableOpacity, ScrollView, Alert, Platform, ActivityIndicator } from 'react-native';
 import MapView, { Circle, PROVIDER_GOOGLE, Region } from 'react-native-maps';
 import Slider from '@react-native-community/slider';
-import Geolocation from '@react-native-community/geolocation';
+import { quickLocation } from '../services/QuickLocationManager';
 import { theme } from '../theme';
 import { MaterialIcon } from '../components/MaterialIcon';
 import { CustomInput } from '../components/CustomInput';
@@ -226,29 +226,30 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         };
 
         // 1. QUICK PASS: Instant response with low accuracy
-        Geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude, accuracy } = position.coords;
-                updateMap(latitude, longitude, accuracy);
-            },
-            (error) => console.log('[Location] Quick pass failed:', error),
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 10000 }
-        );
+        const quickLoc = await quickLocation.getQuickLocation({
+            timeout: 5000,
+            highAccuracyTimeout: 2000,
+            desiredAccuracy: 200 // Looser accuracy for responsiveness
+        });
 
-        // 2. REFINEMENT PASS: Precise location refinement
-        Geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude, accuracy } = position.coords;
-                updateMap(latitude, longitude, accuracy);
-                setIsLocating(false);
-            },
-            (error) => {
-                console.log('[Location] Precise pass failed:', error);
-                setIsLocating(false);
-                Alert.alert("Location Error", "Could not fetch precise location.");
-            },
-            { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
-        );
+        if (quickLoc) {
+             updateMap(quickLoc.latitude, quickLoc.longitude, quickLoc.accuracy);
+             setIsLocating(false);
+        } else {
+             // 2. REFINEMENT PASS: If quick failed, try a deeper check
+             const preciseLoc = await quickLocation.getQuickLocation({
+                 timeout: 10000,
+                 highAccuracyTimeout: 5000,
+                 desiredAccuracy: 50
+             });
+
+             if (preciseLoc) {
+                 updateMap(preciseLoc.latitude, preciseLoc.longitude, preciseLoc.accuracy);
+             } else {
+                 Alert.alert("Location Error", "Could not fetch location.");
+             }
+             setIsLocating(false);
+        }
     } catch (err) {
         console.warn(err);
         setIsLocating(false);
@@ -407,45 +408,58 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-          {/* Map Section */}
-          <View style={[styles.mapContainer, { height: mapHeight }]}>
-            <MapView
-              ref={mapRef}
-              provider={PROVIDER_GOOGLE}
-              style={styles.map}
-              initialRegion={region}
-              region={region}
-              onRegionChangeComplete={(newRegion) => {
-                if (
-                  Math.abs(newRegion.latitude - region.latitude) > 0.00001 ||
-                  Math.abs(newRegion.longitude - region.longitude) > 0.00001
-                ) {
-                  setRegion(newRegion);
-                }
-              }}
-              showsUserLocation={hasLocationPermission}
-              showsMyLocationButton={true} 
-              zoomEnabled={true}
-              zoomControlEnabled={true}
-              scrollEnabled={true}
-            >
-              <Circle 
-                center={region}
-                radius={radius}
-                fillColor={theme.colors.primary + '33'}
-                strokeColor={theme.colors.primary}
-                strokeWidth={2}
-              />
-            </MapView>
-            
-             {/* Visual Center Pin (Target) */}
-            <View style={styles.centerPinContainer} pointerEvents="none">
-               <View style={styles.pinShadow} />
-               <MaterialIcon name="location-pin" size={36} color={theme.colors.error} />
-            </View>
-          </View>
+      {/* Map Section - Fixed at top */}
+      <View style={[styles.mapContainer, { height: mapHeight }]}>
+        <MapView
+          ref={mapRef}
+          provider={PROVIDER_GOOGLE}
+          style={styles.map}
+          initialRegion={region}
+          region={region}
+          onRegionChangeComplete={(newRegion) => {
+            if (
+              Math.abs(newRegion.latitude - region.latitude) > 0.00001 ||
+              Math.abs(newRegion.longitude - region.longitude) > 0.00001
+            ) {
+              setRegion(newRegion);
+            }
+          }}
+          showsUserLocation={hasLocationPermission}
+          showsMyLocationButton={false} 
+          zoomEnabled={true}
+          zoomControlEnabled={true}
+          scrollEnabled={true}
+        >
+          <Circle 
+            center={region}
+            radius={radius}
+            fillColor={theme.colors.primary + '33'}
+            strokeColor={theme.colors.primary}
+            strokeWidth={2}
+          />
+        </MapView>
+        
+        {/* Custom "Locate Me" Button */}
+        <TouchableOpacity
+          style={styles.mapLocateButton}
+          onPress={handleGetCurrentLocation}
+          activeOpacity={0.8}
+        >
+          {isLocating ? (
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+          ) : (
+            <MaterialIcon name="my-location" size={24} color={theme.colors.text.primary.light} />
+          )}
+        </TouchableOpacity>
 
+         {/* Visual Center Pin (Target) */}
+        <View style={styles.centerPinContainer} pointerEvents="none">
+           <View style={styles.pinShadow} />
+           <MaterialIcon name="location-pin" size={36} color={theme.colors.error} />
+        </View>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
           {/* Form Content */}
           <View style={styles.formContainer}>
             <CustomInput
@@ -798,10 +812,10 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
               </View>
             
             <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-                <MaterialIcon name="delete" size={20} color={theme.colors.error} />
-                <Text style={styles.deleteText}>Delete Place</Text>
+              <MaterialIcon name="delete" size={24} color={theme.colors.error} />
+              <Text style={styles.deleteText}>Delete Place</Text>
             </TouchableOpacity>
-
+            
             <View style={{ height: 40 }} />
           </View>
       </ScrollView>
@@ -923,6 +937,29 @@ const styles = StyleSheet.create({
     borderRadius: theme.layout.borderRadius.md,
     overflow: 'hidden',
   },
+  map: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  mapLocateButton: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16, // Moved to bottom-left as requested
+    backgroundColor: theme.colors.surface.light,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+  },
   centerPinContainer: {
     position: 'absolute',
     top: '50%',
@@ -942,27 +979,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.3)',
     transform: [{ scaleX: 0.8 }],
   },
-  map: {
-    ...StyleSheet.absoluteFillObject,
-  },
 
-  mapLocateButton: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    backgroundColor: theme.colors.surface.light,
-    padding: 10,
-    borderRadius: 30,
-    zIndex: 10,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-  },
   formContainer: {
     padding: theme.spacing.lg,
   },

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Platform } from 'react-native';
-import Geolocation from '@react-native-community/geolocation';
+import Geolocation from 'react-native-geolocation-service';
 import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
 import { theme } from '../theme';
@@ -23,6 +23,8 @@ import { RealmWriteHelper } from '../database/helpers/RealmWriteHelper';
 import { CheckInService } from '../database/services/CheckInService';
 import { PermissionBlock } from '../components/PermissionBlock';
 import { locationService } from '../services/LocationService';
+
+import { gpsManager } from '../services/GPSManager';
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
@@ -87,45 +89,24 @@ useEffect(() => {
   };
 }, [realm]);
 
-  // Location tracking
+  // Location tracking (UI ONLY)
+  // CRITICAL: We don't start a native watch here anymore to avoid conflicts with GPSManager
   useEffect(() => {
-    let watchId: number | null = null;
-
-    const startWatching = async () => {
-      const hasPermission = await PermissionsManager.hasScanningPermissions();
-      if (hasPermission) {
-        Geolocation.getCurrentPosition(
-            (position) => {
-                setUserLocation(position.coords);
-            },
-            (error) => console.log('Error getting location:', error),
-            { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-        );
-
-        watchId = Geolocation.watchPosition(
-          (position) => {
-            setUserLocation(position.coords);
-          },
-          (error) => {
-            console.log('Location watch error:', error);
-          },
-          { 
-            enableHighAccuracy: true, 
-            distanceFilter: 10, // Update every 10 meters
-            interval: 5000, 
-            fastestInterval: 2000 
-          }
-        );
+    const updateLocationFromManager = () => {
+      const loc = gpsManager.getLastKnownLocation();
+      if (loc) {
+        setUserLocation({ latitude: loc.latitude, longitude: loc.longitude });
       }
     };
 
-    startWatching();
+    // Initial check
+    updateLocationFromManager();
 
-    return () => {
-      if (watchId !== null) {
-        Geolocation.clearWatch(watchId);
-      }
-    };
+    // Poll every 10 seconds for UI updates from the system watcher
+    // This is much safer than starting another native watch
+    const interval = setInterval(updateLocationFromManager, 10000);
+
+    return () => clearInterval(interval);
   }, [hasFullPermissions]);
 
   // Separate effect for auto-pause logic (avoids listener conflicts)

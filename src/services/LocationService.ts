@@ -16,6 +16,9 @@ import { CONFIG } from '../config/config';
 import { TimerManager } from './TimerManager';
 import { GPSManager, gpsManager } from './GPSManager';
 import { SilentZoneManager, silentZoneManager } from './SilentZoneManager';
+// NEW IMPORTS
+import { quickLocation } from './QuickLocationManager';
+
 
 /**
  * UNIVERSAL LOCATION SERVICE
@@ -1490,20 +1493,30 @@ private setupReactiveSync() {
   /**
    * Get a single location update quickly for decision making
    */
+  /**
+   * Get location FAST - uses hybrid approach
+   * Returns in < 3 seconds typically, even if GPS is weak
+   */
   private async getQuickLocation(): Promise<LocationState | null> {
     try {
-      return await new Promise((resolve) => {
-        gpsManager.forceLocationCheck(
-          (location) => resolve(location),
-          (error) => {
-            Logger.warn(`[LocationService] Quick location fail: ${error.message}`);
-            resolve(null);
-          },
-          3, // Strengthened for background cold-starts
-          3  // 3 attempts
-        );
+      const loc = await quickLocation.getQuickLocation({
+        timeout: 5000,           // Max 5 seconds total
+        highAccuracyTimeout: 2000, // Only wait 2s for GPS
+        desiredAccuracy: 100      // Accept 100m accuracy
       });
+      
+      if (loc) {
+        Logger.info(`[QuickLocation] Got location from ${loc.source}: ${loc.accuracy}m accuracy`);
+        return {
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          accuracy: loc.accuracy,
+          timestamp: loc.timestamp
+        };
+      }
+      return null;
     } catch (error) {
+      Logger.warn('[QuickLocation] Failed:', error);
       return null;
     }
   }

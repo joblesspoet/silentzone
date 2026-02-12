@@ -1,8 +1,9 @@
-import Geolocation from '@react-native-community/geolocation';
-import { Platform } from 'react-native';
+import Geolocation from 'react-native-geolocation-service';
+import { Platform, PermissionsAndroid } from 'react-native';
 import { Logger } from './Logger';
 import { CONFIG } from '../config/config';
 import { LocationState, LocationValidator } from './LocationValidator';
+import { PermissionsManager } from '../permissions/PermissionsManager';
 
 export type LocationCallback = (location: LocationState) => void;
 export type LocationErrorCallback = (error: any) => void;
