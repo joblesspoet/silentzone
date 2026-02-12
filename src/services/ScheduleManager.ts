@@ -57,15 +57,17 @@ export class ScheduleManager {
 
     for (const place of enabledPlaces) {
       if (!place.schedules || place.schedules.length === 0) {
-        activePlaces.push(place);
         continue;
       }
 
-      for (let dayOffset = 0; dayOffset <= 1; dayOffset++) {
-         const targetDayIndex = (currentDayIndex + dayOffset) % 7;
+      // Check Yesterday (-1), Today (0), and Tomorrow (1)
+      // -1 is critical for overnight schedules currently in progress
+      for (let dayOffset = -1; dayOffset <= 1; dayOffset++) {
+         const targetDayIndex = (currentDayIndex + dayOffset + 7) % 7;
          const targetDayName = days[targetDayIndex];
 
          for (const schedule of place.schedules) {
+            // Day filter: Does this schedule apply to the day being checked?
             if (schedule.days.length > 0 && !schedule.days.includes(targetDayName)) {
                continue;
             }
@@ -75,10 +77,15 @@ export class ScheduleManager {
             
             let startTimeMinutes = startHours * 60 + startMins;
             let endTimeMinutes = endHours * 60 + endMins;
+            const isOvernight = startTimeMinutes > endTimeMinutes;
 
-            if (dayOffset === 1) {
-               startTimeMinutes += 1440;
-               endTimeMinutes += 1440;
+            // Global offset for the day we are checking
+            const dayOffsetMinutes = dayOffset * 1440;
+            startTimeMinutes += dayOffsetMinutes;
+            endTimeMinutes += dayOffsetMinutes;
+
+            if (isOvernight) {
+               endTimeMinutes += 1440; // Spans to next day relative to START
             }
 
             const preActivationMinutes = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES;
@@ -87,16 +94,8 @@ export class ScheduleManager {
             const effectiveStartMinutes = startTimeMinutes - preActivationMinutes;
             const effectiveEndMinutes = endTimeMinutes + postGraceMinutes;
 
-            const isOvernight = (startHours * 60 + startMins) > (endHours * 60 + endMins);
-            let isInEffectiveWindow = false;
-
-            if (dayOffset === 0 && isOvernight) {
-               isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes || 
-                                     currentTimeMinutes < effectiveEndMinutes;
-            } else {
-               isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes && 
-                                     currentTimeMinutes < effectiveEndMinutes;
-            }
+            const isInEffectiveWindow = currentTimeMinutes >= effectiveStartMinutes && 
+                                      currentTimeMinutes < effectiveEndMinutes;
 
             if (isInEffectiveWindow) {
                if (!activePlaces.find(p => p.id === place.id)) {
@@ -104,43 +103,44 @@ export class ScheduleManager {
                }
             }
 
-            let isFutureSchedule = false;
-            let minutesUntilStart: number = 0;
-            let isOvernightActive = false;
+            // Determine minutes until start for upcoming notifications/monitoring
+            let isUpcoming = false;
+            let minsUntilStart = 0;
 
-            if (dayOffset === 0 && isOvernight && currentTimeMinutes < (startHours * 60 + startMins)) {
-               minutesUntilStart = 0;
-               isOvernightActive = true;
-               isFutureSchedule = false;
-            } else if (currentTimeMinutes < startTimeMinutes) {
-               minutesUntilStart = startTimeMinutes - currentTimeMinutes;
-               isFutureSchedule = true;
+            if (currentTimeMinutes < startTimeMinutes) {
+               minsUntilStart = startTimeMinutes - currentTimeMinutes;
+               isUpcoming = true;
             } else if (currentTimeMinutes >= startTimeMinutes && currentTimeMinutes < endTimeMinutes) {
-               minutesUntilStart = 0;
-               isFutureSchedule = false;
-            } else {
-               continue;
+               minsUntilStart = 0;
+               isUpcoming = true; // Technically currently active, but included in timeline
             }
 
-            if (isInEffectiveWindow || isFutureSchedule) {
+            if (isInEffectiveWindow || isUpcoming) {
                const scheduleStart = new Date(now);
                scheduleStart.setHours(startHours, startMins, 0, 0);
                scheduleStart.setDate(scheduleStart.getDate() + dayOffset);
-
-               if (isOvernightActive && dayOffset === 0) {
-                  scheduleStart.setDate(scheduleStart.getDate() - 1);
-               }
                
                const scheduleEnd = new Date(scheduleStart);
-               const durationMinutes = (endHours * 60 + endMins) - (startHours * 60 + startMins) + (isOvernight ? 1440 : 0);
-               scheduleEnd.setMinutes(scheduleEnd.getMinutes() + durationMinutes);
+               const durationMinutes = isOvernight 
+                  ? (1440 - startTimeMinutes % 1440) + (endTimeMinutes % 1440)
+                  : endTimeMinutes - startTimeMinutes;
+               
+               scheduleEnd.setMinutes(scheduleEnd.getMinutes() + (isOvernight ? (endHours * 60 + endMins) + (1440 - (startHours * 60 + startMins)) : (endHours * 60 + endMins) - (startHours * 60 + startMins)));
+               
+               // Simpler duration calculation
+               const startTotal = startHours * 60 + startMins;
+               const endTotal = endHours * 60 + endMins;
+               const dur = isOvernight ? (1440 - startTotal + endTotal) : (endTotal - startTotal);
+               
+               const finalEnd = new Date(scheduleStart);
+               finalEnd.setMinutes(finalEnd.getMinutes() + dur);
 
                upcomingSchedules.push({
                   placeId: place.id,
                   placeName: place.name,
                   startTime: scheduleStart,
-                  endTime: scheduleEnd,
-                  minutesUntilStart,
+                  endTime: finalEnd,
+                  minutesUntilStart: minsUntilStart,
                });
             }
          }

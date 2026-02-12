@@ -25,12 +25,10 @@ export const RealmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           schemaVersion: SCHEMA_VERSION,
         });
         
-        // Run migration from AsyncStorage if needed
         await migrateFromAsyncStorage(realmInstance);
-        
         setRealm(realmInstance);
       } catch (err: any) {
-        console.error('Failed to open Realm:', err);
+        console.error('[RealmProvider] 🔥 Initialization Error:', err);
         setError(err);
       }
     };

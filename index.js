@@ -51,18 +51,26 @@ const getRealm = async () => {
     
     const Realm = require('realm');
     const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
-    const realm = await Realm.open({
-        schema: schemas,
-        schemaVersion: SCHEMA_VERSION,
-    });
     
-    // Wire up services with the active realm instance
-    Logger.setRealm(realm);
-    const loggingEnabled = await SettingsService.getLoggingEnabled();
-    Logger.setEnabled(loggingEnabled);
+    try {
+        console.log('[Dispatcher:getRealm] Opening background Realm...');
+        const realm = await Realm.open({
+            schema: schemas,
+            schemaVersion: SCHEMA_VERSION,
+        });
+        console.log('[Dispatcher:getRealm] Background Realm opened.');
+        
+        // Wire up services with the active realm instance
+        Logger.setRealm(realm);
+        const loggingEnabled = await SettingsService.getLoggingEnabled();
+        Logger.setEnabled(loggingEnabled);
 
-    cachedRealm = realm;
-    return realm;
+        cachedRealm = realm;
+        return realm;
+    } catch (error) {
+        console.error('[Dispatcher:getRealm] CRITICAL FAILURE:', error);
+        throw error; // Re-throw to caller
+    }
 };
 
 // ============================================================================

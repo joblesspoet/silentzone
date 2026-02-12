@@ -28,10 +28,11 @@ export const PreferencesService = {
    * Creates default preferences if they don't exist
    */
   getPreferences: (realm: Realm): Preferences | null => {
+    console.log(`[PreferencesService] Fetching preferences (ID: ${PREFS_ID})...`);
     let prefs = realm.objectForPrimaryKey<Preferences>('Preferences', PREFS_ID);
 
     if (!prefs) {
-      // Create defaults if not exist
+      console.log('[PreferencesService] No preferences found. Creating defaults...');
       const created = RealmWriteHelper.safeWrite(
         realm,
         () => {
@@ -47,6 +48,11 @@ export const PreferencesService = {
         'createDefaultPreferences'
       );
 
+      if (created) {
+        console.log('[PreferencesService] Default preferences created ✅');
+      } else {
+        console.error('[PreferencesService] CRITICAL: Failed to create default preferences! ❌');
+      }
       prefs = created;
     }
 

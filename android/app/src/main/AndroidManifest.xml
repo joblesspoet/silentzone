@@ -59,6 +59,13 @@
         android:enabled="true"
         android:exported="false" />
 
+      <!-- Boot Reschedule Service - Custom Headless Task for reboot recovery -->
+      <service
+        android:name=".BootRescheduleService"
+        android:enabled="true"
+        android:exported="false"
+        android:foregroundServiceType="location" />
+
       <!-- Alarm Receiver - Ensures alarms wake up the app even when killed -->
       <receiver
         android:name="app.notifee.core.AlarmReceiver"

@@ -36,9 +36,9 @@ export class Logger {
     }
 
     // Write to DB if enabled
-    if (this.isEnabled && this.realmInstance) {
+    if (this.isEnabled && this.realmInstance && !this.realmInstance.isClosed) {
       try {
-        this.realmInstance.write(() => {
+        const performWrite = () => {
           this.realmInstance?.create('SystemLog', {
              id: new Date().getTime().toString() + Math.random().toString(36).substring(2),
              level,
@@ -47,18 +47,24 @@ export class Logger {
              timestamp: new Date(),
           });
           
-          // Cleanup old logs if needed (simple cleanup every write might be expensive, 
-          // but for <1000 logs it's fast enough)
-          // Optimized: Only cleanup if count > MAX_LOGS + 100 to avoid constant deletion
+          // Cleanup old logs periodically
           const allLogs = this.realmInstance?.objects('SystemLog');
-          if (allLogs && allLogs.length > MAX_LOGS + 100) {
+          if (allLogs && allLogs.length > MAX_LOGS + 50) {
              const sortedLogs = allLogs.sorted('timestamp');
              const logsToDelete = sortedLogs.slice(0, allLogs.length - MAX_LOGS);
              this.realmInstance?.delete(logsToDelete);
           }
-        });
+        };
+
+        // SAFETY: Check if we are already in a transaction
+        if (this.realmInstance.isInTransaction) {
+          performWrite();
+        } else {
+          this.realmInstance.write(() => performWrite());
+        }
       } catch (e) {
-        console.error('[Logger] Failed to write log to Realm', e);
+        // Fallback for extreme cases: console only
+        console.warn('[Logger] Could not persist log to Realm:', e);
       }
     }
   }

@@ -44,6 +44,19 @@ class AlarmService {
         return;
       }
 
+      // Check for EXISTING alarm with same ID and timestamp to avoid OS churn
+      const existing = await notifee.getTriggerNotifications();
+      const match = existing.find(t => 
+        t.notification.id === id && 
+        (t.trigger as any).timestamp === timestamp
+      );
+
+      if (match) {
+        // Log at verbose level only to avoid clutter
+        console.log(`[AlarmService] Alarm ${id} already set for this time. Skipping.`);
+        return;
+      }
+
       await notifee.createTriggerNotification(
         {
           id,

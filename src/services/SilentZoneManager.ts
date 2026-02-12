@@ -174,9 +174,12 @@ export class SilentZoneManager {
   }
 
   /**
-   * Handle exit from a silent zone
+   * Handle exit from a silent zone.
+   * 
+   * @param placeId ID of the place exited
+   * @param isScheduledEnd True if this is a natural end of a schedule (from Alarm)
    */
-  async handleExit(placeId: string, force: boolean = false): Promise<boolean> {
+  async handleExit(placeId: string, isScheduledEnd: boolean = false): Promise<boolean> {
     if (!this.realm) {
       Logger.error('[SilentZoneManager] Cannot handle exit: realm not available');
       return false;
@@ -201,12 +204,11 @@ export class SilentZoneManager {
     }
 
     const totalActive = activeLogs.length;
-    Logger.info(`[SilentZoneManager] Exiting ${placeName} (${totalActive} total active zones)`);
+    Logger.info(`[SilentZoneManager] Exiting ${placeName} (${totalActive} total active zones, scheduledEnd=${isScheduledEnd})`);
 
     if (totalActive === 1) {
       // LAST ZONE: Restore sound
-      console.log(`[SilentZoneManager] Attempting check-out for log: ${thisLog.id} (Place: ${placeName})`);
-      return await this.handleLastZoneExit(thisLog.id as string, placeId, placeName);
+      return await this.handleLastZoneExit(thisLog.id as string, placeId, placeName, isScheduledEnd);
     } else {
       // OVERLAPPING: Still in other zones, stay silent
       return await this.handlePartialExit(thisLog.id as string, placeName, activeLogs, placeId);
@@ -216,40 +218,25 @@ export class SilentZoneManager {
   /**
    * Handle exit from the last active zone
    */
-  private async handleLastZoneExit(logId: string, placeId: string, placeName: string): Promise<boolean> {
+  private async handleLastZoneExit(
+    logId: string, 
+    placeId: string, 
+    placeName: string, 
+    isScheduledEnd: boolean
+  ): Promise<boolean> {
     Logger.info(`[SilentZoneManager] Last zone exit - restoring sound`);
 
     try {
       if (Platform.OS === 'android') {
-        console.log(`[SilentZoneManager] Restoring sound for ${placeName} via log ${logId}`);
         await this.restoreRingerMode(logId);
       }
-      const success = CheckInService.logCheckOut(this.realm!, logId);
-      console.log(`[SilentZoneManager] Check-out ${success ? 'SUCCEEDED' : 'FAILED'} for ${placeName}`);
+      CheckInService.logCheckOut(this.realm!, logId);
 
-      // Check if this was a manual early exit or a scheduled end
-      // If we are currently in a schedule window, this exit is likely MANUAL (user left early)
-      // If we are NOT in a schedule window, the schedule just ended naturally (AlarmService handles this)
-      
-      const place = PlaceService.getPlaceById(this.realm!, placeId);
-      let isScheduledTime = false;
-      
-      if (place) {
-          const now = new Date();
-          const schedules = (place as any).schedules || [];
-          for (const schedule of schedules) {
-              if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
-                  isScheduledTime = true;
-                  break;
-              }
-          }
-      }
-
-      // Only notify if this is a MANUAL exit during scheduled time (early exit)
+      // Only notify if this is NOT a scheduled end (i.e., user left early)
       const now = Date.now();
       const lastRestored = this.lastSoundRestoredTime[placeId] || 0;
       
-      if (isScheduledTime && (now - lastRestored > 60000)) {
+      if (!isScheduledEnd && (now - lastRestored > 60000)) {
          this.lastSoundRestoredTime[placeId] = now;
          notificationBus.emit({
             type: 'SOUND_RESTORED',
@@ -393,41 +380,6 @@ export class SilentZoneManager {
     } catch (error) {
       Logger.error('[SilentZoneManager] Failed to restore:', error);
     }
-  }
-
-  /**
-   * Calculate time until schedule end
-   */
-  calculateTimeUntilEnd(place: any): number | null {
-    const schedules = place.schedules || [];
-    if (schedules.length === 0) return null;
-
-    const now = new Date();
-    for (const schedule of schedules) {
-      if (ScheduleManager.isScheduleActiveNow(schedule, now)) {
-        const [endHours, endMinutes] = schedule.endTime.split(':').map(Number);
-        const endTime = new Date(now);
-        endTime.setHours(endHours, endMinutes, 0, 0);
-
-        // Handle overnight schedules
-        if (endTime < now) {
-          endTime.setDate(endTime.getDate() + 1);
-        }
-
-        const msUntilEnd = endTime.getTime() - now.getTime();
-        return msUntilEnd > 0 ? msUntilEnd : null;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Get current active check-ins count
-   */
-  getActiveCheckInCount(): number {
-    if (!this.realm) return 0;
-    return Array.from(CheckInService.getActiveCheckIns(this.realm)).length;
   }
 
   /**

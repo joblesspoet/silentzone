@@ -121,7 +121,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         console.log(`[PermissionsContext] Critical permissions revoked! Stopping geofencing. Status: Loc=${loc}, Bg=${bg}, Notif=${notif}, Exact=${exactAlarm}`);
         
         // Stop background services/geofencing immediately and restore state
-        locationService.purgeAllTracking();
+        locationService.purgeAllAlarms();
 
         // Determine which permission is missing and navigate to that screen
         const getFirstMissingScreen = () => {

@@ -1,0 +1,698 @@
+--------- beginning of main
+02-13 00:54:26.656  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5378, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:26.658  1267  3785 I mtkpower_client: ret_hdl:366766
+02-13 00:54:26.658  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4096, dur:80, num:2, pid:1267, tid:3785
+02-13 00:54:26.659  1281  1383 I libPowerHal: [perfLockAcq] idx:2 hdl:366766 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366766
+02-13 00:54:26.660  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:30, pr:3
+02-13 00:54:26.661  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1438300, param:0, pr:3
+02-13 00:54:26.661  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1438400, param:0, pr:3
+02-13 00:54:26.661  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:2004100, param:0, pr:3
+02-13 00:54:26.661  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:40c000 param:1700000 pr:3
+02-13 00:54:26.661  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:40c100 param:2000000 pr:3
+02-13 00:54:26.662  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1444a00 param:68 pr:3
+02-13 00:54:26.662  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1444c00 param:68 pr:3
+02-13 00:54:26.662  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:26.662  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366766
+02-13 00:54:26.663  1267  3785 I mtkpower_client: ret_hdl:366767
+02-13 00:54:26.664  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366767 hint:-1 pid:1267 tid:3785 duration:80 lock_user:binder:1267_2 => ret_hdl:366767
+02-13 00:54:26.664  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4402, dur:3000, num:6, pid:1267, tid:3785
+02-13 00:54:26.665  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:100, pr:3
+02-13 00:54:26.665  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366767
+02-13 00:54:26.666  1267  3785 I mtkpower_client: ret_hdl:366768
+02-13 00:54:26.667  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366768 hint:-1 pid:1267 tid:3785 duration:3000 lock_user:binder:1267_2 => ret_hdl:366768
+02-13 00:54:26.667  1281  1383 I libPowerHal: [setGPUFreq] binder:1267_2 user set gpu freq min:17, max:-1
+02-13 00:54:26.667  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:26.667  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:26.667  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:26.667  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:26.667  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:26.667  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:26.667  1281  1383 I libPowerHal: [setDvfsrcDevFreqOpp] opp:1, freq:2400000000
+02-13 00:54:26.668  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1000000 param:1 pr:3
+02-13 00:54:26.668  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366768
+02-13 00:54:26.745  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366767
+02-13 00:54:26.745  1281  1383 I libPowerHal: [perfLockRel] hdl:366767, idx:3
+02-13 00:54:26.745  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:70, pr:3
+02-13 00:54:26.747  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366767
+02-13 00:54:26.761  1267  3785 I mtkpower_client: perf_lock_rel, hdl:366766, tid:3785
+02-13 00:54:26.762  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5379, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:26.762  1281  1383 I libPowerHal: [perfLockRel] hdl:366766, idx:2
+02-13 00:54:26.762  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1438300, param:1000, pr:6
+02-13 00:54:26.762  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1438400, param:1000, pr:6
+02-13 00:54:26.763  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:2004100 param:2, pr:6
+02-13 00:54:26.763  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:40c000 param:-1 pr:6
+02-13 00:54:26.763  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:40c100 param:-1 pr:6
+02-13 00:54:26.764  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1444a00 param:20 pr:6
+02-13 00:54:26.764  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1444c00 param:20 pr:6
+02-13 00:54:26.764  2096  2962 I mtkpower_client: perf_lock_acq, hdl:366677, dur:3000, num:4, pid:2096, tid:2962
+02-13 00:54:26.764  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:26.765  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366766
+02-13 00:54:26.765  1267  3785 I mtkpower_client: ret_hdl:366769
+02-13 00:54:26.766  1267  3785 I mtkpower_client: perf_lock_acq, hdl:366768, dur:3000, num:6, pid:1267, tid:3785
+02-13 00:54:26.766  1281  1383 I libPowerHal: [perfLockAcq] idx:2 hdl:366769 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366769
+02-13 00:54:26.766  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1438300, param:0, pr:3
+02-13 00:54:26.766  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1438400, param:0, pr:3
+02-13 00:54:26.766  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:2004100, param:0, pr:3
+02-13 00:54:26.767  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:40c000 param:1700000 pr:3
+02-13 00:54:26.767  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:40c100 param:2000000 pr:3
+02-13 00:54:26.767  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1444a00 param:68 pr:3
+02-13 00:54:26.767  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1444c00 param:68 pr:3
+02-13 00:54:26.767  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:26.767  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366769
+02-13 00:54:26.768  2096  2962 I mtkpower_client: ret_hdl:366770
+02-13 00:54:26.769  1281  1383 I libPowerHal: cmdSetting - unknown cmd:2000400, scmd:(null) ,param_1:-3912
+02-13 00:54:26.769  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366770 hint:-1 pid:2096 tid:2962 duration:3000 lock_user:system_server => ret_hdl:366770
+02-13 00:54:26.769  1281  1383 I libPowerHal: [fpsgo_ctrl_render_thread] 3912, 0xb400007867201b70
+02-13 00:54:26.769  2096  2962 I mtkpower_client: perf_lock_rel, hdl:366770, tid:2962
+02-13 00:54:26.771  1281  1383 I libPowerHal: [PE] system_server update ONESHOT(set) cmd:2000300 param:3912 pr:3
+02-13 00:54:26.771  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366770
+02-13 00:54:26.772  1281  1383 I libPowerHal: [perfLockAcq] idx:5 hdl:366771 hint:43 pid:1281 tid:1281 duration:3000 lock_user:vendor.mediatek => ret_hdl:366771
+02-13 00:54:26.772  1281  1383 I libPowerHal: [PE] MTKPOWER_HINT_UX_SCROLLING update cmd:400000 param:1075000 pr:3
+02-13 00:54:26.772  1281  1383 I libPowerHal: [PE] MTKPOWER_HINT_UX_SCROLLING update cmd:400100 param:1162000 pr:3
+02-13 00:54:26.773  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(MTKPOWER_HINT_UX_SCROLLING): 1075000 max(binder:1267_2): -1 cluster[1] min(MTKPOWER_HINT_UX_SCROLLING): 1162000 max(binder:1267_2): -1
+02-13 00:54:26.773  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366771
+02-13 00:54:26.773  1281  1383 I libPowerHal: [perfLockRel] hdl:366674, idx:-1
+02-13 00:54:26.774  1267  3785 I mtkpower_client: ret_hdl:366768
+02-13 00:54:26.774  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366768 hint:-1 pid:1267 tid:3785 duration:3000 lock_user:binder:1267_2 => ret_hdl:366768
+02-13 00:54:26.774  1281  1383 I libPowerHal: [unsetGPUFreq] current min:17, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:26.774  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:26.774  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:26.774  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:26.774  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:26.776  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366768
+02-13 00:54:26.777  1281  1383 I libPowerHal: [perfLockRel] hdl:366770, idx:3
+02-13 00:54:26.778  1281  1383 I libPowerHal: [fpsgo_ctrl_render_thread] 3912, 0xb400007867201b70
+02-13 00:54:26.778  1281  1383 I libPowerHal: [PD] system_server update ONESHOT(unset) cmd:2000300 param:3912 pr:3
+02-13 00:54:26.779  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366770
+02-13 00:54:26.779  1281  1383 I libPowerHal: [perfLockAcq] idx:6 hdl:366772 hint:49 pid:1281 tid:1281 duration:3000 lock_user:vendor.mediatek => ret_hdl:366772
+02-13 00:54:26.779  1281  1383 I libPowerHal: [PE] MTKPOWER_HINT_UX_SCROLLING_COMMON update cmd:1468000 param:0 pr:3
+02-13 00:54:26.779  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366772
+02-13 00:54:27.020  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5378, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:27.021  1267  3785 I mtkpower_client: ret_hdl:366773
+02-13 00:54:27.021  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4096, dur:80, num:2, pid:1267, tid:3785
+02-13 00:54:27.021  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366773 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366773
+02-13 00:54:27.021  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366773
+02-13 00:54:27.022  1267  3785 I mtkpower_client: ret_hdl:366774
+02-13 00:54:27.023  1281  1383 I libPowerHal: [perfLockAcq] idx:7 hdl:366774 hint:-1 pid:1267 tid:3785 duration:80 lock_user:binder:1267_2 => ret_hdl:366774
+02-13 00:54:27.024  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:100, pr:3
+02-13 00:54:27.024  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366774
+02-13 00:54:27.051  1267  3785 I mtkpower_client: perf_lock_acq, hdl:366768, dur:3000, num:6, pid:1267, tid:3785
+02-13 00:54:27.052  1267  3785 I mtkpower_client: ret_hdl:366768
+02-13 00:54:27.053  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366768 hint:-1 pid:1267 tid:3785 duration:3000 lock_user:binder:1267_2 => ret_hdl:366768
+02-13 00:54:27.053  1281  1383 I libPowerHal: [unsetGPUFreq] current min:17, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:27.053  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:27.053  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:27.053  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:27.053  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:27.055  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366768
+02-13 00:54:27.104  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366774
+02-13 00:54:27.104  1281  1383 I libPowerHal: [perfLockRel] hdl:366774, idx:7
+02-13 00:54:27.104  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:70, pr:3
+02-13 00:54:27.106  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366774
+02-13 00:54:27.160  1267  3785 I mtkpower_client: perf_lock_rel, hdl:366773, tid:3785
+02-13 00:54:27.160  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5379, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:27.161  1281  1383 I libPowerHal: [perfLockRel] hdl:366773, idx:3
+02-13 00:54:27.162  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366773
+02-13 00:54:27.163  1267  3785 I mtkpower_client: ret_hdl:366775
+02-13 00:54:27.163  1267  3785 I mtkpower_client: perf_lock_acq, hdl:366768, dur:3000, num:6, pid:1267, tid:3785
+02-13 00:54:27.163  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366775 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366775
+02-13 00:54:27.163  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366775
+02-13 00:54:27.164  1267  3785 I mtkpower_client: ret_hdl:366768
+02-13 00:54:27.164  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366768 hint:-1 pid:1267 tid:3785 duration:3000 lock_user:binder:1267_2 => ret_hdl:366768
+02-13 00:54:27.164  1281  1383 I libPowerHal: [unsetGPUFreq] current min:17, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:27.164  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:27.164  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:27.164  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:27.165  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:27.167  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366768
+02-13 00:54:29.773  2096  2379 I mtkpower_client: perf_lock_acq, hdl:366770, dur:3000, num:4, pid:2096, tid:2379
+02-13 00:54:29.773  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366771
+02-13 00:54:29.774  1281  1383 I libPowerHal: [perfLockRel] hdl:366771, idx:5
+02-13 00:54:29.774  1281  1383 I libPowerHal: [PD] MTKPOWER_HINT_UX_SCROLLING update cmd:400000 param:500000 pr:3
+02-13 00:54:29.775  1281  1383 I libPowerHal: [PD] MTKPOWER_HINT_UX_SCROLLING update cmd:400100 param:850000 pr:3
+02-13 00:54:29.776  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:29.776  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366771
+02-13 00:54:29.776  1281  1383 I libPowerHal: [perfLockRel] hdl:366772, idx:6
+02-13 00:54:29.777  1281  1383 I libPowerHal: [PD] MTKPOWER_HINT_UX_SCROLLING_COMMON update cmd:1468000 param:1 pr:6
+02-13 00:54:29.778  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366772
+02-13 00:54:29.779  2096  2379 I mtkpower_client: ret_hdl:366776
+02-13 00:54:29.779  1281  1383 I libPowerHal: cmdSetting - unknown cmd:2000400, scmd:(null) ,param_1:3912
+02-13 00:54:29.779  1281  1383 I libPowerHal: [perfLockAcq] idx:7 hdl:366776 hint:-1 pid:2096 tid:2379 duration:3000 lock_user:system_server => ret_hdl:366776
+02-13 00:54:29.779  1281  1383 I libPowerHal: [fpsgo_ctrl_render_thread] -3912, 0xb40000786720eab0
+02-13 00:54:29.779  2096  2379 I mtkpower_client: perf_lock_rel, hdl:366776, tid:2379
+02-13 00:54:29.780  1281  1383 I libPowerHal: [PE] system_server update ONESHOT(set) cmd:2000300 param:-3912 pr:3
+02-13 00:54:29.780  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366776
+02-13 00:54:29.780  1281  1383 I libPowerHal: [perfLockRel] hdl:366776, idx:7
+02-13 00:54:29.781  1281  1383 I libPowerHal: [fpsgo_ctrl_render_thread] -3912, 0xb40000786720eab0
+02-13 00:54:29.781  1281  1383 I libPowerHal: [PD] system_server update ONESHOT(unset) cmd:2000300 param:-3912 pr:3
+02-13 00:54:29.782  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366776
+02-13 00:54:30.167  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366768
+02-13 00:54:30.168  1281  1383 I libPowerHal: [perfLockRel] hdl:366768, idx:4
+02-13 00:54:30.168  1281  1383 I libPowerHal: [unsetGPUFreq] current min:17, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:30.168  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 24
+02-13 00:54:30.168  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:30.169  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (24, 0); Hard min/max = (24, 0)
+02-13 00:54:30.169  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (24, 0)
+02-13 00:54:30.169  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 24
+02-13 00:54:30.169  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:30.169  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:30, pr:3
+02-13 00:54:30.171  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1000000 param:-1 pr:6
+02-13 00:54:30.172  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366768
+02-13 00:54:30.687  1267  3785 I mtkpower_client: perf_lock_rel, hdl:366768, tid:3785
+02-13 00:54:30.689  1281  1383 I libPowerHal: [perfLockRel] hdl:366768, idx:-1
+02-13 00:54:31.267  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366769
+02-13 00:54:31.268  1281  1383 I libPowerHal: [perfLockRel] hdl:366769, idx:2
+02-13 00:54:31.269  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366769
+02-13 00:54:31.664  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366775
+02-13 00:54:31.664  1281  1383 I libPowerHal: [perfLockRel] hdl:366775, idx:3
+02-13 00:54:31.664  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:0, pr:6
+02-13 00:54:31.666  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1438300, param:1000, pr:6
+02-13 00:54:31.667  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1438400, param:1000, pr:6
+02-13 00:54:31.667  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:2004100 param:2, pr:6
+02-13 00:54:31.667  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:40c000 param:-1 pr:6
+02-13 00:54:31.668  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:40c100 param:-1 pr:6
+02-13 00:54:31.669  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1444a00 param:20 pr:6
+02-13 00:54:31.669  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1444c00 param:20 pr:6
+02-13 00:54:31.670  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:31.670  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366775
+02-13 00:54:31.688  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5378, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:31.689  1267  3785 I mtkpower_client: ret_hdl:366777
+02-13 00:54:31.689  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4096, dur:80, num:2, pid:1267, tid:3785
+02-13 00:54:31.690  1281  1383 I libPowerHal: [perfLockAcq] idx:2 hdl:366777 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366777
+02-13 00:54:31.691  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:30, pr:3
+02-13 00:54:31.691  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1438300, param:0, pr:3
+02-13 00:54:31.691  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1438400, param:0, pr:3
+02-13 00:54:31.691  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:2004100, param:0, pr:3
+02-13 00:54:31.692  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:40c000 param:1700000 pr:3
+02-13 00:54:31.692  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:40c100 param:2000000 pr:3
+02-13 00:54:31.692  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1444a00 param:68 pr:3
+02-13 00:54:31.692  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1444c00 param:68 pr:3
+02-13 00:54:31.692  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:31.692  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366777
+02-13 00:54:31.693  1267  3785 I mtkpower_client: ret_hdl:366778
+02-13 00:54:31.693  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366778 hint:-1 pid:1267 tid:3785 duration:80 lock_user:binder:1267_2 => ret_hdl:366778
+02-13 00:54:31.694  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:100, pr:3
+02-13 00:54:31.694  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366778
+02-13 00:54:31.701  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4402, dur:3000, num:6, pid:1267, tid:3785
+02-13 00:54:31.702  1267  3785 I mtkpower_client: ret_hdl:366779
+02-13 00:54:31.702  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366779 hint:-1 pid:1267 tid:3785 duration:3000 lock_user:binder:1267_2 => ret_hdl:366779
+02-13 00:54:31.702  1281  1383 I libPowerHal: [setGPUFreq] binder:1267_2 user set gpu freq min:17, max:-1
+02-13 00:54:31.702  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:31.703  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:31.703  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:31.703  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:31.703  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:31.703  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:31.703  1281  1383 I libPowerHal: [setDvfsrcDevFreqOpp] opp:1, freq:2400000000
+02-13 00:54:31.703  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1000000 param:1 pr:3
+02-13 00:54:31.703  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366779
+02-13 00:54:31.775  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366778
+02-13 00:54:31.775  1281  1383 I libPowerHal: [perfLockRel] hdl:366778, idx:3
+02-13 00:54:31.775  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:70, pr:3
+02-13 00:54:31.776  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366778
+02-13 00:54:31.818  1267  3785 I mtkpower_client: perf_lock_rel, hdl:366777, tid:3785
+02-13 00:54:31.818  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5379, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:31.819  1281  1383 I libPowerHal: [perfLockRel] hdl:366777, idx:2
+02-13 00:54:31.819  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1438300, param:1000, pr:6
+02-13 00:54:31.819  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1438400, param:1000, pr:6
+02-13 00:54:31.819  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:2004100 param:2, pr:6
+02-13 00:54:31.820  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:40c000 param:-1 pr:6
+02-13 00:54:31.820  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:40c100 param:-1 pr:6
+02-13 00:54:31.820  2096  2962 I mtkpower_client: perf_lock_acq, hdl:366776, dur:3000, num:4, pid:2096, tid:2962
+02-13 00:54:31.820  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1444a00 param:20 pr:6
+02-13 00:54:31.821  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1444c00 param:20 pr:6
+02-13 00:54:31.821  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:31.821  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366777
+02-13 00:54:31.822  1267  3785 I mtkpower_client: ret_hdl:366780
+02-13 00:54:31.822  1281  1383 I libPowerHal: [perfLockAcq] idx:2 hdl:366780 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366780
+02-13 00:54:31.822  1267  3785 I mtkpower_client: perf_lock_acq, hdl:366779, dur:3000, num:6, pid:1267, tid:3785
+02-13 00:54:31.822  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1438300, param:0, pr:3
+02-13 00:54:31.822  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1438400, param:0, pr:3
+02-13 00:54:31.822  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:2004100, param:0, pr:3
+02-13 00:54:31.822  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:40c000 param:1700000 pr:3
+02-13 00:54:31.823  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:40c100 param:2000000 pr:3
+02-13 00:54:31.823  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1444a00 param:68 pr:3
+02-13 00:54:31.823  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1444c00 param:68 pr:3
+02-13 00:54:31.823  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:31.823  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366780
+02-13 00:54:31.824  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366781 hint:43 pid:1281 tid:1281 duration:3000 lock_user:vendor.mediatek => ret_hdl:366781
+02-13 00:54:31.824  1281  1383 I libPowerHal: [PE] MTKPOWER_HINT_UX_SCROLLING update cmd:400000 param:1075000 pr:3
+02-13 00:54:31.824  1281  1383 I libPowerHal: [PE] MTKPOWER_HINT_UX_SCROLLING update cmd:400100 param:1162000 pr:3
+02-13 00:54:31.824  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(MTKPOWER_HINT_UX_SCROLLING): 1075000 max(binder:1267_2): -1 cluster[1] min(MTKPOWER_HINT_UX_SCROLLING): 1162000 max(binder:1267_2): -1
+02-13 00:54:31.824  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366781
+02-13 00:54:31.825  1281  1383 I libPowerHal: [perfLockRel] hdl:366771, idx:-1
+02-13 00:54:31.825  2096  2962 I mtkpower_client: ret_hdl:366782
+02-13 00:54:31.825  1281  1383 I libPowerHal: cmdSetting - unknown cmd:2000400, scmd:(null) ,param_1:-3912
+02-13 00:54:31.825  1281  1383 I libPowerHal: [perfLockAcq] idx:5 hdl:366782 hint:-1 pid:2096 tid:2962 duration:3000 lock_user:system_server => ret_hdl:366782
+02-13 00:54:31.826  2096  2962 I mtkpower_client: perf_lock_rel, hdl:366782, tid:2962
+02-13 00:54:31.826  1281  1383 I libPowerHal: [fpsgo_ctrl_render_thread] 3912, 0xb400007867208310
+02-13 00:54:31.826  1281  1383 I libPowerHal: [PE] system_server update ONESHOT(set) cmd:2000300 param:3912 pr:3
+02-13 00:54:31.826  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366782
+02-13 00:54:31.826  1267  3785 I mtkpower_client: ret_hdl:366779
+02-13 00:54:31.827  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366779 hint:-1 pid:1267 tid:3785 duration:3000 lock_user:binder:1267_2 => ret_hdl:366779
+02-13 00:54:31.827  1281  1383 I libPowerHal: [unsetGPUFreq] current min:17, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:31.827  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:31.827  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:31.827  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:31.827  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:31.829  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366779
+02-13 00:54:31.830  1281  1383 I libPowerHal: [perfLockAcq] idx:6 hdl:366783 hint:49 pid:1281 tid:1281 duration:3000 lock_user:vendor.mediatek => ret_hdl:366783
+02-13 00:54:31.830  1281  1383 I libPowerHal: [PE] MTKPOWER_HINT_UX_SCROLLING_COMMON update cmd:1468000 param:0 pr:3
+02-13 00:54:31.830  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366783
+02-13 00:54:31.830  1281  1383 I libPowerHal: [perfLockRel] hdl:366782, idx:5
+02-13 00:54:31.831  1281  1383 I libPowerHal: [fpsgo_ctrl_render_thread] 3912, 0xb400007867208310
+02-13 00:54:31.831  1281  1383 I libPowerHal: [PD] system_server update ONESHOT(unset) cmd:2000300 param:3912 pr:3
+02-13 00:54:31.832  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366782
+02-13 00:54:32.918  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5378, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:32.919  1267  3785 I mtkpower_client: ret_hdl:366784
+02-13 00:54:32.919  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4096, dur:80, num:2, pid:1267, tid:3785
+02-13 00:54:32.919  1281  1383 I libPowerHal: [perfLockAcq] idx:5 hdl:366784 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366784
+02-13 00:54:32.919  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366784
+02-13 00:54:32.920  1267  3785 I mtkpower_client: ret_hdl:366785
+02-13 00:54:32.921  1281  1383 I libPowerHal: [perfLockAcq] idx:7 hdl:366785 hint:-1 pid:1267 tid:3785 duration:80 lock_user:binder:1267_2 => ret_hdl:366785
+02-13 00:54:32.921  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:100, pr:3
+02-13 00:54:32.922  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366785
+02-13 00:54:32.948  1267  3785 I mtkpower_client: perf_lock_acq, hdl:366779, dur:3000, num:6, pid:1267, tid:3785
+02-13 00:54:32.949  1267  3785 I mtkpower_client: ret_hdl:366779
+02-13 00:54:32.949  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366779 hint:-1 pid:1267 tid:3785 duration:3000 lock_user:binder:1267_2 => ret_hdl:366779
+02-13 00:54:32.949  1281  1383 I libPowerHal: [unsetGPUFreq] current min:17, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:32.950  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:32.950  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:32.950  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:32.950  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:32.952  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366779
+02-13 00:54:33.002  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366785
+02-13 00:54:33.002  1281  1383 I libPowerHal: [perfLockRel] hdl:366785, idx:7
+02-13 00:54:33.002  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:70, pr:3
+02-13 00:54:33.004  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366785
+02-13 00:54:33.182  1267  3785 I mtkpower_client: perf_lock_rel, hdl:366784, tid:3785
+02-13 00:54:33.183  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5379, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:33.184  1281  1383 I libPowerHal: [perfLockRel] hdl:366784, idx:5
+02-13 00:54:33.185  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366784
+02-13 00:54:33.186  1267  3785 I mtkpower_client: ret_hdl:366786
+02-13 00:54:33.186  1267  3785 I mtkpower_client: perf_lock_acq, hdl:366779, dur:3000, num:6, pid:1267, tid:3785
+02-13 00:54:33.186  1281  1383 I libPowerHal: [perfLockAcq] idx:5 hdl:366786 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366786
+02-13 00:54:33.186  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366786
+02-13 00:54:33.187  1267  3785 I mtkpower_client: ret_hdl:366779
+02-13 00:54:33.187  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366779 hint:-1 pid:1267 tid:3785 duration:3000 lock_user:binder:1267_2 => ret_hdl:366779
+02-13 00:54:33.188  1281  1383 I libPowerHal: [unsetGPUFreq] current min:17, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:33.188  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:33.188  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:33.188  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:33.188  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:33.190  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366779
+02-13 00:54:34.156  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5378, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:34.157  1267  3785 I mtkpower_client: ret_hdl:366787
+02-13 00:54:34.158  1281  1383 I libPowerHal: [perfLockAcq] idx:7 hdl:366787 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366787
+02-13 00:54:34.158  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366787
+02-13 00:54:34.205  1267  3785 I mtkpower_client: perf_lock_rel, hdl:366787, tid:3785
+02-13 00:54:34.206  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5379, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:34.206  1281  1383 I libPowerHal: [perfLockRel] hdl:366787, idx:7
+02-13 00:54:34.207  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366787
+02-13 00:54:34.209  1267  3785 I mtkpower_client: ret_hdl:366788
+02-13 00:54:34.209  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4400, dur:250, num:6, pid:1267, tid:3785
+02-13 00:54:34.210  1281  1383 I libPowerHal: [perfLockAcq] idx:7 hdl:366788 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366788
+02-13 00:54:34.210  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366788
+02-13 00:54:34.211  1267  3785 I mtkpower_client: ret_hdl:366789
+02-13 00:54:34.212  1281  1383 I libPowerHal: [perfLockAcq] idx:8 hdl:366789 hint:-1 pid:1267 tid:3785 duration:250 lock_user:binder:1267_2 => ret_hdl:366789
+02-13 00:54:34.212  1281  1383 I libPowerHal: [setGPUFreq] binder:1267_2 user set gpu freq min:17, max:-1
+02-13 00:54:34.212  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:34.212  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:34.212  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:34.212  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:34.213  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:34.213  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:100, pr:3
+02-13 00:54:34.213  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366789
+02-13 00:54:34.463  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366789
+02-13 00:54:34.463  1281  1383 I libPowerHal: [perfLockRel] hdl:366789, idx:8
+02-13 00:54:34.463  1281  1383 I libPowerHal: [unsetGPUFreq] current min:17, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:34.463  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (17, 0); Hard min/max = (24, 0)
+02-13 00:54:34.463  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (17, 0)
+02-13 00:54:34.463  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 17
+02-13 00:54:34.464  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:34.464  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:70, pr:3
+02-13 00:54:34.465  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366789
+02-13 00:54:34.824  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366781
+02-13 00:54:34.824  1281  1383 I libPowerHal: [perfLockRel] hdl:366781, idx:3
+02-13 00:54:34.825  1281  1383 I libPowerHal: [PD] MTKPOWER_HINT_UX_SCROLLING update cmd:400000 param:500000 pr:3
+02-13 00:54:34.825  1281  1383 I libPowerHal: [PD] MTKPOWER_HINT_UX_SCROLLING update cmd:400100 param:850000 pr:3
+02-13 00:54:34.826  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:34.826  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366781
+02-13 00:54:34.827  2096  3606 I mtkpower_client: perf_lock_acq, hdl:366782, dur:3000, num:4, pid:2096, tid:3606
+02-13 00:54:34.828  1281  1383 I libPowerHal: [perfLockRel] hdl:366783, idx:6
+02-13 00:54:34.829  1281  1383 I libPowerHal: [PD] MTKPOWER_HINT_UX_SCROLLING_COMMON update cmd:1468000 param:1 pr:6
+02-13 00:54:34.829  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366783
+02-13 00:54:34.830  2096  3606 I mtkpower_client: ret_hdl:366790
+02-13 00:54:34.831  1281  1383 I libPowerHal: cmdSetting - unknown cmd:2000400, scmd:(null) ,param_1:3912
+02-13 00:54:34.831  2096  3606 I mtkpower_client: perf_lock_rel, hdl:366790, tid:3606
+02-13 00:54:34.831  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366790 hint:-1 pid:2096 tid:3606 duration:3000 lock_user:system_server => ret_hdl:366790
+02-13 00:54:34.831  1281  1383 I libPowerHal: [fpsgo_ctrl_render_thread] -3912, 0xb400007867201b70
+02-13 00:54:34.832  1281  1383 I libPowerHal: [PE] system_server update ONESHOT(set) cmd:2000300 param:-3912 pr:3
+02-13 00:54:34.832  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366790
+02-13 00:54:34.833  1281  1383 I libPowerHal: [perfLockRel] hdl:366790, idx:3
+02-13 00:54:34.834  1281  1383 I libPowerHal: [fpsgo_ctrl_render_thread] -3912, 0xb400007867201b70
+02-13 00:54:34.834  1281  1383 I libPowerHal: [PD] system_server update ONESHOT(unset) cmd:2000300 param:-3912 pr:3
+02-13 00:54:34.834  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366790
+02-13 00:54:35.530  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5378, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:35.531  1267  3785 I mtkpower_client: ret_hdl:366791
+02-13 00:54:35.532  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4096, dur:80, num:2, pid:1267, tid:3785
+02-13 00:54:35.532  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366791 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366791
+02-13 00:54:35.532  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366791
+02-13 00:54:35.533  1267  3785 I mtkpower_client: ret_hdl:366792
+02-13 00:54:35.533  1281  1383 I libPowerHal: [perfLockAcq] idx:6 hdl:366792 hint:-1 pid:1267 tid:3785 duration:80 lock_user:binder:1267_2 => ret_hdl:366792
+02-13 00:54:35.534  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:100, pr:3
+02-13 00:54:35.534  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366792
+02-13 00:54:35.611  1267  3785 I mtkpower_client: perf_lock_rel, hdl:366791, tid:3785
+02-13 00:54:35.612  1267  3785 I mtkpower_client: perf_lock_acq, hdl:5379, dur:4500, num:16, pid:1267, tid:3785
+02-13 00:54:35.612  1281  1383 I libPowerHal: [perfLockRel] hdl:366791, idx:3
+02-13 00:54:35.613  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366791
+02-13 00:54:35.614  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366792
+02-13 00:54:35.614  1281  1383 I libPowerHal: [perfLockRel] hdl:366792, idx:6
+02-13 00:54:35.614  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:70, pr:3
+02-13 00:54:35.616  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366792
+02-13 00:54:35.616  1267  3785 I mtkpower_client: ret_hdl:366793
+02-13 00:54:35.617  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366793 hint:-1 pid:1267 tid:3785 duration:4500 lock_user:binder:1267_2 => ret_hdl:366793
+02-13 00:54:35.617  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366793
+02-13 00:54:35.618  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4099, dur:8000, num:8, pid:1267, tid:3785
+02-13 00:54:35.619  1267  3785 I mtkpower_client: ret_hdl:366794
+02-13 00:54:35.619  1281  1383 I libPowerHal: cmdSetting - unknown cmd:1c3c000, scmd:(null) ,param_1:1
+02-13 00:54:35.619  1281  1383 I libPowerHal: [perfLockAcq] idx:6 hdl:366794 hint:-1 pid:1267 tid:3785 duration:8000 lock_user:binder:1267_2 => ret_hdl:366794
+02-13 00:54:35.619  1281  1383 I libPowerHal: [setGPUFreq] binder:1267_2 user set gpu freq min:10, max:-1
+02-13 00:54:35.619  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:35.620  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:35.620  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:35.620  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:35.620  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:35.620  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:35.621  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1408300, param:100, pr:3
+02-13 00:54:35.621  1281  1383 I libPowerHal: [setDvfsrcDevFreqOpp] opp:0, freq:3600000000
+02-13 00:54:35.621  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:1000000 param:0 pr:3
+02-13 00:54:35.622  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366794
+02-13 00:54:35.626  2096  3080 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher pid=3807 activityId:68366930 state:0
+02-13 00:54:35.626  1254  1254 I MTK_APPList: [notifyAPPstate] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher, pid=3807, activityId=68366930, uid=10124, state:PAUSED, fps:-1, win:0
+02-13 00:54:35.626  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:54:35.626  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:54:35.626  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:54:35.627  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:54:35.628  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:54:35.628  1281  1344 I mtkpower@impl: [setMode] type:5, enabled:1
+02-13 00:54:35.629  1281  1383 I libPowerHal: [perfLockAcq] idx:8 hdl:366795 hint:77 pid:1281 tid:1281 duration:30000 lock_user:vendor.mediatek => ret_hdl:366795
+02-13 00:54:35.629  1281  1383 I libPowerHal: [PE] LAUNCH update cmd:400000 param:3000000 pr:3
+02-13 00:54:35.630  1281  1383 I libPowerHal: [PE] LAUNCH update cmd:400100 param:3000000 pr:3
+02-13 00:54:35.630  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(LAUNCH): 1700000 max(binder:1267_2): -1 cluster[1] min(LAUNCH): 2000000 max(binder:1267_2): -1
+02-13 00:54:35.630  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366795
+02-13 00:54:35.638  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4400, dur:250, num:6, pid:1267, tid:3785
+02-13 00:54:35.640  1267  3785 I mtkpower_client: ret_hdl:366796
+02-13 00:54:35.640  1281  1383 I libPowerHal: [perfLockAcq] idx:9 hdl:366796 hint:-1 pid:1267 tid:3785 duration:250 lock_user:binder:1267_2 => ret_hdl:366796
+02-13 00:54:35.640  1281  1383 I libPowerHal: [setGPUFreq] binder:1267_2 user set gpu freq min:17, max:-1
+02-13 00:54:35.640  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:35.641  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:35.641  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:35.641  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:35.641  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:35.641  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366796
+02-13 00:54:35.646  2096  2962 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher pid=3807 activityId:68366930 state:0
+02-13 00:54:35.646  1254  1254 I MTK_APPList: [notifyAPPstate] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher, pid=3807, activityId=68366930, uid=10124, state:PAUSED, fps:-1, win:0
+02-13 00:54:35.646  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:54:35.646  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:54:35.646  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:54:35.653  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:54:35.653  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:54:35.704  1281  1344 I mtkpower@impl: [setMode] type:6, enabled:1
+02-13 00:54:35.704  1281  1344 E mtkpower@impl: [setMode] unknown type
+02-13 00:54:35.707  1281  1344 I mtkpower@impl: [setMode] type:6, enabled:0
+02-13 00:54:35.707  1281  1344 E mtkpower@impl: [setMode] unknown type
+02-13 00:54:35.719  1281  1344 I mtkpower@impl: [setMode] type:6, enabled:1
+02-13 00:54:35.719  1281  1344 E mtkpower@impl: [setMode] unknown type
+02-13 00:54:35.842  2096  2962 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.qybrix.silentzone/com.qybrix.silentzone.MainActivity pid=1203 activityId:257405413 state:1
+02-13 00:54:35.842  1254  1254 I MTK_APPList: [notifyAPPstate] com.qybrix.silentzone/com.qybrix.silentzone.MainActivity, pid=1203, activityId=257405413, uid=10468, state:RESUMED, fps:-1, win:0
+02-13 00:54:35.843  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 1
+02-13 00:54:35.843  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_info[0] com.qybrix.silentzone/com.qybrix.silentzone.MainActivity, pid:1203, activityId:257405413, fps:-1, isMultiWindow:0
+02-13 00:54:35.843  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:54:35.843  1254  1254 I MTK_APPList: [notifyAPPstate] foreground:com.qybrix.silentzone, pid:1203, activityId:257405413, uid:10468
+02-13 00:54:35.843  1254  1254 I MTK_APPList: [notifyNetdUID] 10468
+02-13 00:54:35.845  1254  1254 I MTK_APPList: [notifyPID] 1203
+02-13 00:54:35.847  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 1203
+02-13 00:54:35.848  1254  1254 I MTK_APPList: [notifyAPPstate] pc:0, com.hihonor.android.launcher => com.qybrix.silentzone
+02-13 00:54:35.858  1267  3785 I mtkpower_client: perf_lock_rel, hdl:366779, tid:3785
+02-13 00:54:35.859  1281  1383 I libPowerHal: [perfLockRel] hdl:366779, idx:4
+02-13 00:54:35.860  1281  1383 I libPowerHal: [unsetGPUFreq] current min:10, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:35.860  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:35.860  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:35.860  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:35.861  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:35.863  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366779
+02-13 00:54:35.892  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366796
+02-13 00:54:35.892  1281  1383 I libPowerHal: [perfLockRel] hdl:366796, idx:9
+02-13 00:54:35.892  1281  1383 I libPowerHal: [unsetGPUFreq] current min:10, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:35.892  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:35.892  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:35.892  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:35.892  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:35.895  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366796
+02-13 00:54:36.140  1281  1344 I mtkpower@impl: [setMode] type:6, enabled:0
+02-13 00:54:36.140  1281  1344 E mtkpower@impl: [setMode] unknown type
+02-13 00:54:36.142  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4400, dur:250, num:6, pid:1267, tid:3785
+02-13 00:54:36.143  1267  3785 I mtkpower_client: ret_hdl:366797
+02-13 00:54:36.144  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366797 hint:-1 pid:1267 tid:3785 duration:250 lock_user:binder:1267_2 => ret_hdl:366797
+02-13 00:54:36.144  1281  1383 I libPowerHal: [setGPUFreq] binder:1267_2 user set gpu freq min:17, max:-1
+02-13 00:54:36.144  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:36.144  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:36.144  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:36.144  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:36.145  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:36.145  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366797
+02-13 00:54:36.323  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366780
+02-13 00:54:36.323  1281  1383 I libPowerHal: [perfLockRel] hdl:366780, idx:2
+02-13 00:54:36.324  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366780
+02-13 00:54:36.395  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366797
+02-13 00:54:36.395  1281  1383 I libPowerHal: [perfLockRel] hdl:366797, idx:4
+02-13 00:54:36.395  1281  1383 I libPowerHal: [unsetGPUFreq] current min:10, max:0; scn_gpu_min:17, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:36.395  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:36.395  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:36.395  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:36.395  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:36.396  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366797
+02-13 00:54:37.379  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4098, dur:500, num:10, pid:1267, tid:3785
+02-13 00:54:37.380  1267  3785 I mtkpower_client: ret_hdl:366798
+02-13 00:54:37.381  1281  1383 I libPowerHal: cmdSetting - unknown cmd:1c3c000, scmd:(null) ,param_1:1
+02-13 00:54:37.381  1281  1383 I libPowerHal: [perfLockAcq] idx:2 hdl:366798 hint:-1 pid:1267 tid:3785 duration:500 lock_user:binder:1267_2 => ret_hdl:366798
+02-13 00:54:37.381  1281  1383 I libPowerHal: [setGPUFreq] binder:1267_2 user set gpu freq min:10, max:-1
+02-13 00:54:37.381  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:37.381  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:37.381  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:37.381  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:37.381  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:37.382  1281  1383 I libPowerHal: [PE] binder:1267_2 update cmd:10005000, param:7000, pr:3
+02-13 00:54:37.382  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366798
+02-13 00:54:37.441  2096  2379 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.qybrix.silentzone/com.qybrix.silentzone.MainActivity pid=1203 activityId:257405413 state:0
+02-13 00:54:37.442  1254  1254 I MTK_APPList: [notifyAPPstate] com.qybrix.silentzone/com.qybrix.silentzone.MainActivity, pid=1203, activityId=257405413, uid=10468, state:PAUSED, fps:-1, win:0
+02-13 00:54:37.442  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:54:37.442  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:54:37.442  1254  1254 I MTK_APPList: [notifyNetdUID] 10468
+02-13 00:54:37.443  1254  1254 I MTK_APPList: [notifyPID] 1203
+02-13 00:54:37.443  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 1203
+02-13 00:54:37.530  2096  4704 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.qybrix.silentzone/com.qybrix.silentzone pid=1203 activityId:1203 state:3
+02-13 00:54:37.531  1254  1254 I MTK_APPList: [notifyAPPstate] com.qybrix.silentzone/com.qybrix.silentzone, pid=1203, activityId=1203, uid=10468, state:DEAD, fps:-1, win:0
+02-13 00:54:37.532  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:54:37.532  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:54:37.533  1254  1254 I MTK_APPList: [notifyAPPstate] pack:com.qybrix.silentzone, pid:1203, STATE_DEAD
+02-13 00:54:37.533  1254  1254 I MTK_APPList: [notifyNetdUID] 10468
+02-13 00:54:37.534  1254  1254 I MTK_APPList: [notifyPID] 1203
+02-13 00:54:37.535  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 1203
+02-13 00:54:37.548  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4098, dur:500, num:10, pid:1267, tid:3785
+02-13 00:54:37.548  1267  3785 I mtkpower_client: ret_hdl:366799
+02-13 00:54:37.549  1281  1383 I libPowerHal: cmdSetting - unknown cmd:1c3c000, scmd:(null) ,param_1:1
+02-13 00:54:37.549  1281  1383 I libPowerHal: [perfLockAcq] idx:4 hdl:366799 hint:-1 pid:1267 tid:3785 duration:500 lock_user:binder:1267_2 => ret_hdl:366799
+02-13 00:54:37.549  1281  1383 I libPowerHal: [setGPUFreq] binder:1267_2 user set gpu freq min:10, max:-1
+02-13 00:54:37.549  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:37.549  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:37.549  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:37.549  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:37.550  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:37.550  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366799
+02-13 00:54:37.572  1281  1344 I mtkpower@impl: [setMode] type:5, enabled:0
+02-13 00:54:37.575  1281  1383 I libPowerHal: [perfLockRel] hdl:366795, idx:8
+02-13 00:54:37.576  1281  1383 I libPowerHal: [PD] LAUNCH update cmd:400000 param:500000 pr:3
+02-13 00:54:37.576  1281  1383 I libPowerHal: [PD] LAUNCH update cmd:400100 param:850000 pr:3
+02-13 00:54:37.577  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:37.577  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366795
+02-13 00:54:37.584  1281  1344 I mtkpower@impl: [setMode] type:6, enabled:1
+02-13 00:54:37.584  1281  1344 E mtkpower@impl: [setMode] unknown type
+02-13 00:54:37.687  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366786
+02-13 00:54:37.687  1281  1383 I libPowerHal: [perfLockRel] hdl:366786, idx:5
+02-13 00:54:37.688  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366786
+02-13 00:54:37.882  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366798
+02-13 00:54:37.883  1281  1383 I libPowerHal: [perfLockRel] hdl:366798, idx:2
+02-13 00:54:37.883  1281  1383 I libPowerHal: [unsetGPUFreq] current min:10, max:0; scn_gpu_min:10, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:37.883  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:37.883  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:37.883  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:37.883  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:37.884  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366798
+02-13 00:54:37.944  2096  2171 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher pid=3807 activityId:68366930 state:1
+02-13 00:54:37.945  1254  1254 I MTK_APPList: [notifyAPPstate] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher, pid=3807, activityId=68366930, uid=10124, state:RESUMED, fps:-1, win:0
+02-13 00:54:37.945  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 1
+02-13 00:54:37.945  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_info[0] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher, pid:3807, activityId:68366930, fps:-1, isMultiWindow:0
+02-13 00:54:37.945  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:54:37.945  1254  1254 I MTK_APPList: [notifyAPPstate] foreground:com.hihonor.android.launcher, pid:3807, activityId:68366930, uid:10124
+02-13 00:54:37.945  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:54:37.946  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:54:37.947  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:54:37.947  1254  1254 I MTK_APPList: [notifyAPPstate] pc:0, com.qybrix.silentzone => com.hihonor.android.launcher
+02-13 00:54:37.949  1281  1344 I mtkpower@impl: [setMode] type:6, enabled:0
+02-13 00:54:37.949  1281  1344 E mtkpower@impl: [setMode] unknown type
+02-13 00:54:38.050  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366799
+02-13 00:54:38.051  1281  1383 I libPowerHal: [perfLockRel] hdl:366799, idx:4
+02-13 00:54:38.051  1281  1383 I libPowerHal: [unsetGPUFreq] current min:10, max:0; scn_gpu_min:10, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:38.051  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (10, 0); Hard min/max = (24, 0)
+02-13 00:54:38.051  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (10, 0)
+02-13 00:54:38.051  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 10
+02-13 00:54:38.051  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:38.051  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:10005000 param:0, pr:6
+02-13 00:54:38.052  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366799
+02-13 00:54:38.644  1267  3785 I mtkpower_client: perf_lock_acq, hdl:4096, dur:80, num:2, pid:1267, tid:3785
+02-13 00:54:38.645  1267  3785 I mtkpower_client: ret_hdl:366800
+02-13 00:54:38.645  1281  1383 I libPowerHal: [perfLockAcq] idx:2 hdl:366800 hint:-1 pid:1267 tid:3785 duration:80 lock_user:binder:1267_2 => ret_hdl:366800
+02-13 00:54:38.646  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366800
+02-13 00:54:38.710  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366788
+02-13 00:54:38.710  1281  1383 I libPowerHal: [perfLockRel] hdl:366788, idx:7
+02-13 00:54:38.712  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366788
+02-13 00:54:38.726  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366800
+02-13 00:54:38.727  1281  1383 I libPowerHal: [perfLockRel] hdl:366800, idx:2
+02-13 00:54:38.728  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366800
+02-13 00:54:40.119  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366793
+02-13 00:54:40.119  1281  1383 I libPowerHal: [perfLockRel] hdl:366793, idx:3
+02-13 00:54:40.119  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1438300, param:1000, pr:6
+02-13 00:54:40.120  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1438400, param:1000, pr:6
+02-13 00:54:40.120  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:2004100 param:2, pr:6
+02-13 00:54:40.121  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:40c000 param:-1 pr:6
+02-13 00:54:40.121  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:40c100 param:-1 pr:6
+02-13 00:54:40.123  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1444a00 param:20 pr:6
+02-13 00:54:40.123  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1444c00 param:20 pr:6
+02-13 00:54:40.123  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:54:40.124  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366793
+02-13 00:54:43.625  1281  1383 I mtkpower@impl: [powerd_req] TIMER_MSG_PERF_LOCK_TIMEOUT hdl:366794
+02-13 00:54:43.626  1281  1383 I libPowerHal: [perfLockRel] hdl:366794, idx:6
+02-13 00:54:43.626  1281  1383 I libPowerHal: [unsetGPUFreq] current min:10, max:0; scn_gpu_min:10, scn_gpu_max:-1; scn_gpu_min(HL):-1, scn_gpu_max(HL):-1
+02-13 00:54:43.626  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 24
+02-13 00:54:43.626  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:43.627  1281  1383 I libPowerHal: [setGPUFreq] Soft min/max = (24, 0); Hard min/max = (24, 0)
+02-13 00:54:43.627  1281  1383 I libPowerHal: [setGPUFreq] final min/max = (24, 0)
+02-13 00:54:43.627  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level: 24
+02-13 00:54:43.627  1281  1383 I libPowerHal: binder:1267_2: set gpu opp level max: 0
+02-13 00:54:43.628  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1408300 param:0, pr:6
+02-13 00:54:43.631  1281  1383 I libPowerHal: [PD] binder:1267_2 update cmd:1000000 param:-1 pr:6
+02-13 00:54:43.633  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366794
+02-13 00:54:52.680  2096  2141 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.hihonor.aod/com.hihonor.aod pid=30041 activityId:30041 state:3
+02-13 00:54:52.680  1254  1254 I MTK_APPList: [notifyAPPstate] com.hihonor.aod/com.hihonor.aod, pid=30041, activityId=30041, uid=1000, state:DEAD, fps:-1, win:0
+02-13 00:54:52.681  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 1
+02-13 00:54:52.681  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_info[0] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher, pid:3807, activityId:68366930, fps:-1, isMultiWindow:0
+02-13 00:54:52.681  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:54:52.681  1254  1254 I MTK_APPList: [notifyAPPstate] pack:com.hihonor.aod, pid:30041, STATE_DEAD
+02-13 00:54:52.681  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:54:52.684  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:54:52.685  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:55:05.553  1289  3559 I APM_AudioPolicyManager: getOutputForAttrInt() device {AUDIO_DEVICE_OUT_SPEAKER, @:}, sampling rate 44100, format 0x1, channel mask 0x3, flags 0 stream AUDIO_STREAM_SYSTEM flagsEx 0
+02-13 00:55:05.560  1289  3559 I APM_AudioPolicyManager: getOutputForDevice() flags 0, forceMutingHaptic 1
+02-13 00:55:05.560  1289  3559 I APM_AudioPolicyManager: getOutputForDevice() returns output 13
+02-13 00:55:05.560  1289  3559 I APM_AudioPolicyManager: getOutputForAttr() returns output 13 requestedPortId 0 selectedDeviceId 2 for port ID 19663
+02-13 00:55:05.582  1289  3559 I APM_AudioPolicyManager: startOutput() output 13, stream 1, session 114401, portId 19663, phoneState 0, communiCf 0, mediaCf 0
+02-13 00:55:05.584  1289  3559 I APM_AudioPolicyManager: getNewOutputDevices selected devices {AUDIO_DEVICE_OUT_SPEAKER, @:} connectdeDevices(10003)
+02-13 00:55:05.584  1289  3559 I APM_AudioPolicyManager: setOutputDevices device {AUDIO_DEVICE_OUT_SPEAKER, @:} delayMs 0 force 0 outputDesc 13 from startSource first
+02-13 00:55:05.585  1289  3559 I APM_AudioPolicyManager: setOutputDevices device {AUDIO_DEVICE_OUT_SPEAKER, @:} delayMs 0 force 1 outputDesc 13 from startSource second
+02-13 00:55:05.585  1289  3559 I APM_AudioPolicyManager: setOutputDevices changing device(13) to {AUDIO_DEVICE_OUT_SPEAKER, @:} from {AUDIO_DEVICE_OUT_SPEAKER, @:}
+02-13 00:55:05.587  1289  3559 I APM_AudioPolicyManager: installPatch muteWaitMs=0 outputDesc:primary output, isActive:1
+02-13 00:55:05.614  1289  3559 I APM_AudioPolicyManager: setOutputDevices() AF::createAudioPatch returned 0 patchHandle 54116 num_sources 1 num_sinks 1
+02-13 00:55:05.615  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 1, index 5, device 0x2, volumeDb 0.000000, output 13 
+02-13 00:55:05.616  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 2, index 5, device 0x2, volumeDb 0.000000, output 13 
+02-13 00:55:05.616  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 3, index 5, device 0x2, volumeDb -30.000000, output 13 
+02-13 00:55:05.617  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 4, index 11, device 0x2, volumeDb -12.000000, output 13 
+02-13 00:55:05.617  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 5, index 9, device 0x2, volumeDb -16.000000, output 13 
+02-13 00:55:05.618  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 6, index 9, device 0x2, volumeDb -18.000000, output 13 
+02-13 00:55:05.619  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 8, index 0, device 0x2, volumeDb -758.000000, output 13 
+02-13 00:55:05.619  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 9, index 14, device 0x2, volumeDb -3.000000, output 13 
+02-13 00:55:05.620  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 10, index 4, device 0x2, volumeDb -33.000000, output 13 
+02-13 00:55:05.620  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 11, index 9, device 0x2, volumeDb -21.000002, output 13 
+02-13 00:55:05.621  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 12, index 9, device 0x2, volumeDb -18.000000, output 13 
+02-13 00:55:05.621  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 13, index 15, device 0x2, volumeDb -3.000000, output 13 
+02-13 00:55:05.621  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 20, index 4, device 0x2, volumeDb -33.000000, output 13 
+02-13 00:55:05.622  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 23, index 5, device 0x2, volumeDb 0.000000, output 13 
+02-13 00:55:05.622  1289  3559 I APM_AudioPolicyManager: checkAndSetVolume volumeSource 12, index 9, device 0x2, volumeDb -18.000000, output 13 
+02-13 00:55:05.627  1289  3559 I APM_AudioPolicyManager: sendAudioCloseOrOpen changed isAudioOpen=1
+02-13 00:55:05.636  1281  1383 I libPowerHal: [perfLockAcq] idx:2 hdl:366801 hint:38 pid:1281 tid:1281 duration:268435455 lock_user:vendor.mediatek => ret_hdl:366801
+02-13 00:55:05.637  1281  1383 I libPowerHal: [PE] MTKPOWER_HINT_AUDIO_POWER_DL update cmd:400000 param:800000 pr:3
+02-13 00:55:05.637  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(MTKPOWER_HINT_AUDIO_POWER_DL): 800000 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:55:05.637  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366801
+02-13 00:55:05.639  1281  1383 I libPowerHal: [perfLockAcq] idx:3 hdl:366802 hint:38 pid:1281 tid:1281 duration:268435455 lock_user:vendor.mediatek => ret_hdl:366802
+02-13 00:55:05.639  1281  1383 I libPowerHal: [perfLockAcq] Done for hdl : 366802
+02-13 00:55:05.644  1281  1383 I libPowerHal: [perfLockRel] hdl:366801, idx:2
+02-13 00:55:05.645  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366801
+02-13 00:55:05.746  2096  2240 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher pid=3807 activityId:68366930 state:0
+02-13 00:55:05.747  1254  1254 I MTK_APPList: [notifyAPPstate] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher, pid=3807, activityId=68366930, uid=10124, state:PAUSED, fps:-1, win:0
+02-13 00:55:05.747  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:55:05.747  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:55:05.747  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:55:05.748  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:55:05.749  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:55:05.762  2096  2141 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher pid=3807 activityId:68366930 state:0
+02-13 00:55:05.763  1254  1254 I MTK_APPList: [notifyAPPstate] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher, pid=3807, activityId=68366930, uid=10124, state:PAUSED, fps:-1, win:0
+02-13 00:55:05.763  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:55:05.763  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:55:05.763  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:55:05.764  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:55:05.766  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:55:05.795  2096  2171 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher pid=3807 activityId:68366930 state:0
+02-13 00:55:05.796  1254  1254 I MTK_APPList: [notifyAPPstate] com.hihonor.android.launcher/com.hihonor.android.launcher.drawer.DrawerLauncher, pid=3807, activityId=68366930, uid=10124, state:PAUSED, fps:-1, win:0
+02-13 00:55:05.796  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:55:05.796  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:55:05.796  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:55:05.797  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:55:05.800  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:55:06.004  1281  1344 I mtkpower@impl: [setMode] type:9, enabled:1
+02-13 00:55:06.004  1281  1344 I mtkpower@impl: [setMode] Mode::DISPLAY_INACTIVE: 1
+02-13 00:55:06.017  1281  1344 I mtkpower@impl: [setMode] type:7, enabled:0
+02-13 00:55:06.020  1281  1383 I libPowerHal: [perfUserScnDisableAll] 
+02-13 00:55:06.020  1281  1383 I libPowerHal: [setInteractive] enable: 0
+02-13 00:55:06.020  1281  1344 I mtkpower@impl: [setMode] Disable All
+02-13 00:55:06.179  1289  1644 I APM_AudioPolicyManager: stopOutput() output 13, stream 1, session 114401, portId 19663
+02-13 00:55:06.180  1289  1644 I APM_AudioPolicyManager: getNewOutputDevices selected devices AUDIO_DEVICE_NONE connectdeDevices(10003)
+02-13 00:55:06.190  1289  1644 I APM_AudioPolicyManager: getNewOutputDevices selected devices AUDIO_DEVICE_NONE connectdeDevices(10003)
+02-13 00:55:06.196  1289  1644 I APM_AudioPolicyManager: sendAudioCloseOrOpen changed isAudioOpen=0
+02-13 00:55:06.462  1289  3560 I APM_AudioPolicyManager: stopInput portId 19661
+02-13 00:55:06.462  1289  3560 I APM_AudioPolicyManager: stopInput input:16990, session:114393, uid:99575
+02-13 00:55:06.487  1289 11624 I APM_AudioPolicyManager: closeInput(16990)
+02-13 00:55:09.080  1281  1383 I libPowerHal: [perfLockRel] hdl:366802, idx:3
+02-13 00:55:09.081  1281  1383 I libPowerHal: [PD] MTKPOWER_HINT_AUDIO_POWER_DL update cmd:400000 param:500000 pr:3
+02-13 00:55:09.083  1281  1383 I libPowerHal: [recordCPUFreqInfo] set cluster[0] min(binder:1267_2): -1 max(binder:1267_2): -1 cluster[1] min(binder:1267_2): -1 max(binder:1267_2): -1
+02-13 00:55:09.083  1281  1383 I libPowerHal: [perfLockRel] Done for hdl : 366802
+02-13 00:56:11.406  2096  4707 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.android.providers.calendar/com.android.providers.calendar pid=31284 activityId:31284 state:3
+02-13 00:56:11.407  1254  1254 I MTK_APPList: [notifyAPPstate] com.android.providers.calendar/com.android.providers.calendar, pid=31284, activityId=31284, uid=10029, state:DEAD, fps:-1, win:0
+02-13 00:56:11.407  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:56:11.407  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:56:11.407  1254  1254 I MTK_APPList: [notifyAPPstate] pack:com.android.providers.calendar, pid:31284, STATE_DEAD
+02-13 00:56:11.407  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:56:11.409  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:56:11.412  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:56:36.267  1281  1383 I libPowerHal: perfUserScnCheckAll
+02-13 00:56:36.268  1281  1383 I libPowerHal: perfScnDumpAll cmd:0
+02-13 00:56:36.268  1281  1383 I libPowerHal: ========================
+02-13 00:56:36.268  1281  1383 I libPowerHal: binder:1267_2 - handle:366192, duration:0
+02-13 00:56:36.268  1281  1383 I libPowerHal: binder:1267_2 - handle:365723, duration:0
+02-13 00:56:36.268  1281  1383 I libPowerHal: ========================
+02-13 00:56:36.426  2096  4726 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.google.android.calendar/com.google.android.calendar pid=31159 activityId:31159 state:3
+02-13 00:56:36.427  1254  1254 I MTK_APPList: [notifyAPPstate] com.google.android.calendar/com.google.android.calendar, pid=31159, activityId=31159, uid=10152, state:DEAD, fps:-1, win:0
+02-13 00:56:36.427  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:56:36.427  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:56:36.428  1254  1254 I MTK_APPList: [notifyAPPstate] pack:com.google.android.calendar, pid:31159, STATE_DEAD
+02-13 00:56:36.428  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:56:36.430  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:56:36.432  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807
+02-13 00:56:37.948  2096  4726 I mtkpower_client: [PowerHal_Wrap_notifyAppState] com.android.providers.contacts/com.android.providers.contacts pid=28669 activityId:28669 state:3
+02-13 00:56:37.948  1254  1254 I MTK_APPList: [notifyAPPstate] com.android.providers.contacts/com.android.providers.contacts, pid=28669, activityId=28669, uid=10027, state:DEAD, fps:-1, win:0
+02-13 00:56:37.948  1254  1254 I MTK_APPList: [notifyAPPstate] multi_resumed_app_count: 0
+02-13 00:56:37.948  1254  1254 I MTK_APPList: [getForegroundAPPCount] 1
+02-13 00:56:37.948  1254  1254 I MTK_APPList: [notifyAPPstate] pack:com.android.providers.contacts, pid:28669, STATE_DEAD
+02-13 00:56:37.948  1254  1254 I MTK_APPList: [notifyNetdUID] 10124
+02-13 00:56:37.950  1254  1254 I MTK_APPList: [notifyPID] 3807
+02-13 00:56:37.952  1281  1383 I libPowerHal: [perfSetSysInfo] pid type:24, 3807

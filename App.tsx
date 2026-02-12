@@ -15,21 +15,21 @@ const AppContent = () => {
     const realm = useRealm();
 
     useEffect(() => {
-        // Initialize Logger
-        if (realm) {
-            Logger.setRealm(realm);
-            
-            // Load logging preference
-            SettingsService.getLoggingEnabled().then(enabled => {
-                Logger.setEnabled(enabled);
-                if (__DEV__) {
-                    console.log(`[App] Dev mode detected. Logging enabled: ${enabled}`);
+        const initializeApp = async () => {
+            try {
+                if (realm) {
+                    Logger.setRealm(realm);
+                    const enabled = await SettingsService.getLoggingEnabled();
+                    Logger.setEnabled(enabled);
                 }
-            });
-        }
 
-        // Initialize Background Location Service
-        locationService.initialize(realm);
+                await locationService.initialize(realm);
+            } catch (error: any) {
+                console.error('[App] 🔥 Initialization Error:', error);
+            }
+        };
+
+        initializeApp();
     }, [realm]);
 
     return (
