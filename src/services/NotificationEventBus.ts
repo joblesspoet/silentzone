@@ -31,7 +31,17 @@ class NotificationEventBus {
    * Will be deduplicated if same event was shown recently
    */
   emit(event: NotificationEvent): void {
-    const key = `${event.type}-${event.placeId}`;
+    // FIX: Group related events for deduplication
+    // CHECK_IN and PLACE_ENTERED are logically the same for the user
+    // SOUND_RESTORED, PLACE_EXITED, and SCHEDULE_END are logically the same
+    let dedupeType = event.type;
+    if (event.type === 'CHECK_IN' || event.type === 'PLACE_ENTERED') {
+      dedupeType = 'PLACE_ENTERED';
+    } else if (event.type === 'SOUND_RESTORED' || event.type === 'PLACE_EXITED' || event.type === 'SCHEDULE_END') {
+      dedupeType = 'PLACE_EXITED';
+    }
+
+    const key = `${dedupeType}-${event.placeId}`;
     const now = Date.now();
     const lastTime = this.recentEvents.get(key) || 0;
     const timeSince = now - lastTime;
@@ -39,7 +49,7 @@ class NotificationEventBus {
     // Check if we showed this recently
     if (timeSince < this.DEDUPE_WINDOW_MS) {
       Logger.info(
-        `[NotificationBus] 🔕 Deduplicating ${event.type} for ${event.placeName} ` +
+        `[NotificationBus] 🔕 Deduplicating ${event.type} (as ${dedupeType}) for ${event.placeName} ` +
         `(shown ${Math.round(timeSince / 1000)}s ago by ${event.source})`
       );
       return; // SKIP - already shown recently

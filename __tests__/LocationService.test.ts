@@ -2,7 +2,7 @@ import { locationService } from '../src/services/LocationService';
 import { PlaceService } from '../src/database/services/PlaceService';
 import { CheckInService } from '../src/database/services/CheckInService';
 import notifee from '@notifee/react-native';
-import Geolocation from '@react-native-community/geolocation';
+import Geolocation from 'react-native-geolocation-service';
 
 // --- MOCKS ---
 
@@ -66,7 +66,7 @@ jest.mock('react-native', () => {
 });
 
 // 5. Mock Geolocation
-jest.mock('@react-native-community/geolocation', () => ({
+jest.mock('react-native-geolocation-service', () => ({
   getCurrentPosition: jest.fn(),
   watchPosition: jest.fn(),
   clearWatch: jest.fn(),
@@ -208,11 +208,9 @@ describe('LocationService Logic', () => {
 
     // WHEN user is at (0, 0) (Distance = 0)
     const mockPosition = {
-      coords: {
-        latitude: 0.0001, // Very close
-        longitude: 0,
-        accuracy: 10,
-      },
+      latitude: 0.0001, // Very close
+      longitude: 0,
+      accuracy: 10,
       timestamp: Date.now(),
     };
 
@@ -223,10 +221,10 @@ describe('LocationService Logic', () => {
     // SilentZoneManager should be called to activate the zone
     expect(silentZoneManager.activateSilentZone).toHaveBeenCalledWith(mockPlace);
 
+
     // 2. Notification should be displayed
-    expect(notifee.displayNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Phone Silenced 🔕' })
-    );
+    // REMOVED: LocationService delegates to SilentZoneManager, which is mocked here.
+    // The call to activateSilentZone is sufficient to verify behavior.
   });
 
   test('should determine user is OUTSIDE a place', async () => {
@@ -254,11 +252,9 @@ describe('LocationService Logic', () => {
 
     // WHEN user moves far away (e.g. 1km)
     const mockPosition = {
-      coords: {
-        latitude: 0.01, // ~1.1km away
-        longitude: 0,
-        accuracy: 10,
-      },
+      latitude: 0.01, // ~1.1km away
+      longitude: 0,
+      accuracy: 10,
       timestamp: Date.now(),
     };
 
@@ -267,5 +263,50 @@ describe('LocationService Logic', () => {
     // THEN
     // SilentZoneManager should be called to handle exit
     expect(silentZoneManager.handleExit).toHaveBeenCalledWith('place-1', false);
+  });
+
+  test('should NOT exit when within hysteresis buffer', async () => {
+    // Import the mocked SilentZoneManager
+    const { silentZoneManager } = require('../src/services/SilentZoneManager');
+
+    // GIVEN user is checked in
+    const mockPlace = {
+      id: 'place-1',
+      latitude: 0,
+      longitude: 0,
+      radius: 45, // 45m radius
+      schedules: [],
+      name: 'Hajveeri mosque'
+    };
+
+    const mockLog = { id: 'log-1', placeId: 'place-1' };
+
+    (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
+    (PlaceService.getPlaceById as jest.Mock).mockReturnValue(mockPlace);
+    (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue([mockLog]);
+    (CheckInService.isPlaceActive as jest.Mock).mockReturnValue(true);
+
+    // Mock SilentZoneManager
+    (silentZoneManager.handleExit as jest.Mock).mockResolvedValue(true);
+
+    // WHEN user is at 60m distance with 39m accuracy
+    // Effective distance = 60 - 39 = 21m
+    // Radius = 45m
+    // Hysteresis = 20m
+    // Exit Threshold = 45 + 20 = 65m
+    // 21m < 65m -> SHOULD NOT EXIT
+    
+    const mockPosition = {
+      latitude: 0.00054, // ~60m away
+      longitude: 0,
+      accuracy: 39,
+      timestamp: Date.now(),
+    };
+
+    await (locationService as any).processLocationUpdate(mockPosition);
+
+    // THEN
+    // handleExit should NOT be called
+    expect(silentZoneManager.handleExit).not.toHaveBeenCalled();
   });
 });

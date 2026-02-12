@@ -1113,6 +1113,9 @@ private setupReactiveSync() {
       try {
         await notifee.cancelTriggerNotification(alarmId);
         Logger.info(`[LocationService] 🗑️ Deleted trigger: ${alarmId}`);
+        
+        // Prevent AlarmService from re-scheduling this same alarm ID in the current session
+        alarmService.markAlarmAsProcessed(alarmId);
       } catch (cancelError) {
         Logger.warn(`[LocationService] Could not cancel trigger ${alarmId}:`, cancelError);
       }
@@ -1325,15 +1328,23 @@ private setupReactiveSync() {
         (place as any).longitude as number
       );
 
-      const threshold = (place as any).radius * CONFIG.EXIT_BUFFER_MULTIPLIER;
-      const isSmallRadius = (place as any).radius < CONFIG.SCHEDULE.SMALL_RADIUS_THRESHOLD;
-      const effectiveThreshold = isSmallRadius ? threshold + 5 : threshold;
+      // CRITICAL FIX: Use "effective distance" for EXIT logic too
+      // Entry condition: effectiveDistance <= radius
+      // Exit condition:  effectiveDistance > radius + HYSTERESIS
+      // This prevents oscillation when accuracy is poor (e.g. 50m)
+      
+      const effectiveDistance = Math.max(0, distance - accuracy);
+      const radius = (place as any).radius;
+      const hysteresis = CONFIG.EXIT_HYSTERESIS_METERS || 20;
+      
+      const shouldExit = effectiveDistance > radius + hysteresis;
 
-      const confidenceExit =
-        distance > effectiveThreshold + accuracy || (accuracy < 50 && distance > effectiveThreshold);
-
-      if (confidenceExit) {
-        Logger.info(`[LocationService] EXIT: ${(place as any).name} (dist: ${Math.round(distance)}m)`);
+      if (shouldExit) {
+        Logger.info(
+          `[LocationService] EXIT: ${(place as any).name} ` +
+          `(dist: ${Math.round(distance)}m, acc: ${Math.round(accuracy)}m, ` +
+          `effective: ${Math.round(effectiveDistance)}m > ${radius + hysteresis}m)`
+        );
         await this.handleGeofenceExit(placeId);
       }
     }

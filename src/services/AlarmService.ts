@@ -23,6 +23,20 @@ class AlarmService {
    * @param forceReset - If true, cancels all existing alarms and recreates them (for updates)
    *                     If false, only creates missing alarms (for new places or boot restore)
    */
+  // Track processed alarms in memory to prevent re-scheduling loop
+  private processedAlarms = new Set<string>();
+
+  markAlarmAsProcessed(alarmId: string) {
+    this.processedAlarms.add(alarmId);
+    // Keep set size manageable
+    if (this.processedAlarms.size > 200) {
+      const it = this.processedAlarms.values();
+      for (let i = 0; i < 50; i++) {
+        this.processedAlarms.delete(it.next().value!);
+      }
+    }
+  }
+
   async scheduleAlarmsForPlace(place: any, forceReset: boolean = false) {
     if (!place.schedules || place.schedules.length === 0) {
       Logger.info(`[AlarmService] No schedules for ${place.name}, skipping alarm setup`);
@@ -31,7 +45,11 @@ class AlarmService {
 
     // Step 1: Fetch existing alarms FIRST (before any cancellation)
     const triggerNotifications = await notifee.getTriggerNotifications();
-    const existingIds = new Set(triggerNotifications.map(tn => tn.notification.id));
+    const existingIds = new Set(
+      triggerNotifications
+        .map(tn => tn.notification.id)
+        .filter((id): id is string => id !== undefined)
+    );
     
     // Step 2: Only cancel if forced (e.g., place update/delete)
     if (forceReset) {
@@ -181,10 +199,12 @@ class AlarmService {
     const notifyTime = startTime.getTime() - (15 * 60 * 1000);
     const notifyId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-monitor`;
     
+    
     const notifyWindowEnd = endTime.getTime();
     const shouldScheduleNotify = notifyTime > now || (now >= notifyTime && now < notifyWindowEnd);
     
-    if (shouldScheduleNotify && !existingIds.has(notifyId)) {
+    // Check BOTH: Is it currently scheduled? AND Has it already been processed this session?
+    if (shouldScheduleNotify && !existingIds.has(notifyId) && !this.processedAlarms.has(notifyId)) {
       await this.scheduleSingleAlarm(
         notifyId,
         notifyTime > now ? notifyTime : now + 1000,
@@ -200,7 +220,7 @@ class AlarmService {
     
     const shouldScheduleStart = monitorStartTime > now || (now >= monitorStartTime && now < endTime.getTime());
     
-    if (shouldScheduleStart && !existingIds.has(startId)) {
+    if (shouldScheduleStart && !existingIds.has(startId) && !this.processedAlarms.has(startId)) {
       await this.scheduleSingleAlarm(
         startId,
         monitorStartTime > now ? monitorStartTime : now + 1000,
@@ -212,7 +232,7 @@ class AlarmService {
 
     // --- TRIGGER 3: STRICT START (T-0) ---
     const strictId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-strict`;
-    if (startTime.getTime() > now && !existingIds.has(strictId)) {
+    if (startTime.getTime() > now && !existingIds.has(strictId) && !this.processedAlarms.has(strictId)) {
       await this.scheduleSingleAlarm(
         strictId,
         startTime.getTime(),
@@ -224,7 +244,7 @@ class AlarmService {
 
     // --- TRIGGER 4: END & HEAL (End Time) ---
     const endId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-end`;
-    if (endTime.getTime() > now && !existingIds.has(endId)) {
+    if (endTime.getTime() > now && !existingIds.has(endId) && !this.processedAlarms.has(endId)) {
       await this.scheduleSingleAlarm(
         endId,
         endTime.getTime(),
