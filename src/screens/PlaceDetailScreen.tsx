@@ -111,9 +111,12 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         { 
           text: "Delete", 
           style: "destructive",
-          onPress: () => {
+          onPress: async () => {
             isDeleting.current = true; // Flag to suppress listeners
-            PlaceService.deletePlace(realm, placeId);
+            const success = await PlaceService.deletePlace(realm, placeId);
+            if (success) {
+              await locationService.syncGeofences();
+            }
             navigation.goBack();
           }
         }

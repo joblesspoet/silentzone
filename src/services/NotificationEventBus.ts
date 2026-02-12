@@ -63,67 +63,23 @@ class NotificationEventBus {
    * Map event types to actual notification display
    */
   private showNotificationForEvent(event: NotificationEvent): void {
-    const notifId = `${event.type.toLowerCase()}-${event.placeId}-${event.timestamp}`;
-
     switch (event.type) {
       case 'CHECK_IN':
-        notificationManager.showNotification(
-          '🔕 Phone Silenced',
-          `You're at ${event.placeName}`,
-          notifId,
-          false, // Not silent - user needs to see this!
-          true   // grouped
-        );
+      case 'PLACE_ENTERED':
+        notificationManager.showActivationAlert(event.placeName);
         break;
 
       case 'SOUND_RESTORED':
-        notificationManager.showNotification(
-          'Silent Zone Ended',
-          `Sound restored for ${event.placeName}`,
-          notifId,
-          false,
-          true
-        );
+      case 'PLACE_EXITED':
+        notificationManager.showEndAlert(event.placeName);
         break;
 
       case 'SCHEDULE_END':
-        notificationManager.showNotification(
-          'Silent Zone Ending',
-          `${event.placeName} schedule has ended`,
-          notifId,
-          false,
-          true
-        );
+        notificationManager.showEndAlert(event.placeName);
         break;
 
       case 'SCHEDULE_APPROACHING':
-        notificationManager.showNotification(
-          'Upcoming Silence',
-          `${event.placeName} starting in ${CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES} minutes`,
-          notifId,
-          false,
-          true
-        );
-        break;
-
-      case 'PLACE_ENTERED':
-        notificationManager.showNotification(
-          'Entered Silent Zone',
-          event.placeName,
-          notifId,
-          false,
-          true
-        );
-        break;
-
-      case 'PLACE_EXITED':
-        notificationManager.showNotification(
-          'Exited Silent Zone',
-          event.placeName,
-          notifId,
-          false,
-          true
-        );
+        notificationManager.showUpcomingAlert(event.placeName, CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES);
         break;
 
       default:

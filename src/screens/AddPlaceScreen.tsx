@@ -289,14 +289,14 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         })),
       });
       
-      // ✅ NEW: Immediately schedule alarms for the new place
-      // No need to call getPlaceById - we already have the full object!
+      // ✅ UNIFIED: Use surgical sync for the new place
+      // This ensures 72-hour alarms are created via the central engine
       if (isSilencingEnabled && newPlace) {
-        await alarmService.scheduleAlarmsForPlace(newPlace, false);
-        Logger.info(`[AddPlace] ✅ Scheduled alarms for new place: ${placeName.trim()}`);
+        await locationService.syncGeofences(false, [newPlace.id]);
+        Logger.info(`[AddPlace] ✅ Triggered initial sync for new place: ${placeName.trim()}`);
+      } else {
+        locationService.syncGeofences();
       }
-      
-      locationService.syncGeofences();
       locationService.forceLocationCheck();
 
       const prefs = PreferencesService.getPreferences(realm);

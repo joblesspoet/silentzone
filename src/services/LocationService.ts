@@ -105,6 +105,7 @@ class LocationService {
     return; // Already initialized
   }
   this.realm = realmInstance;
+  silentZoneManager.setRealm(realmInstance); // CRITICAL FIX: Ensure background silence works!
   this.isReady = true;
 }
 
@@ -219,10 +220,8 @@ private async restoreStateFromDatabase() {
       
       Logger.error(`[LocationService] Aborting start: Missing critical permissions. Status -> Loc: ${loc}, Bg: ${bg}, Notif: ${notif}, Alarm: ${exactAlarm}`);
       
-      await notificationManager.showNotification(
-        'Setup Required',
-        'Silent Zone failed to start. Please open app to fix permissions.',
-        'permission-failure'
+      await notificationManager.showErrorAlert(
+        'Silent Zone failed to start. Please open app to fix permissions.'
       );
       return;
     }
@@ -559,21 +558,14 @@ private setupReactiveSync() {
         // - specificPlaceIds: Reset alarms for specific places (update scenario - force reset)
         // - forceAlarmSync: Reset alarms for all places (global reset - force reset)
         // - Neither: Only create missing alarms (normal operation - NO reset)
-       
-        // commented on Feb 11-02-2026 
-              // 
-              // this block only focus on forcealramsync
-              //if (specificPlaceIds && specificPlaceIds.length > 0) {
-              //    // UPDATE scenario: Force reset for specific places (schedules changed)
-              //    Logger.info(`[LocationService] Resetting alarms for updated places: ${specificPlaceIds.join(', ')}`);
-              //    for (const id of specificPlaceIds) {
-              //        const place = enabledPlaces.find((p: any) => p.id === id);
-              //        if (place) await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
-              //    }
-              //} else 
-        // end of comment feb 11-02-2026
-
-          if (forceAlarmSync) {
+        if (specificPlaceIds && specificPlaceIds.length > 0) {
+            // UPDATE scenario: Force reset for specific places (schedules changed)
+            Logger.info(`[LocationService] Resetting alarms for updated places: ${specificPlaceIds.join(', ')}`);
+            for (const id of specificPlaceIds) {
+                const place = enabledPlaces.find((p: any) => p.id === id);
+                if (place) await alarmService.scheduleAlarmsForPlace(place, true); // ✅ forceReset = true
+            }
+        } else if (forceAlarmSync) {
             // GLOBAL RESET scenario: Force reset for all enabled places
             Logger.info('[LocationService] Forcing global alarm reset for all enabled places');
             for (const place of enabledPlaces) {
@@ -829,19 +821,24 @@ private setupReactiveSync() {
   private async stopActivePrayerSession(placeId: string) {
     Logger.info(`[Session] Stopping active session for ${placeId}`);
     
-    // 1. Force checkout
+    // 1. Mark visit as completed (Schedule has naturally ended)
+    // This prevents the session from being restarted for this specific window.
+    const place = this.realm ? PlaceService.getPlaceById(this.realm, placeId) : null;
+    const schedule = place ? ScheduleManager.getCurrentOrNextSchedule(place) : null;
+    if (schedule) {
+      const visitKey = `${placeId}-${schedule.startTime.toISOString()}`;
+      this.completedVisits.add(visitKey);
+      Logger.info(`[Session] Visit officially completed: ${visitKey}`);
+    }
+
+    // 2. Force checkout (Restores sound if still inside)
     await this.handleGeofenceExit(placeId, true);
     
-    // 2. Stop GPS and cleanup
-    this.stopGeofenceMonitoring();
-    this.geofencesActive = false;
+    // 3. Smart Cleanup: syncGeofences will decide if GPS should stay on 
+    // for other active or upcoming schedules.
+    await this.syncGeofences(false);
     
-    // 3. Stop foreground service if no other sessions active
-    // (In a multi-place scenario, we'd check if others are active, 
-    // but stopForegroundService is safe to call as it updates notifications)
-    await this.stopForegroundService();
-    
-    Logger.info(`[Session] Active session stopped for ${placeId}`);
+    Logger.info(`[Session] Active session cleanup complete for ${placeId}`);
   }
 
   /**
@@ -1028,9 +1025,14 @@ private setupReactiveSync() {
       // --- SURGICAL LOGIC SELECTION ---
 
       if (subType === 'notify') {
-        Logger.info(`[Surgical] Pre-activation Notification check for ${place.name}`);
+        Logger.info(`[Surgical] Pre-activation check for ${place.name}`);
         
-        // Only notify if user is distant (saving them from surprise silence)
+        // ALWAYS update the foreground service to show "Preparing..." status
+        await this.startForegroundService();
+
+        // CONDITIONAL ALERT: Only send pop-up if user is DISTANT (to warn them)
+        // If they are already there, we skip the pop-up. Silencing will only happen 
+        // 1 minute before startTime via handleGeofenceEntry.
         const location = await this.getQuickLocation();
         if (location) {
           const distance = LocationValidator.calculateDistance(
@@ -1041,7 +1043,7 @@ private setupReactiveSync() {
           );
 
           if (distance > (place as any).radius + CONFIG.GEOFENCE_RADIUS_BUFFER) {
-            Logger.info(`[Surgical] User is far (${Math.round(distance)}m), sending pre-notification`);
+            Logger.info(`[Surgical] User is far (${Math.round(distance)}m), sending pre-notification pop-up`);
             notificationBus.emit({
               type: 'SCHEDULE_APPROACHING',
               placeId,
@@ -1050,12 +1052,23 @@ private setupReactiveSync() {
               source: 'alarm'
             });
           } else {
-            Logger.info(`[Surgical] User is already close (${Math.round(distance)}m), skipping pre-notification`);
+            Logger.info(`[Surgical] User is already close (${Math.round(distance)}m), skipping pop-up alert`);
           }
         } else {
-          Logger.warn('[Surgical] Could not get location for T-15 check, skipping pre-notification');
+          Logger.warn('[Surgical] Could not get location for T-15 alert check');
         }
       } 
+      else if (subType === 'strict') {
+        Logger.info(`[Surgical] Strict Start check-in for ${place.name}`);
+        
+        // Final force check at T-0 to ensure activation
+        await gpsManager.forceLocationCheck(
+            (location) => this.processLocationUpdate(location),
+            (error) => this.handleLocationError(error),
+            1,
+            2
+        );
+      }
       else if (subType === 'monitor') {
         Logger.info(`[Surgical] Activation Session Start for ${place.name}`);
         
@@ -1211,7 +1224,7 @@ private setupReactiveSync() {
     }
 
     if (shouldStopMonitoring) {
-      notificationManager.showNotification('Location Tracking Stopped', userMessage, 'gps-error');
+      notificationManager.showErrorAlert(userMessage);
       this.stopGeofenceMonitoring();
       Logger.error('[LocationService] Stopped monitoring due to critical GPS error');
     } else {
@@ -1383,19 +1396,19 @@ private setupReactiveSync() {
     const endTime = currentSchedule.endTime.getTime();
 
     // 1. EARLY ARRIVAL CHECK
-    // Allow auto-silence up to 1 minute early for a smooth transition
+    // Allow auto-silence only up to 1 minute early for a smooth transition.
+    // This protects users (like Imams) who are at the location but not yet in the session.
     if (now < startTime - (60 * 1000)) {
       const msUntilStart = startTime - now;
       Logger.info(
         `[LocationService] EARLY ARRIVAL: ${place.name}. Waiting ${Math.round(msUntilStart / 1000)}s`
       );
 
-      // IMPORTANT: We do NOT update lastTriggerTime here, so that the 
-      // actual start alarm (3s later) can still fire without being debounced.
-
+      // IMPORTANT: We rely on the STRICT_START (T-0) alarm for activation if they stay inside.
+      // But we still schedule a precise local timer if we're very close.
       if (msUntilStart <= 60000) {
         this.timerManager.schedule(`start-${placeId}`, msUntilStart, async () => {
-          Logger.info(`[LocationService] Strict timer fired for ${placeId}`);
+          Logger.info(`[LocationService] Precise start timer fired for ${placeId}`);
           await this.handleGeofenceEntry(placeId);
         });
       }
@@ -1434,19 +1447,10 @@ private setupReactiveSync() {
 
     await silentZoneManager.handleExit(placeId, force);
 
-    // MARK VISIT AS COMPLETED
-    // This prevents the "Monitoring" notification from reappearing immediately
-    // after an early exit until the next schedule window.
-    if (!force) {
-      const place = this.realm ? PlaceService.getPlaceById(this.realm, placeId) : null;
-      const schedule = place ? ScheduleManager.getCurrentOrNextSchedule(place) : null;
-      if (schedule) {
-        const visitKey = `${placeId}-${schedule.startTime.toISOString()}`;
-        this.completedVisits.add(visitKey);
-        Logger.info(`[LocationService] Visit marked as completed: ${visitKey}`);
-      }
-    }
-
+    // REMOVAL: We no longer mark visit as completed on early exit.
+    // This allows for RE-ENTRY as long as the schedule window is still open.
+    // The visit is only marked as completed in stopActivePrayerSession (at EndTime).
+    
     // Clear end timer for this place
     this.timerManager.clear(`end-${placeId}`);
   }

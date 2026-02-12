@@ -10,6 +10,23 @@ import { UpcomingSchedule } from './ScheduleManager';
 
 const NOTIFICATION_GROUP = 'com.qybirx.silentzone.group';
 
+// Notification Templates for consistency
+const TEMPLATES = {
+    SERVICE: {
+        RUNNING: { title: '🛡️ Silent Zone Running', body: (count: number) => `Monitoring ${count} active location${count !== 1 ? 's' : ''}` },
+        ACTIVE: { title: '🔕 Silent Zone Active', body: (name: string) => `📍 Inside ${name}` },
+        UPCOMING: { title: '⏱️ Preparing to Silence', body: (name: string, mins: number) => `🔜 ${name} starts in ${mins} min` },
+        SEARCHING: { title: '🛡️ Silent Zone Monitoring', body: 'Searching for active zone...' }
+    },
+    ALERTS: {
+        UPCOMING: { title: 'Upcoming Silent Zone', body: (name: string, mins: number) => `Silent mode for "${name}" starts in ${mins}m` },
+        ACTIVATED: { title: 'Silent Zone Active', body: (name: string) => `Phone silenced for "${name}"` },
+        ENDED: { title: 'Silent Zone Ended', body: (name: string) => `Volume restored for "${name}"` },
+        RESUMED: { title: 'Silent Zone', body: 'Monitoring resumed after device restart' },
+        ERROR: { title: '⚠️ Silent Zone Alert', body: (msg: string) => msg || 'Background service issue' }
+    }
+};
+
 class NotificationManager {
   /**
    * Create notification channels
@@ -32,6 +49,13 @@ class NotificationManager {
         importance: AndroidImportance.HIGH,
         sound: 'default',
       });
+
+      await notifee.createChannel({
+        id: CONFIG.CHANNELS.TRIGGERS,
+        name: 'Background Service Triggers',
+        importance: AndroidImportance.MIN,
+        visibility: 0, // VISIBILITY_SECRET
+      });
       
       Logger.info('[NotificationManager] Notification channels created');
     } catch (error) {
@@ -51,25 +75,20 @@ class NotificationManager {
     if (Platform.OS !== 'android') return;
 
     try {
-      // Default state
-      let title = '🛡️ Silent Zone Running';
-      let body = `Monitoring ${enabledCount} active location${enabledCount !== 1 ? 's' : ''}`;
+      let title = TEMPLATES.SERVICE.RUNNING.title;
+      let body = TEMPLATES.SERVICE.RUNNING.body(enabledCount);
       
       if (activePlaceName) {
-        // We are INSIDE - Top Priority
-        title = '🔕 Silent Zone Active';
-        body = `📍 Inside ${activePlaceName}`;
+        title = TEMPLATES.SERVICE.ACTIVE.title;
+        body = TEMPLATES.SERVICE.ACTIVE.body(activePlaceName);
       } else if (upcomingSchedules && upcomingSchedules.length > 0) {
-        const nextSchedule = upcomingSchedules[0];
-        
-        if (nextSchedule.minutesUntilStart > 0 && nextSchedule.minutesUntilStart <= 15) {
-            // Approaching (Only if > 0 minutes)
-            title = '⏱️ Preparing to Silence';
-            body = `🔜 ${nextSchedule.placeName} starts in ${nextSchedule.minutesUntilStart} min`;
+        const next = upcomingSchedules[0];
+        if (next.minutesUntilStart > 0 && next.minutesUntilStart <= 15) {
+            title = TEMPLATES.SERVICE.UPCOMING.title;
+            body = TEMPLATES.SERVICE.UPCOMING.body(next.placeName, next.minutesUntilStart);
         } else if (isInScheduleWindow) {
-            // In schedule window but NOT validated as inside yet (Active or 0 min)
-            title = '🛡️ Silent Zone Monitoring';
-            body = 'Searching for active zone...';
+            title = TEMPLATES.SERVICE.SEARCHING.title;
+            body = TEMPLATES.SERVICE.SEARCHING.body;
         }
       }
 
@@ -85,35 +104,57 @@ class NotificationManager {
           autoCancel: false,
           colorized: true,
           groupId: NOTIFICATION_GROUP,
-          groupSummary: false, // Don't make foreground service the summary
+          groupSummary: false,
           smallIcon: 'ic_launcher',
           largeIcon: 'ic_launcher',
-          importance: AndroidImportance.HIGH, // Ensure it stays prominent
+          importance: AndroidImportance.HIGH,
           foregroundServiceTypes: [
             AndroidForegroundServiceType.FOREGROUND_SERVICE_TYPE_LOCATION,
           ],
-          pressAction: {
-            id: 'default',
-            launchActivity: 'default',
-          },
+          pressAction: { id: 'default', launchActivity: 'default' },
         },
       });
-
-      Logger.info('[NotificationManager] Foreground service notification updated');
     } catch (error) {
-      Logger.error('[NotificationManager] Failed to start/update service notification:', error);
+      Logger.error('[NotificationManager] Foreground update failed:', error);
     }
   }
 
   /**
-   * Stop foreground service and remove notification
+   * Common Alert methods
+   */
+  async showUpcomingAlert(placeName: string, minutes: number) {
+      const { title, body } = TEMPLATES.ALERTS.UPCOMING;
+      return this.showNotification(title, body(placeName, minutes), 'upcoming-' + placeName);
+  }
+
+  async showActivationAlert(placeName: string) {
+      const { title, body } = TEMPLATES.ALERTS.ACTIVATED;
+      return this.showNotification(title, body(placeName), 'active-' + placeName);
+  }
+
+  async showEndAlert(placeName: string) {
+      const { title, body } = TEMPLATES.ALERTS.ENDED;
+      return this.showNotification(title, body(placeName), 'end-' + placeName);
+  }
+
+  async showResumedAlert() {
+      const { title, body } = TEMPLATES.ALERTS.RESUMED;
+      return this.showNotification(title, body, 'boot-reschedule-complete', true);
+  }
+
+  async showErrorAlert(message: string) {
+      const { title, body } = TEMPLATES.ALERTS.ERROR;
+      return this.showNotification(title, body(message), 'error-alert', false, false);
+  }
+
+  /**
+   * Stop foreground service
    */
   async stopForegroundService() {
     if (Platform.OS === 'android') {
       try {
         await notifee.stopForegroundService();
         await notifee.cancelNotification('location-tracking-service');
-        Logger.info('[NotificationManager] Service stopped');
       } catch (error) {
         Logger.error('[NotificationManager] Error stopping service:', error);
       }
@@ -136,9 +177,7 @@ class NotificationManager {
           smallIcon: 'ic_launcher', 
           largeIcon: 'ic_launcher',
           color: '#8B5CF6',
-          pressAction: {
-            id: 'default',
-          },
+          pressAction: { id: 'default', launchActivity: 'default' },
         },
         ios: {
           foregroundPresentationOptions: {

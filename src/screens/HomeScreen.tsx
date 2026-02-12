@@ -119,7 +119,7 @@ useEffect(() => {
     }
   }, [activeCount, trackingEnabled, realm, isInitialLoad]);
 
-  const handleToggle = (id: string) => {
+  const handleToggle = async (id: string) => {
   const place = places.find(p => p.id === id);
   const isActive = place?.isInside;
   const currentlyEnabled = place?.isEnabled;
@@ -135,7 +135,10 @@ useEffect(() => {
   //}
   
   // Just toggle - LocationService will handle tracking state
-  PlaceService.togglePlaceEnabled(realm, id);
+  const success = PlaceService.togglePlaceEnabled(realm, id);
+  if (success !== null) {
+    await locationService.syncGeofences();
+  }
 };
 
   const handleDelete = (id: string, name: string) => {
@@ -147,8 +150,11 @@ useEffect(() => {
         { 
           text: "Delete", 
           style: "destructive",
-          onPress: () => {
-            PlaceService.deletePlace(realm, id);
+          onPress: async () => {
+            const success = await PlaceService.deletePlace(realm, id);
+            if (success) {
+              await locationService.syncGeofences();
+            }
           }
         }
       ]

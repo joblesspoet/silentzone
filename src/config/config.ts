@@ -55,5 +55,6 @@ export const CONFIG = {
   CHANNELS: {
     SERVICE: 'location-tracking-service',
     ALERTS: 'location-alerts',
+    TRIGGERS: 'location-triggers',
   },
 };

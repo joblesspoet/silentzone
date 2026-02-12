@@ -11,6 +11,7 @@ export const ALARM_ACTIONS = {
   START_MONITORING: 'START_MONITORING',
   START_SILENCE: 'START_SILENCE',
   STOP_SILENCE: 'STOP_SILENCE',
+  STRICT_START: 'STRICT_START',
 };
 
 class AlarmService {
@@ -41,16 +42,20 @@ class AlarmService {
 
     const now = new Date();
     const tomorrow = new Date(now.getTime() + 86400000);
+    const dayAfter = new Date(now.getTime() + 86400000 * 2);
     
     Logger.info(
-      `[AlarmService] ${forceReset ? 'Creating' : 'Verifying'} 48-hour alarm buffer for ${place.name} ` +
+      `[AlarmService] ${forceReset ? 'Creating' : 'Verifying'} 72-hour rolling buffer for ${place.name} ` +
       `(${existingIds.size} existing triggers)`
     );
 
     // Step 3: Surgically schedule (will skip existing IDs via check-before-set)
+    // We check 3 days (Today, Tomorrow, DayAfter) to ensure we ALWAYS have 
+    // at least 48 hours of FUTURE alarms scheduled at any given time.
     for (let i = 0; i < place.schedules.length; i++) {
       await this.schedulePrayerSurgically(place, i, now, existingIds);
       await this.schedulePrayerSurgically(place, i, tomorrow, existingIds);
+      await this.schedulePrayerSurgically(place, i, dayAfter, existingIds);
     }
     
     Logger.info(`[AlarmService] ✅ Alarm scheduling complete for ${place.name}`);
@@ -65,44 +70,30 @@ class AlarmService {
       timestamp: number, 
       placeId: string, 
       action: string,
-      title: string, 
-      body: string,
-      extraData?: object,
-      existingIds?: Set<string | undefined>  // Kept for compatibility but not used internally
+      extraData?: object
   ) {
       try {
-        const isSilent = (extraData as any)?.silent === 'true';
-        
         await notifee.createTriggerNotification(
           {
             id,
-            title,
-            body,
+            title: 'Silent Zone Engine',
+            body: action === 'monitor' ? 'Optimizing location sync...' : 
+                  action === 'start' ? 'Verifying check-in status...' : 
+                  'Finalizing background session...',
+            android: {
+              channelId: CONFIG.CHANNELS.TRIGGERS,
+              importance: AndroidImportance.MIN,
+              category: AndroidCategory.ALARM,
+              groupId: 'com.qybirx.silentzone.group',
+              smallIcon: 'ic_launcher',
+              color: '#8B5CF6',
+              pressAction: { id: 'default', launchActivity: 'default' },
+            },
             data: {
               action,
               placeId,
               scheduledTime: new Date(timestamp).toISOString(),
               ...extraData
-            },
-            android: {
-              channelId: CONFIG.CHANNELS.ALERTS,
-              importance: AndroidImportance.DEFAULT,
-              category: AndroidCategory.ALARM,
-              groupId: 'com.qybirx.silentzone.group',
-              smallIcon: 'ic_launcher',
-              largeIcon: 'ic_launcher',
-              color: '#8B5CF6',
-              autoCancel: true,
-              ongoing: false,
-              loopSound: false,
-              pressAction: {
-                id: 'default',
-                launchActivity: 'default',
-              },
-              fullScreenAction: {
-                id: 'default',
-                launchActivity: 'default',
-              },
             },
           },
           {
@@ -114,7 +105,7 @@ class AlarmService {
             },
           }
         );
-        Logger.info(`[AlarmService] ✅ Created: ${action} @ ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})${isSilent ? ' [SILENT]' : ''}`);
+        Logger.info(`[AlarmService] ✅ Created: ${action} @ ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})`);
       } catch (error) {
         Logger.error(`[AlarmService] Failed to schedule alarm ${id}:`, error);
       }
@@ -180,28 +171,26 @@ class AlarmService {
       endTime.setDate(endTime.getDate() + 1);
     }
 
-    const dateStr = baseDate.toISOString().split('T')[0];
+    // Use local date string to avoid timezone shifts from toISOString()
+    const dateStr = baseDate.getFullYear() + '-' + 
+                   String(baseDate.getMonth() + 1).padStart(2, '0') + '-' + 
+                   String(baseDate.getDate()).padStart(2, '0');
     const now = Date.now();
 
     // --- TRIGGER 1: NOTIFY (T-15) ---
     const notifyTime = startTime.getTime() - (15 * 60 * 1000);
     const notifyId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-monitor`;
     
-    // ✅ FIXED: Schedule if in future OR we're currently in the window
     const notifyWindowEnd = endTime.getTime();
     const shouldScheduleNotify = notifyTime > now || (now >= notifyTime && now < notifyWindowEnd);
     
     if (shouldScheduleNotify && !existingIds.has(notifyId)) {
-      
       await this.scheduleSingleAlarm(
         notifyId,
-        notifyTime > now ? notifyTime : now + 1000, // Immediate if passed
+        notifyTime > now ? notifyTime : now + 1000,
         place.id,
         ALARM_ACTIONS.START_MONITORING,
-        'Upcoming Silent Zone',
-        `Silent mode for "${place.name}" starts in 15m`,
-        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'notify', silent: 'true' },
-        existingIds
+        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'notify', silent: 'true' }
       );
     }
 
@@ -217,14 +206,23 @@ class AlarmService {
         monitorStartTime > now ? monitorStartTime : now + 1000,
         place.id,
         ALARM_ACTIONS.START_SILENCE,
-        'Silent Zone Active',
-        `Phone silenced for "${place.name}"`,
-        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'monitor', silent: 'true' },
-        existingIds
+        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'monitor', silent: 'true' }
       );
     }
 
-    // --- TRIGGER 3: END & HEAL (End Time) ---
+    // --- TRIGGER 3: STRICT START (T-0) ---
+    const strictId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-strict`;
+    if (startTime.getTime() > now && !existingIds.has(strictId)) {
+      await this.scheduleSingleAlarm(
+        strictId,
+        startTime.getTime(),
+        place.id,
+        ALARM_ACTIONS.STRICT_START,
+        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'strict', silent: 'true' }
+      );
+    }
+
+    // --- TRIGGER 4: END & HEAL (End Time) ---
     const endId = `place-${place.id}-sched-${scheduleIndex}-date-${dateStr}-type-end`;
     if (endTime.getTime() > now && !existingIds.has(endId)) {
       await this.scheduleSingleAlarm(
@@ -232,10 +230,7 @@ class AlarmService {
         endTime.getTime(),
         place.id,
         ALARM_ACTIONS.STOP_SILENCE,
-        'Silent Zone Ended',
-        `Volume restored for "${place.name}"`,
-        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'cleanup', silent: 'true' },
-        existingIds
+        { placeId: place.id, prayerIndex: scheduleIndex, dateStr, subType: 'cleanup', silent: 'true' }
       );
     }
   }

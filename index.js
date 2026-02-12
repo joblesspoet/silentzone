@@ -184,34 +184,7 @@ const getRealm = async () => {
 // BUSINESS LOGIC: Error Notification
 // ============================================================================
 
-const showBackgroundErrorNotification = async (errorMessage) => {
-    try {
-        await notifee.createChannel({
-            id: 'background-errors',
-            name: 'Background Service Errors',
-            importance: 4,
-            vibration: true,
-        });
-
-        await notifee.displayNotification({
-            id: 'background-error',
-            title: '⚠️ Silent Zone Alert',
-            body: errorMessage || 'Background service failed. Please open the app to ensure silent zones work.',
-            android: {
-                channelId: 'background-errors',
-                smallIcon: 'ic_launcher',
-                color: '#FF6B6B',
-                importance: 4,
-                pressAction: {
-                    id: 'default',
-                    launchActivity: 'default',
-                },
-            },
-        });
-    } catch (e) {
-        console.error('[Background] Failed to show error notification:', e);
-    }
-};
+// showBackgroundErrorNotification removed in favor of notificationManager.showErrorAlert
 
 // ============================================================================
 // BUSINESS LOGIC: Alarm Event Handler
@@ -331,33 +304,16 @@ AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async (taskData) =>
   
   try {
     const realm = await getRealm();
+    const { notificationManager } = require('./src/services/NotificationManager');
     await locationService.initialize(realm);
     console.log('[BootReschedule] ✅ Alarms rescheduled');
     
-    await notifee.displayNotification({
-      id: 'boot-reschedule-complete',
-      title: 'Silent Zone',
-      body: 'Monitoring resumed after device restart',
-      android: {
-        channelId: 'alerts',
-        smallIcon: 'ic_launcher',
-        color: '#8B5CF6',
-        autoCancel: true,
-      },
-    });
+    await notificationManager.showResumedAlert();
+
   } catch (error) {
     console.error('[BootReschedule] ❌ Failed:', error);
-    
-    await notifee.displayNotification({
-      id: 'boot-reschedule-error',
-      title: '⚠️ Silent Zone',
-      body: 'Failed to resume. Please open the app.',
-      android: {
-        channelId: 'background-errors',
-        smallIcon: 'ic_launcher',
-        color: '#FF6B6B',
-      },
-    });
+    const { notificationManager } = require('./src/services/NotificationManager');
+    await notificationManager.showErrorAlert('Failed to resume after restart. Please open the app.');
   }
 });
 
