@@ -1,11 +1,12 @@
 /**
- * @format
- * PRODUCTION VERSION - Handles alarm race conditions and deduplication
+ * Silent Zone - Background Entry Point
+ * 
+ * This file handles OS-level events (Alarms, Geofences, Boot) and dispatches 
+ * them to the appropriate services. It mirrors the Android 'BroadcastReceiver' pattern.
  */
 
 import { AppRegistry } from 'react-native';
 import notifee, { EventType } from '@notifee/react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import App from './App';
 import { name as appName } from './app.json';
 import { crashHandler } from './src/utils/CrashHandler';
@@ -18,303 +19,145 @@ const { Logger } = require('./src/services/Logger');
 const { SettingsService } = require('./src/services/SettingsService');
 
 // ============================================================================
-// BUSINESS LOGIC: Alarm Processing State Management
+// STATE: Event Deduplication
 // ============================================================================
 
 /**
- * Tracks recently processed alarms to prevent duplicate processing
- * Key: alarmId, Value: timestamp when processed
+ * Tracks recently processed alarms to prevent double-execution 
+ * if Android re-delivers an intent during high system load.
  */
-const processedAlarms = new Map();
-const ALARM_DEBOUNCE_MS = 180000; // 3 minutes (increased from 6s to handle Android's re-delivery delays)
+const processedAlarms = new Set();
+const DEBOUNCE_TIME = 30000; // 30 seconds is enough for immediate re-delivery
 
-// AsyncStorage key for persistent alarm tracking
-const PROCESSED_ALARMS_KEY = 'silentzone_processed_alarms';
-
-
-/**
- * Load processed alarms from persistent storage
- * Call this once at app startup
- */
-const loadProcessedAlarmsFromStorage = async () => {
-  try {
-    const stored = await AsyncStorage.getItem(PROCESSED_ALARMS_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      const now = Date.now();
-      const cutoff = now - ALARM_DEBOUNCE_MS;
-      
-      // Only load recent entries (within debounce window)
-      for (const [id, timestamp] of Object.entries(parsed)) {
-        if (timestamp > cutoff) {
-          processedAlarms.set(id, timestamp);
-        }
-      }
-      console.log(`[AlarmDeduplicate] Loaded ${processedAlarms.size} recent alarms from storage`);
-    }
-  } catch (e) {
-    console.error('[AlarmDeduplicate] Failed to load from storage:', e);
-  }
+const isDuplicate = (id) => {
+  if (processedAlarms.has(id)) return true;
+  processedAlarms.add(id);
+  // Cleanup after a delay
+  setTimeout(() => processedAlarms.delete(id), DEBOUNCE_TIME);
+  return false;
 };
-
-/**
- * Save processed alarms to persistent storage
- */
-const saveProcessedAlarmsToStorage = async () => {
-  try {
-    const now = Date.now();
-    const cutoff = now - ALARM_DEBOUNCE_MS;
-    const toSave = {};
-    
-    // Only save recent entries
-    for (const [id, timestamp] of processedAlarms.entries()) {
-      if (timestamp > cutoff) {
-        toSave[id] = timestamp;
-      }
-    }
-    
-    await AsyncStorage.setItem(PROCESSED_ALARMS_KEY, JSON.stringify(toSave));
-  } catch (e) {
-    console.error('[AlarmDeduplicate] Failed to save to storage:', e);
-  }
-};
-
-/**
- * Tracks currently processing alarms to prevent concurrent processing
- */
-const processingAlarms = new Set();
-
-/**
- * Check if alarm was recently processed (deduplication)
- */
-const wasRecentlyProcessed = (alarmId) => {
-  const lastProcessed = processedAlarms.get(alarmId);
-  if (!lastProcessed) return false;
-  
-  const timeSince = Date.now() - lastProcessed;
-  return timeSince < ALARM_DEBOUNCE_MS;
-};
-
-/**
- * Check if alarm is currently being processed (concurrency control)
- */
-const isCurrentlyProcessing = (alarmId) => {
-  return processingAlarms.has(alarmId);
-};
-
-/**
- * Mark alarm as processed and cleanup old entries
- */
-const markAlarmProcessed = async (alarmId) => {
-  processedAlarms.set(alarmId, Date.now());
-  processingAlarms.delete(alarmId); // Remove from processing set
-  
-  // Save to persistent storage
-  await saveProcessedAlarmsToStorage();
-
-  // Cleanup old entries to prevent memory leak
-  if (processedAlarms.size > 100) {
-    const cutoff = Date.now() - ALARM_DEBOUNCE_MS * 2;
-    for (const [id, timestamp] of processedAlarms.entries()) {
-      if (timestamp < cutoff) {
-        processedAlarms.delete(id);
-      }
-    }
-  }
-};
-
-/**
- * Mark alarm as currently processing
- */
-const markAlarmProcessing = (alarmId) => {
-  processingAlarms.add(alarmId);
-};
-
-// Load processed alarms at startup
-loadProcessedAlarmsFromStorage();
 
 // ============================================================================
-// BUSINESS LOGIC: Realm Instance Management
+// DATABASE: Realm Singleton Management
 // ============================================================================
 
 let cachedRealm = null;
-let realmOpenPromise = null;
 
 /**
- * Get Realm instance with caching to prevent multiple opens
- * Uses singleton pattern with promise caching
+ * Ensures we only have one Realm instance active in the background process.
  */
 const getRealm = async () => {
-    // If we already have a cached instance, return it
-    if (cachedRealm && !cachedRealm.isClosed) {
-        console.log('[Realm] Using cached instance');
-        return cachedRealm;
-    }
+    if (cachedRealm && !cachedRealm.isClosed) return cachedRealm;
     
-    // If opening is in progress, wait for it
-    if (realmOpenPromise) {
-        console.log('[Realm] Waiting for in-progress open...');
-        return await realmOpenPromise;
-    }
+    const Realm = require('realm');
+    const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
+    const realm = await Realm.open({
+        schema: schemas,
+        schemaVersion: SCHEMA_VERSION,
+    });
     
-    // Open new instance
-    console.log('[Realm] Opening new instance...');
-    realmOpenPromise = (async () => {
-        const Realm = require('realm');
-        const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
-        const realm = await Realm.open({
-            schema: schemas,
-            schemaVersion: SCHEMA_VERSION,
-        });
-        
-        // --- INITIALIZE LOGGER FOR BACKGROUND ---
-        Logger.setRealm(realm);
-        const loggingEnabled = await SettingsService.getLoggingEnabled();
-        Logger.setEnabled(loggingEnabled);
+    // Wire up services with the active realm instance
+    Logger.setRealm(realm);
+    const loggingEnabled = await SettingsService.getLoggingEnabled();
+    Logger.setEnabled(loggingEnabled);
 
-        cachedRealm = realm;
-        realmOpenPromise = null;
-        return realm;
-    })();
-    
-    return await realmOpenPromise;
+    cachedRealm = realm;
+    return realm;
 };
 
 // ============================================================================
-// BUSINESS LOGIC: Error Notification
+// HANDLER: Alarm Events
 // ============================================================================
-
-// showBackgroundErrorNotification removed in favor of notificationManager.showErrorAlert
-
-// ============================================================================
-// BUSINESS LOGIC: Alarm Event Handler
-// ============================================================================
-
-
-
 
 /**
- * SHARED HANDNER FOR ALARM EVENTS
+ * Global handler for trigger notifications fired by AlarmService.
  */
 const handleAlarmEvent = async ({ type, detail }) => {
   const { notification } = detail;
 
-  // Extraction and verification logic (same as background)
-  const isTriggerNotification = notification?.id?.includes('place-') && 
-                                 (notification?.id?.includes('-type-monitor') || 
-                                  notification?.id?.includes('-type-start') || 
-                                  notification?.id?.includes('-type-end'));
+  // We only care about our internal trigger alarms
+  const isAlarmAction = notification?.data?.action && notification?.id?.startsWith('place-');
   
-  if (isTriggerNotification && (!notification?.data?.action) && notification?.id) {
-      const idParts = notification.id.split('-');
-      const typeIndex = idParts.indexOf('type');
-      if (typeIndex !== -1 && idParts[typeIndex + 1]) {
-          const actionType = idParts[typeIndex + 1];
-          const data = notification.data || {};
-          if (actionType === 'monitor') notification.data = { ...data, action: 'START_MONITORING' };
-          if (actionType === 'start') notification.data = { ...data, action: 'START_SILENCE' };
-          if (actionType === 'end') notification.data = { ...data, action: 'STOP_SILENCE' };
-      }
-  }
+  if (type === EventType.TRIGGER_NOTIFICATION_CREATED || !isAlarmAction) return;
 
-  const isAlarmAction = notification?.data?.action === 'START_MONITORING' || 
-                        notification?.data?.action === 'START_SILENCE' || 
-                        notification?.data?.action === 'STOP_SILENCE';
-
-  // Log raw events for debugging
-  console.log(`[AlarmHandler] Event: type=${type}, id=${notification?.id || 'none'}, action=${notification?.data?.action || 'none'}`);
-
-  if (type === EventType.TRIGGER_NOTIFICATION_CREATED || !isAlarmAction) {
+  const alarmId = notification.id;
+  if (isDuplicate(alarmId)) {
+    console.log(`[Dispatcher] Skipping duplicate: ${alarmId}`);
     return;
   }
-
-  const alarmId = notification.id || `fallback-${notification.data?.placeId}`;
-
-  if (wasRecentlyProcessed(alarmId) || isCurrentlyProcessing(alarmId)) {
-    return;
-  }
-
-  markAlarmProcessing(alarmId);
 
   try {
-      console.log(`[AlarmHandler] ⏰ PROCESSING: ${notification.data.action} for place ${notification.data.placeId}`);
+      console.log(`[Dispatcher] ⏰ TRIGGERED: ${notification.data.action} for ${alarmId}`);
+      
       const realm = await getRealm();
+      
+      // Pass the event directly to the LocationService (The Brain)
       await locationService.initializeLight(realm);
       await locationService.handleAlarmFired({
-          notification: { id: notification.id, data: notification.data },
+          notification: { id: alarmId, data: notification.data },
       });
-      console.log('[AlarmHandler] ✅ Alarm handled successfully');
-      await markAlarmProcessed(alarmId); // Now async
+      
+      console.log(`[Dispatcher] ✅ Handled: ${alarmId}`);
   } catch (err) {
-      console.error('[AlarmHandler] ❌ Error:', err);
-      markAlarmProcessed(alarmId);
+      console.error(`[Dispatcher] ❌ Error handling ${alarmId}:`, err);
   }
 };
 
-// Register handlers
+// Register Notifee listeners
 notifee.onBackgroundEvent(handleAlarmEvent);
 notifee.onForegroundEvent(handleAlarmEvent);
 
 // ============================================================================
-// Geofencing Handler
+// HANDLER: Geofence Events (Native Android API)
 // ============================================================================
 
 AppRegistry.registerHeadlessTask('GeofenceTask', () => async (taskData) => {
-  console.log('[Headless] 🌎 Geofence event:', taskData);
+  console.log('[Dispatcher] 🌎 Geofence Event:', taskData.event, taskData.ids);
   
   try {
     const realm = await getRealm();
     await locationService.initialize(realm);
     
+    // Handle entries and exits
     if (taskData.event === 'ENTER') {
-      for (const id of taskData.ids) {
-        await locationService.handleGeofenceEntry(id);
-      }
+      for (const id of taskData.ids) await locationService.handleGeofenceEntry(id);
     } else if (taskData.event === 'EXIT') {
-      for (const id of taskData.ids) {
-        await locationService.handleGeofenceExit(id);
-      }
+      for (const id of taskData.ids) await locationService.handleGeofenceExit(id);
     }
   } catch (error) {
-    console.error('[Headless] Failed:', error);
+    console.error('[Dispatcher] Geofence Failure:', error);
   }
 });
 
 // ============================================================================
-// Foreground Service
+// HANDLER: Boot / Restart
 // ============================================================================
 
-/**
- * Register foreground service task.
- * The promise returned must remain PENDING to keep the native service alive.
- */
-notifee.registerForegroundService((notification) => {
-  return new Promise(() => {
-    console.log(`[ForegroundService] 🚀 Sticky service task started (id=${notification.id})`);
-    // NEVER resolve this promise to keep the service "sticky"
-  });
-});
-
-// ============================================================================
-// Boot Handler
-// ============================================================================
-
-AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async (taskData) => {
-  console.log('[BootReschedule] Device rebooted...');
+AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async () => {
+  console.log('[Dispatcher] 🔄 System Rebooted. Restoring engine...');
   
   try {
     const realm = await getRealm();
     const { notificationManager } = require('./src/services/NotificationManager');
+    
     await locationService.initialize(realm);
-    console.log('[BootReschedule] ✅ Alarms rescheduled');
+    await locationService.syncGeofences(); // Re-seed the initial 'Next' alarms
     
     await notificationManager.showResumedAlert();
-
+    console.log('[Dispatcher] ✅ Engine Resumed');
   } catch (error) {
-    console.error('[BootReschedule] ❌ Failed:', error);
-    const { notificationManager } = require('./src/services/NotificationManager');
-    await notificationManager.showErrorAlert('Failed to resume after restart. Please open the app.');
+    console.error('[Dispatcher] Boot Restore Failed:', error);
   }
+});
+
+// ============================================================================
+// SERVICE: Sticky Foreground Task
+// ============================================================================
+
+notifee.registerForegroundService(() => {
+  return new Promise(() => {
+    console.log('[Dispatcher] 🚀 Sticky service keeping process alive');
+  });
 });
 
 AppRegistry.registerComponent(appName, () => App);
