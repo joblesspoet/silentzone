@@ -113,7 +113,8 @@ export class GPSManager {
    */
   getImmediateLocation(
     onLocation: LocationCallback,
-    onError: LocationErrorCallback
+    onError: LocationErrorCallback,
+    useHighAccuracy: boolean = true
   ): void {
     Geolocation.getCurrentPosition(
       async (position) => {
@@ -138,7 +139,7 @@ export class GPSManager {
         }
       },
       (error) => onError(error),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: CONFIG.GPS_MAXIMUM_AGE }
+      { enableHighAccuracy: useHighAccuracy, timeout: 15000, maximumAge: CONFIG.GPS_MAXIMUM_AGE }
     );
   }
 
@@ -150,7 +151,8 @@ export class GPSManager {
     onError: LocationErrorCallback,
     attemptNumber: number = 1,
     maxAttempts: number = 5,
-    deadline?: number
+    deadline?: number,
+    useHighAccuracy: boolean = true // ✅ Added parameter
   ): Promise<void> {
     if (attemptNumber > 1 && deadline && Date.now() > deadline) {
       Logger.warn('[GPSManager] Force location check cancelled - Deadline passed');
@@ -187,29 +189,48 @@ export class GPSManager {
             resolve();
           }
         },
-        async (error) => {
+          async (error) => {
           Logger.error(`[GPSManager] Attempt ${attemptNumber} failed:`, error);
 
           if (attemptNumber < maxAttempts) {
             if (deadline && Date.now() > deadline) {
               Logger.warn('[GPSManager] Stop retrying - Deadline passed');
-              this.startFallbackPolling(onLocation, onError);
               resolve();
               return;
             }
 
             Logger.info(`[GPSManager] Retrying location check...`);
+            
+            // ✅ FALLBACK STRATEGY: 
+            // If high accuracy failed, try balanced power (Network/WiFi) for the next attempt
+            // This answers the user's need for "alternative lat long"
+            const useHighAccuracy = attemptNumber % 2 !== 0; // Alternate strategies
+            
+            if (!useHighAccuracy) {
+                Logger.info('[GPSManager] ⚠️ Switching to NETWORK/WIFI location (High Accuracy OFF)');
+            }
+
             await new Promise<void>(r => setTimeout(() => r(), 1000));
-            await this.forceLocationCheck(onLocation, onError, attemptNumber + 1, maxAttempts, deadline);
+            
+            // Recursive call with modified config
+            await this.forceLocationCheck(
+                onLocation, 
+                onError, 
+                attemptNumber + 1, 
+                maxAttempts, 
+                deadline, 
+                useHighAccuracy // Pass this down
+            );
             resolve();
           } else {
             Logger.error(`[GPSManager] All ${maxAttempts} location check attempts failed`);
-            this.startFallbackPolling(onLocation, onError);
+            // Final fallback: Try one last time with LOW accuracy
+            this.getImmediateLocation(onLocation, onError, false);
             resolve();
           }
         },
         {
-          enableHighAccuracy: true,
+          enableHighAccuracy: useHighAccuracy, // Use the strategy
           timeout,
           maximumAge: 30000,
         }
