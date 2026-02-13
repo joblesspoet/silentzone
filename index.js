@@ -85,13 +85,18 @@ const handleAlarmEvent = async ({ type, detail }) => {
   const { notification } = detail;
   const isAlarmAction = notification?.data?.action && notification?.id?.startsWith('place-');
   
-  if (type === EventType.TRIGGER_NOTIFICATION_CREATED || !isAlarmAction) return;
+  // Normal trigger fired OR notification delivered (as foreground service)
+  const isTargetEvent = type === EventType.DELIVERED || 
+                       type === EventType.PRESS ||
+                       type === EventType.ACTION_PRESS;
+
+  if (!isTargetEvent || !isAlarmAction) return;
 
   const alarmId = notification.id;
   if (isDuplicate(alarmId)) return;
 
   try {
-    console.log(`[Dispatcher] ⏰ Trigger: ${notification.data.action} -> ${alarmId}`);
+    console.log(`[Dispatcher] ⏰ Trigger: Type=${type} Action=${notification.data.action} ID=${alarmId}`);
     const realm = await getRealm();
     
     // Non-destructive init
@@ -100,6 +105,7 @@ const handleAlarmEvent = async ({ type, detail }) => {
     await locationService.handleAlarmFired({
       notification: { id: alarmId, data: notification.data },
     });
+    console.log(`[Dispatcher] ✅ Trigger Handled: ${alarmId}`);
   } catch (err) {
     console.error(`[Dispatcher] ❌ Alarm Error (${alarmId}):`, err);
   }

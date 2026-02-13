@@ -194,17 +194,28 @@ async initializeLight(realmInstance: Realm) {
     const startId = `place-${place.id}-start`;
     const endId = `place-${place.id}-end`;
 
-    // 1. Find the first START trigger that is still in the FUTURE
-    // triggerTime = startTime - (15 or 10 minutes)
-    const nextTriggerableStart = upcomingSchedules.find(s => {
-      const triggerTime = s.startTime.getTime() - (CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000);
-      // We use a 1-minute buffer to avoid scheduling an alarm for "right now"
-      return triggerTime > Date.now() + 60000;
-    });
+    // 1. Find the first START trigger window
+    const firstUpcoming = upcomingSchedules[0];
+    if (firstUpcoming) {
+      const startTime = firstUpcoming.startTime.getTime();
+      const warmUpTime = startTime - (CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000);
+      const lastChanceTime = startTime - 60000; // T-1 minute
 
-    if (nextTriggerableStart) {
-      const triggerTime = nextTriggerableStart.startTime.getTime() - (CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000);
-      await alarmService.scheduleNativeAlarm(startId, triggerTime, place.id, ALARM_ACTIONS.START_SILENCE);
+      let finalTrigger: number | null = null;
+
+      // Rule: If warmup is in future, use it. 
+      // Else if last chance is in future, use that as backup.
+      if (warmUpTime > Date.now() + 60000) {
+        finalTrigger = warmUpTime;
+        Logger.info(`[LocationService] Setting warmup alarm for ${place.name} at T-15`);
+      } else if (lastChanceTime > Date.now() + 30000) {
+        finalTrigger = lastChanceTime;
+        Logger.info(`[LocationService] ${place.name} warmup passed, scheduling T-1 safety alarm`);
+      }
+
+      if (finalTrigger) {
+        await alarmService.scheduleNativeAlarm(startId, finalTrigger, place.id, ALARM_ACTIONS.START_SILENCE);
+      }
     }
 
     // 2. Find the first END trigger that is still in the FUTURE

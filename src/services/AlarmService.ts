@@ -82,6 +82,7 @@ class AlarmService {
             channelId: CONFIG.CHANNELS.TRIGGERS,
             importance: AndroidImportance.MIN,
             category: AndroidCategory.ALARM,
+            asForegroundService: true, // CRITICAL: Wakes JS engine for DELIVERED events
             groupId: 'com.qybirx.silentzone.group',
             smallIcon: 'ic_launcher',
             color: '#8B5CF6',
