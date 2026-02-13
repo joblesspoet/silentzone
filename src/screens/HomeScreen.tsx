@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 
 import { useRealm } from '../database/RealmProvider';
@@ -25,8 +25,8 @@ import { gpsManager } from '../services/GPSManager';
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
   const insets = useSafeAreaInsets();
-  
-  const { 
+
+  const {
     notificationStatus,
     hasAllPermissions,
     requestLocationFlow,
@@ -43,58 +43,98 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
 
-  // Deprecated manual check - mapped to context property for compatibility with existing code
   const hasFullPermissions = hasAllPermissions;
 
-  //  Fetch places and set up listener - NO WRITES IN LISTENER
-useEffect(() => {
-  const placesResult = PlaceService.getAllPlaces(realm);
-  const prefs = PreferencesService.getPreferences(realm) as any;
-  
-  // Set initial states
-  setPlaces([...placesResult]);
-  const initialActive = placesResult.filter((p: any) => p.isEnabled).length;
-  setActiveCount(initialActive);
-  
-  if (prefs) {
-    setTrackingEnabled(prefs.trackingEnabled);
-  }
-
-  // Listener for places - ONLY UPDATE UI, DON'T CHANGE TRACKING
-  const placesListener = (collection: any) => {
-    setPlaces([...collection]);
-    const currentActive = collection.filter((p: any) => p.isEnabled).length;
-    setActiveCount(currentActive);
-  };
-
-  // Listener for preferences
-  const prefsListener = (p: any) => {
-    setTrackingEnabled(!!p.trackingEnabled);
-  };
-
-  placesResult.addListener(placesListener);
-  
-  if (prefs && typeof prefs.addListener === 'function') {
-    prefs.addListener(prefsListener);
-  }
-
-  return () => {
-    placesResult.removeListener(placesListener);
-    if (prefs && typeof prefs.removeListener === 'function') {
-      prefs.removeListener(prefsListener);
+  // FIX #4: `isInsidePlace()` was calling CheckInService.getActiveCheckIns(realm)
+  // inside .map() during render — a fresh Realm query on EVERY render, for EVERY place.
+  // This is moved to useMemo so it runs once per `places` change instead of every render.
+  //
+  // We use `places` as the dependency because Realm writes that affect check-ins will
+  // trigger a re-render (via the places Realm listener), which re-runs this memo.
+  const activeCheckInIds = useMemo(() => {
+    try {
+      const activeCheckIns = CheckInService.getActiveCheckIns(realm);
+      return new Set(Array.from(activeCheckIns).map((c: any) => c.placeId as string));
+    } catch (e) {
+      console.error('[HomeScreen] Failed to get active check-ins:', e);
+      return new Set<string>();
     }
-  };
-}, [realm]);
+  }, [places, realm]); // recomputes when places list changes (Realm write → listener fires → setPlaces → re-render)
+
+  // Fetch places and set up listener - NO WRITES IN LISTENER
+  useEffect(() => {
+    let placesResult: any = null;
+    let prefs: any = null;
+
+    try {
+      placesResult = PlaceService.getAllPlaces(realm);
+      setPlaces([...placesResult]);
+      const initialActive = placesResult.filter((p: any) => p.isEnabled).length;
+      setActiveCount(initialActive);
+    } catch (e) {
+      console.error('[HomeScreen] Failed to load places:', e);
+    }
+
+    try {
+      prefs = PreferencesService.getPreferences(realm);
+      if (prefs) {
+        setTrackingEnabled(prefs.trackingEnabled);
+      }
+    } catch (e) {
+      console.error('[HomeScreen] Failed to load preferences:', e);
+    }
+
+    // FIX #5: `isInitialLoad` was never set to false, permanently disabling the
+    // auto-pause logic in the effect below. Mark initial load complete after the
+    // first data snapshot is applied.
+    setIsInitialLoad(false);
+
+    // Listener for places - ONLY UPDATE UI, DON'T CHANGE TRACKING
+    const placesListener = (collection: any) => {
+      try {
+        setPlaces([...collection]);
+        const currentActive = collection.filter((p: any) => p.isEnabled).length;
+        setActiveCount(currentActive);
+      } catch (e) {
+        console.error('[HomeScreen] Places listener error:', e);
+      }
+    };
+
+    // Listener for preferences
+    const prefsListener = (p: any) => {
+      try {
+        setTrackingEnabled(!!p.trackingEnabled);
+      } catch (e) {
+        console.error('[HomeScreen] Prefs listener error:', e);
+      }
+    };
+
+    if (placesResult && typeof placesResult.addListener === 'function') {
+      placesResult.addListener(placesListener);
+    }
+
+    if (prefs && typeof prefs.addListener === 'function') {
+      prefs.addListener(prefsListener);
+    }
+
+    return () => {
+      if (placesResult && typeof placesResult.removeListener === 'function') {
+        placesResult.removeListener(placesListener);
+      }
+      if (prefs && typeof prefs.removeListener === 'function') {
+        prefs.removeListener(prefsListener);
+      }
+    };
+  }, [realm]);
 
   // Location tracking (UI ONLY)
-  // CRITICAL: We don't start a native watch here anymore to avoid conflicts with GPSManager
+  // CRITICAL: We don't start a native watch here to avoid conflicts with GPSManager
   useEffect(() => {
     const updateLocationFromManager = () => {
       const loc = gpsManager.getLastKnownLocation();
       if (loc) {
         setUserLocation({ latitude: loc.latitude, longitude: loc.longitude });
       } else if (hasFullPermissions) {
-        // PROACTIVE: If we have no cached location, ask for one once
         gpsManager.getImmediateLocation(
           (newLoc) => setUserLocation({ latitude: newLoc.latitude, longitude: newLoc.longitude }),
           () => {}
@@ -102,13 +142,10 @@ useEffect(() => {
       }
     };
 
-    // Initial check
     updateLocationFromManager();
 
-    // Poll every 5 seconds for UI updates from the system watcher (LocationService/GPSManager)
     const interval = setInterval(updateLocationFromManager, 5000);
 
-    // Also refresh on app focus
     const { AppState } = require('react-native');
     const subscription = AppState.addEventListener('change', (nextState: string) => {
       if (nextState === 'active') {
@@ -133,26 +170,14 @@ useEffect(() => {
   }, [activeCount, trackingEnabled, realm, isInitialLoad]);
 
   const handleToggle = async (id: string) => {
-  const place = places.find(p => p.id === id);
-  const isActive = place?.isInside;
-  const currentlyEnabled = place?.isEnabled;
-  
-  // Block toggling off if currently inside
-  //if (isActive && currentlyEnabled) {
-  //  Alert.alert(
-  //    "Cannot Disable Active Place",
-  //    "This location is currently active and silencing your phone. Please exit the area first.",
-  //    [{ text: "OK" }]
-  //  );
-  //  return;
-  //}
-  
-  // Just toggle - LocationService will handle tracking state
-  const success = PlaceService.togglePlaceEnabled(realm, id);
-  if (success !== null) {
-    await locationService.syncGeofences();
-  }
-};
+    const place = places.find(p => p.id === id);
+    const currentlyEnabled = place?.isEnabled;
+
+    const success = PlaceService.togglePlaceEnabled(realm, id);
+    if (success !== null) {
+      await locationService.syncGeofences();
+    }
+  };
 
   const handleDelete = (id: string, name: string) => {
     Alert.alert(
@@ -160,8 +185,8 @@ useEffect(() => {
       "This will stop monitoring this location and remove it from your list.",
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
+        {
+          text: "Delete",
           style: "destructive",
           onPress: async () => {
             const success = await PlaceService.deletePlace(realm, id);
@@ -175,37 +200,22 @@ useEffect(() => {
   };
 
   const getPlaceDistance = (place: any) => {
-    // Priority: Use the "official" status from LocationService
-    if (place.isInside) {
-      return 'Currently inside';
-    }
-
+    if (place.isInside) return 'Currently inside';
     if (!userLocation) return 'Locating...';
-    
+
     const dist = getDistance(
       userLocation.latitude,
       userLocation.longitude,
       place.latitude,
       place.longitude
     );
-
     return formatDistance(dist);
-  };
-
-  // Determine if specific place is "Current Location" (active)
-  const isInsidePlace = (place: any) => {
-    // REAL-TIME CHECK: querying CheckInService directly is more reliable 
-    // than relying on place.isInside which might be stale or reflect monitoring state.
-    const activeCheckIns = CheckInService.getActiveCheckIns(realm);
-    return activeCheckIns.some(c => c.placeId === place.id);
   };
 
   const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' });
   const maxPlaces = 3;
-  
   const canAddPlace = places.length < maxPlaces;
 
-  // Render Empty State
   const renderEmptyState = () => (
     <View style={styles.emptyStateContainer}>
       <View style={styles.emptyIconContainer}>
@@ -215,7 +225,7 @@ useEffect(() => {
       <Text style={styles.emptySubtitle}>
         Add your favorite locations to automatically silence your phone when you arrive.
       </Text>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.emptyButton}
         onPress={() => navigation.navigate('AddPlace')}
       >
@@ -230,9 +240,9 @@ useEffect(() => {
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
         <View style={styles.headerTop}>
           <Text style={styles.dateText}>{currentDate}</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[
-              styles.pauseButton, 
+              styles.pauseButton,
               (!trackingEnabled || !hasAllPermissions) && styles.pauseButtonActive,
               (activeCount === 0 || !hasAllPermissions) && styles.pauseButtonDisabled
             ]}
@@ -245,18 +255,15 @@ useEffect(() => {
                 PreferencesService.toggleTracking(realm);
                 locationService.syncGeofences();
               } else {
-                Alert.alert(
-                  "No Active Places", 
-                  "Please enable at least one place to start tracking."
-                );
+                Alert.alert("No Active Places", "Please enable at least one place to start tracking.");
               }
             }}
             disabled={activeCount === 0 || !hasAllPermissions}
           >
-            <MaterialIcon 
-              name={(!trackingEnabled || !hasAllPermissions) ? "play-circle-outline" : "pause-circle-outline"} 
-              size={18} 
-              color={(activeCount === 0 || !hasAllPermissions) ? theme.colors.text.disabled : theme.colors.primary} 
+            <MaterialIcon
+              name={(!trackingEnabled || !hasAllPermissions) ? "play-circle-outline" : "pause-circle-outline"}
+              size={18}
+              color={(activeCount === 0 || !hasAllPermissions) ? theme.colors.text.disabled : theme.colors.primary}
             />
             <Text style={[
               styles.pauseButtonText,
@@ -266,7 +273,7 @@ useEffect(() => {
             </Text>
           </TouchableOpacity>
         </View>
-        <Text 
+        <Text
           style={styles.appTitle}
           onLongPress={() => navigation.navigate('Logs')}
         >Silent Zone</Text>
@@ -275,8 +282,8 @@ useEffect(() => {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {!hasAllPermissions && (
           <View style={styles.section}>
-            <PermissionBlock 
-              missingType={getFirstMissingPermission()} 
+            <PermissionBlock
+              missingType={getFirstMissingPermission()}
               onPress={async () => {
                 const missing = getFirstMissingPermission();
                 switch (missing) {
@@ -285,9 +292,8 @@ useEffect(() => {
                   case 'NOTIFICATION': await requestNotificationFlow(); break;
                   case 'DND': await requestDndFlow(); break;
                   case 'BATTERY': await requestBatteryExemption(); break;
-                  case 'ALARM': 
-                    // Open settings directly if exact alarm missing
-                    navigation.navigate('OnboardingAutoSilenceScreen'); // Or wherever the alarm screen is
+                  case 'ALARM':
+                    navigation.navigate('OnboardingAutoSilenceScreen');
                     break;
                 }
               }}
@@ -296,19 +302,19 @@ useEffect(() => {
         )}
 
         <View style={styles.section}>
-          <StatusCard 
-            activeCount={activeCount} 
-            totalCount={places.length} 
-            isOperational={trackingEnabled && hasFullPermissions} 
+          <StatusCard
+            activeCount={activeCount}
+            totalCount={places.length}
+            isOperational={trackingEnabled && hasFullPermissions}
           />
         </View>
 
         <View style={styles.placesContainer}>
           <View style={styles.placesHeader}>
             <Text style={styles.placesTitle}>Your Places</Text>
-             <Text style={[styles.placesCount, places.length >= maxPlaces && styles.placesCountMax]}>
-               {places.length} / {maxPlaces}
-             </Text>
+            <Text style={[styles.placesCount, places.length >= maxPlaces && styles.placesCountMax]}>
+              {places.length} / {maxPlaces}
+            </Text>
           </View>
 
           {places.length === 0 ? (
@@ -317,18 +323,20 @@ useEffect(() => {
             <View style={!hasAllPermissions && { opacity: 0.5 }}>
               {places.map(place => {
                 const distanceText = getPlaceDistance(place);
-                const isInside = isInsidePlace(place);
-                
+
+                // FIX #4: Use the pre-computed Set instead of calling CheckInService on every render
+                const isInside = activeCheckInIds.has(place.id);
+
                 return (
                   <PlaceCard
                     key={place.id}
                     id={place.id}
                     name={place.name}
                     icon={place.icon || 'place'}
-                    radius={`${place.radius}m`} 
+                    radius={`${place.radius}m`}
                     distance={distanceText}
                     isActive={place.isEnabled}
-                    isCurrentLocation={isInside && place.isEnabled && trackingEnabled && hasFullPermissions} 
+                    isCurrentLocation={isInside && place.isEnabled && trackingEnabled && hasFullPermissions}
                     onToggle={() => {
                       if (hasAllPermissions) handleToggle(place.id);
                       else Alert.alert("Permissions Required", "Please resolve permission issues to manage places.");
@@ -350,7 +358,7 @@ useEffect(() => {
               })}
             </View>
           )}
-          
+
           {places.length > 0 && canAddPlace && (
             <TouchableOpacity
               style={styles.addPlaceCard}
@@ -362,12 +370,9 @@ useEffect(() => {
             </TouchableOpacity>
           )}
         </View>
-        
-        <View style={{ height: 100 }} /> 
+
+        <View style={{ height: 100 }} />
       </ScrollView>
-
-      {/* FAB */}
-
     </View>
   );
 };
@@ -379,7 +384,7 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: theme.spacing.xl,
-    paddingTop: 0, // Handled inline (was 60)
+    paddingTop: 0,
     paddingBottom: theme.spacing.md,
   },
   headerTop: {
@@ -390,16 +395,16 @@ const styles = StyleSheet.create({
   },
   dateText: {
     fontFamily: theme.typography.primary,
-    fontSize: theme.typography.sizes.sm, // 14
+    fontSize: theme.typography.sizes.sm,
     fontWeight: theme.typography.weights.medium,
-    color: theme.colors.text.secondary.light, // Slate 500
+    color: theme.colors.text.secondary.light,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   pauseButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.primary + '1A', // 10%
+    backgroundColor: theme.colors.primary + '1A',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: theme.layout.borderRadius.full,
@@ -464,14 +469,14 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.md,
     borderRadius: theme.layout.borderRadius.lg,
     borderWidth: 2,
-    borderColor: theme.colors.primary, // Using primary color for the dashed border
+    borderColor: theme.colors.primary,
     borderStyle: 'dashed',
     backgroundColor: 'transparent',
     paddingVertical: theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 100, // Consistent with typical card height
+    minHeight: 100,
   },
   addPlaceText: {
     fontFamily: theme.typography.primary,

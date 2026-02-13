@@ -14,26 +14,21 @@ import Geolocation from 'react-native-geolocation-service';
 
 const { BatteryOptimization, ExactAlarmModule } = NativeModules;
 
-// ...
-
 // Android 12+ Exact Alarm Permission
 // Use REQUEST_SCHEDULE_EXACT_ALARM for apps that need user approval
 // SCHEDULE_EXACT_ALARM is for alarm/calendar apps only (auto-granted)
-const CHECK_EXACT_ALARM_PERMISSION = Platform.select({
-  android: 'android.permission.REQUEST_SCHEDULE_EXACT_ALARM',
-  default: undefined,
-});
+const EXACT_ALARM_OVERRIDE_KEY = 'EXACT_ALARM_OVERRIDE';
 
 export const PermissionsManager = {
-  // Check strict type for status to avoid string mismatch issues
+
   isBatteryOptimizationEnabled: async (): Promise<boolean> => {
-     if (Platform.OS !== 'android') return true;
-     try {
-       return await BatteryOptimization.isIgnoringBatteryOptimizations();
-     } catch (error) {
-       console.error('Error checking battery optimization:', error);
-       return false;
-     }
+    if (Platform.OS !== 'android') return true;
+    try {
+      return await BatteryOptimization.isIgnoringBatteryOptimizations();
+    } catch (error) {
+      console.error('Error checking battery optimization:', error);
+      return false;
+    }
   },
 
   requestBatteryOptimization: async (): Promise<boolean> => {
@@ -54,8 +49,7 @@ export const PermissionsManager = {
       } else {
         // Dual check for Android 16 compatibility
         const rnpStatus = await check(PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION);
-        
-        // If RNP says DENIED/BLOCKED, double check with Core RN
+
         if (rnpStatus !== RESULTS.GRANTED && rnpStatus !== RESULTS.LIMITED) {
           try {
             const coreStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
@@ -81,7 +75,7 @@ export const PermissionsManager = {
         return await check(PERMISSIONS.IOS.LOCATION_ALWAYS);
       } else {
         const rnpStatus = await check(PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION);
-        
+
         // Dual check for Android 16 compatibility
         if (rnpStatus !== RESULTS.GRANTED && rnpStatus !== RESULTS.LIMITED) {
           try {
@@ -94,7 +88,7 @@ export const PermissionsManager = {
             console.error('[PermissionsManager] Core check failed for BACKGROUND_LOCATION:', coreError);
           }
         }
-        
+
         return rnpStatus;
       }
     } catch (error) {
@@ -131,18 +125,15 @@ export const PermissionsManager = {
       if (Platform.OS === 'ios') {
         return await request(PERMISSIONS.IOS.LOCATION_ALWAYS);
       } else {
-        const rnpStatus = await request(PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION);
-        return rnpStatus;
+        return await request(PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION);
       }
     } catch (error) {
       console.error('Error requesting background location:', error);
-      
-      // Fallback for "not attached to an Activity" or other native failures
       if (Platform.OS === 'android') {
         console.log('Falling back to settings for background location...');
         Linking.openSettings();
       }
-      return RESULTS.DENIED; 
+      return RESULTS.DENIED;
     }
   },
 
@@ -173,9 +164,8 @@ export const PermissionsManager = {
     try {
       if (Platform.OS === 'android') {
         await RingerMode.requestDndPermission();
-        // Native method opens settings, so we can't wait for result here.
-        // The AppState listener in PermissionsContext will refresh the state.
-        return RESULTS.DENIED; 
+        // Native method opens settings — AppState listener in PermissionsContext handles the return.
+        return RESULTS.DENIED;
       }
       return RESULTS.GRANTED;
     } catch (error) {
@@ -196,30 +186,24 @@ export const PermissionsManager = {
         () => resolve(true),
         (error) => {
           console.log('[PermissionsManager] GPS Check Error:', error);
-          // Error code 2 is POSITION_UNAVAILABLE (GPS disabled or Airplane mode)
           if (error.code === 2) {
             resolve(false);
           } else {
-            // Timeout (3) or Permission (1) does not mean the SWITCH is off.
-            // We assume true to avoid blocking the user, as the actual location fetch will retry.
-            resolve(true); 
+            resolve(true);
           }
         },
-        // We use low accuracy for this check because we just want to know if 
-        // ANY location provider is on, and it's faster.
         { enableHighAccuracy: false, timeout: 5000, maximumAge: 10000 }
       );
     });
   },
 
-  // Helper to check if we have enough to proceed
   hasScanningPermissions: async (): Promise<boolean> => {
     const loc = await PermissionsManager.getLocationStatus();
     const bg = await PermissionsManager.getBackgroundLocationStatus();
     const dnd = await PermissionsManager.getDndStatus();
     const notif = await PermissionsManager.getNotificationStatus();
     const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
-    
+
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
@@ -229,16 +213,14 @@ export const PermissionsManager = {
     );
   },
 
-  // Newer, more lenient check for starting the service active monitoring
   hasCriticalPermissions: async (): Promise<boolean> => {
     const loc = await PermissionsManager.getLocationStatus();
     const bg = await PermissionsManager.getBackgroundLocationStatus();
     const notif = await PermissionsManager.getNotificationStatus();
     const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
-    
+
     console.log(`[PermissionsManager] Check - Loc: ${loc}, Bg: ${bg}, Notif: ${notif}, Alarm: ${exactAlarm}`);
 
-    // We allow DND to be missing (we just won't silence, but we WILL track)
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
@@ -249,44 +231,83 @@ export const PermissionsManager = {
 
   checkExactAlarmPermission: async (): Promise<boolean> => {
     if (Platform.OS !== 'android') return true;
-    
-    // Use new native module if available
+
+    let hasPermission = false;
+
+    // 1. Check via Native Module (Preferred)
     if (ExactAlarmModule?.canScheduleExactAlarms) {
-        try {
-            const hasPermission = await ExactAlarmModule.canScheduleExactAlarms();
-            return hasPermission;
-        } catch (error) {
-            console.error('Error using ExactAlarmModule:', error);
+      try {
+        hasPermission = await ExactAlarmModule.canScheduleExactAlarms();
+        console.log('[PermissionsManager] Native checkExactAlarm:', hasPermission);
+      } catch (error) {
+        console.error('Error using ExactAlarmModule:', error);
+      }
+    } else if (Platform.Version < 31) {
+      // Pre-Android 12: exact alarms are always available
+      hasPermission = true;
+    } else {
+      // FIX #3: ExactAlarmModule is null on Android 12+ (native module not linked or
+      // failed to load). Previously this left `hasPermission = false` with no fallback,
+      // permanently blocking the user even if they had granted the permission.
+      // Read the manual override that setExactAlarmManuallyGranted() writes.
+      // Without this read, that entire function was dead code — it wrote a value
+      // that was NEVER read back, making the override feature silently broken.
+      try {
+        const override = await AsyncStorage.getItem(EXACT_ALARM_OVERRIDE_KEY);
+        if (override === 'true') {
+          console.log('[PermissionsManager] ExactAlarmModule unavailable, using stored override: granted');
+          hasPermission = true;
+        } else if (override === 'false') {
+          console.log('[PermissionsManager] ExactAlarmModule unavailable, using stored override: denied');
+          hasPermission = false;
+        } else {
+          // No override set and no native module — assume true to avoid
+          // permanently blocking users on devices where the module fails to load.
+          console.warn('[PermissionsManager] ExactAlarmModule null and no override set — defaulting to true');
+          hasPermission = true;
         }
+      } catch (e) {
+        console.warn('[PermissionsManager] Could not read alarm override:', e);
+        hasPermission = true; // safe fallback
+      }
     }
 
-    if (Platform.Version < 31) return true;
-    
-    return false;
+    // 2. Cross-check with Notifee only when we think we have permission
+    if (hasPermission && Platform.Version >= 31) {
+      try {
+        const notifee = require('@notifee/react-native').default;
+        const settings = await notifee.getNotificationSettings();
+        const notifeeAgrees = settings.android.alarm === 1; // 1 = ENABLED
+        console.log('[PermissionsManager] Notifee agrees on ExactAlarm:', notifeeAgrees);
+        return notifeeAgrees;
+      } catch (error) {
+        console.warn('[PermissionsManager] Notifee check failed:', error);
+      }
+    }
+
+    return hasPermission;
   },
 
   requestExactAlarmPermission: async (): Promise<PermissionStatus> => {
     if (Platform.OS !== 'android' || Platform.Version < 31) return RESULTS.GRANTED;
-    
+
     try {
-        if (ExactAlarmModule?.openExactAlarmSettings) {
-             await ExactAlarmModule.openExactAlarmSettings();
-             return RESULTS.DENIED; // waiting for user
-        }
-        
-        // Fallback
-        Linking.openSettings();
-        return RESULTS.DENIED;
+      if (ExactAlarmModule?.openExactAlarmSettings) {
+        await ExactAlarmModule.openExactAlarmSettings();
+        return RESULTS.DENIED; // waiting for user to return from settings
+      }
+      Linking.openSettings();
+      return RESULTS.DENIED;
     } catch (error) {
-       console.error('Error requesting exact alarm permission:', error);
-       Linking.openSettings();
-       return RESULTS.DENIED;
+      console.error('Error requesting exact alarm permission:', error);
+      Linking.openSettings();
+      return RESULTS.DENIED;
     }
   },
 
   setExactAlarmManuallyGranted: async (granted: boolean): Promise<void> => {
     try {
-      await AsyncStorage.setItem('EXACT_ALARM_OVERRIDE', granted ? 'true' : 'false');
+      await AsyncStorage.setItem(EXACT_ALARM_OVERRIDE_KEY, granted ? 'true' : 'false');
     } catch (e) {
       console.error('Failed to set alarm override', e);
     }

@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useRef, useCallback } from 'react';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import { PermissionStatus, RESULTS } from 'react-native-permissions';
 import { PermissionsManager } from './PermissionsManager';
 import { locationService } from '../services/LocationService';
 import { navigate } from '../navigation/NavigationService';
+import { useRealm } from '../database/RealmProvider';
+import { PreferencesService } from '../database/services/PreferencesService';
 
 interface PermissionsContextType {
   locationStatus: PermissionStatus;
@@ -11,7 +13,7 @@ interface PermissionsContextType {
   notificationStatus: PermissionStatus;
   dndStatus: PermissionStatus;
   refreshPermissions: () => Promise<void>;
-  requestLocationFlow: () => Promise<boolean>; // Returns true if sufficient permission granted
+  requestLocationFlow: () => Promise<boolean>;
   requestBackgroundLocationFlow: () => Promise<boolean>;
   requestNotificationFlow: () => Promise<boolean>;
   requestDndFlow: () => Promise<boolean>;
@@ -34,15 +36,28 @@ export const usePermissions = () => {
 };
 
 export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const realm = useRealm();
   const [locationStatus, setLocationStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [backgroundLocationStatus, setBgLocationStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [notificationStatus, setNotificationStatus] = useState<PermissionStatus>(RESULTS.DENIED);
   const [dndStatus, setDndStatus] = useState<PermissionStatus>(RESULTS.DENIED);
-  const [isBatteryOptimized, setIsBatteryOptimized] = useState(false); // Default to false (safe)
-  const [exactAlarmStatus, setExactAlarmStatus] = useState(true); // Default to true (safe assumption for old android)
+  const [isBatteryOptimized, setIsBatteryOptimized] = useState(false);
+  const [exactAlarmStatus, setExactAlarmStatus] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [previousPermissionState, setPreviousPermissionState] = useState<string>('');
+
   const isRefreshing = useRef(false);
+
+  // FIX #1: Use a ref instead of state for previousPermissionState.
+  //
+  // The AppState listener is registered once inside useEffect([]) and permanently
+  // closes over the INITIAL version of `refreshPermissions`. That initial version
+  // closes over `previousPermissionState` at its first-render value of ''.
+  // An empty string is falsy, so `if (previousPermissionState && ...)` ALWAYS
+  // evaluates to false from the listener — the revoke→navigate and grant→initialize
+  // blocks NEVER ran when the user returned from Android Settings.
+  //
+  // A ref is always read at call-time, never captured into a stale closure.
+  const previousPermissionStateRef = useRef<string>('');
 
   const hasAllPermissions = (
     (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED) &&
@@ -53,7 +68,11 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     exactAlarmStatus
   );
 
-  const refreshPermissions = async () => {
+  // FIX #1 (cont): Wrap in useCallback so the AppState listener always calls a
+  // stable function reference. Combined with the ref above, all values read inside
+  // refreshPermissions are either stable (setState functions, module singletons,
+  // the realm ref from RealmProvider) or read from refs at invocation time.
+  const refreshPermissions = useCallback(async () => {
     if (isRefreshing.current) {
       console.log('[PermissionsContext] Refresh already in progress, skipping...');
       return;
@@ -62,11 +81,10 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     isRefreshing.current = true;
     try {
       console.log('[PermissionsContext] Starting permission refresh...');
-      // Small delay to allow Android to properly apply permission changes when returning from settings
       if (Platform.OS === 'android') {
-        await new Promise<void>(resolve => setTimeout(resolve, 800)); // Increased slightly for safety
+        await new Promise<void>(resolve => setTimeout(resolve, 800));
       }
-      
+
       const loc = await PermissionsManager.getLocationStatus();
       const bg = await PermissionsManager.getBackgroundLocationStatus();
       const notif = await PermissionsManager.getNotificationStatus();
@@ -75,12 +93,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
 
       console.log('[PermissionsContext] Refreshed permissions:', {
-        location: loc,
-        background: bg,
-        notification: notif,
-        dnd: dnd,
-        battery: battery,
-        exactAlarm: exactAlarm
+        location: loc, background: bg, notification: notif,
+        dnd, battery, exactAlarm
       });
 
       setLocationStatus(loc);
@@ -91,18 +105,16 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
       setExactAlarmStatus(exactAlarm);
       setIsLoading(false);
 
-      // Create a permission state string for comparison
       const currentState = `${loc}-${bg}-${notif}-${dnd}-${battery}-${exactAlarm}`;
-      
-      // Check if permissions changed
-      if (previousPermissionState && previousPermissionState !== currentState) {
+      const previousState = previousPermissionStateRef.current; // FIX #1: read ref, never stale
+
+      if (previousState && previousState !== currentState) {
         console.log('[PermissionsContext] Permission state changed:', {
-          previous: previousPermissionState,
+          previous: previousState,
           current: currentState
         });
-        
-        // Calculate if we had all permissions before
-        const prevParts = previousPermissionState.split('-');
+
+        const prevParts = previousState.split('-');
         const hadAllPermissions = (
           (prevParts[0] === RESULTS.GRANTED || prevParts[0] === RESULTS.LIMITED) &&
           (prevParts[1] === RESULTS.GRANTED || prevParts[1] === RESULTS.LIMITED) &&
@@ -111,8 +123,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
           prevParts[4] === 'true' &&
           prevParts[5] === 'true'
         );
-        
-        // Calculate if we have all permissions now
+
         const hasAllNow = (
           (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
           (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
@@ -121,44 +132,44 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
           battery &&
           exactAlarm
         );
-        
-        if (hadAllPermissions && !hasAllNow) {
-          console.log(`[PermissionsContext] Critical permissions revoked! Stopping geofencing.`);
-          locationService.purgeAllAlarms();
-          
-          const getFirstMissingScreen = () => {
-            const locationOk = (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) && (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED);
-            if (!locationOk) return 'PermissionLocation';
-            if (notif !== RESULTS.GRANTED) return 'PermissionNotification';
-            if (dnd !== RESULTS.GRANTED) return 'PermissionDnd';
-            if (!battery) return 'PermissionBattery'; 
-            return 'PermissionLocation';
-          };
 
-          const target = getFirstMissingScreen();
-          navigate(target);
+        if (hadAllPermissions && !hasAllNow) {
+          console.log('[PermissionsContext] Critical permissions revoked! Stopping geofencing.');
+          locationService.purgeAllAlarms();
+          navigate('PermissionRequired' as any);
+
         } else if (!hadAllPermissions && hasAllNow) {
-          console.log('[PermissionsContext] All permissions granted! Geofencing can resume.');
-          try {
-            await locationService.syncGeofences();
-          } catch (e) {
-            console.warn('[PermissionsContext] Failed to resync geofences:', e);
+          const isComplete = PreferencesService.isOnboardingComplete(realm);
+          if (isComplete) {
+            console.log('[PermissionsContext] All permissions granted! Initializing engine.');
+            try {
+              // FIX #2: Call initialize() NOT syncGeofences().
+              //
+              // syncGeofences() skips createNotificationChannels(). On Android, attempting
+              // to post a notification (foreground service start) before channels exist
+              // throws a fatal exception. initialize() creates the channels first, then
+              // internally calls syncGeofences() — correct order guaranteed.
+              await locationService.initialize(realm);
+            } catch (e) {
+              console.warn('[PermissionsContext] Failed to initialize location engine:', e);
+            }
+          } else {
+            console.log('[PermissionsContext] All permissions granted, postponing init until onboarding finishes.');
           }
         }
       }
-      
-      setPreviousPermissionState(currentState);
+
+      previousPermissionStateRef.current = currentState; // FIX #1: write ref, not state
     } catch (err) {
       console.error('[PermissionsContext] Refresh error:', err);
     } finally {
       isRefreshing.current = false;
     }
-  };
+  }, [realm]); // realm is the only non-stable dependency
 
   useEffect(() => {
     refreshPermissions();
 
-    // Re-check permissions when app comes to foreground (e.g. back from Settings)
     const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
       if (nextAppState === 'active') {
         console.log('[PermissionsContext] App became active, refreshing permissions...');
@@ -169,24 +180,18 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [refreshPermissions]); // re-register listener only if refreshPermissions changes (i.e., realm changes)
 
   const requestLocationFlow = async (): Promise<boolean> => {
-    // 1. Request When In Use (Foreground)
     let status = await PermissionsManager.requestLocationWhenInUse();
     setLocationStatus(status);
-    
-    // 2. Refresh immediately to update state
-    await refreshPermissions(); 
-    
+    await refreshPermissions();
     return status === RESULTS.GRANTED || status === RESULTS.LIMITED;
   };
 
   const requestBackgroundLocationFlow = async (): Promise<boolean> => {
-    // Step 2: Request Always (Background)
     const bgStatus = await PermissionsManager.requestLocationAlways();
     setBgLocationStatus(bgStatus);
-    
     await refreshPermissions();
     return bgStatus === RESULTS.GRANTED;
   };
@@ -194,22 +199,20 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   const requestNotificationFlow = async (): Promise<boolean> => {
     const status = await PermissionsManager.requestNotifications();
     setNotificationStatus(status);
-    await refreshPermissions(); // Refresh to update state
+    await refreshPermissions();
     return status === RESULTS.GRANTED;
   };
 
   const requestDndFlow = async (): Promise<boolean> => {
-    // Note: This opens external settings. AppState listener will catch the return.
     const status = await PermissionsManager.requestDndPermission();
     setDndStatus(status);
     return status === RESULTS.GRANTED;
   };
-    
+
   const requestBatteryExemption = async (): Promise<boolean> => {
-     // Note: This opens external settings. AppState listener will catch the return.
-     const granted = await PermissionsManager.requestBatteryOptimization();
-     setIsBatteryOptimized(granted);
-     return granted;
+    const granted = await PermissionsManager.requestBatteryOptimization();
+    setIsBatteryOptimized(granted);
+    return granted;
   };
 
   return (
@@ -232,10 +235,8 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         getFirstMissingPermission: () => {
           const locGranted = (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED);
           const bgGranted = (backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED);
-
           if (!locGranted) return 'LOCATION';
           if (!bgGranted) return 'BACKGROUND_LOCATION';
-          
           if (notificationStatus !== RESULTS.GRANTED) return 'NOTIFICATION';
           if (dndStatus !== RESULTS.GRANTED) return 'DND';
           if (!isBatteryOptimized) return 'BATTERY';

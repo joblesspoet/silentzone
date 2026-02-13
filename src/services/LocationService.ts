@@ -69,20 +69,34 @@ class LocationService {
     }
   }
 
+/**
+ * Set the realm reference without triggering a full initialization.
+ * Used during first-time onboarding when there are no places to sync yet.
+ */
+setRealmReference(realmInstance: Realm) {
+  this.realm = realmInstance;
+  try {
+    silentZoneManager.setRealm(realmInstance);
+  } catch (e) {
+    Logger.error('[LocationService] Failed to set realm on manager:', e);
+  }
+  console.log('[LocationService] Realm reference set (deferred init).');
+}
+
   /**
    * Emergency cleanup called during JS crashes to restore phone state
    */
   async cleanupOnCrash() {
     try {
       console.log('[LocationService] EMERGENCY CLEANUP INITIATED');
+
+      // FIX #6: Set realm only once, via the top-level import (not a duplicate require).
+      // Also guard against null before passing it in.
       if (this.realm && !this.realm.isClosed) {
         silentZoneManager.setRealm(this.realm);
         CheckInService.closeAllCheckIns(this.realm);
       }
-      
-      const { silentZoneManager: manager } = require('./SilentZoneManager');
-      manager.setRealm(this.realm);
-      
+
       const { notificationManager: nm } = require('./NotificationManager');
       await nm.stopForegroundService();
     } catch (e) {
@@ -91,36 +105,45 @@ class LocationService {
   }
 
   /**
- * Non-destructive initialization for background events.
- * Validates Realm is open and not closed before proceeding.
- */
-async initializeLight(realmInstance: Realm) {
-  if (this.isInitializing) {
-    while (this.isInitializing) {
-      await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
+   * Non-destructive initialization for background events.
+   * Validates Realm is open and not closed before proceeding.
+   */
+  async initializeLight(realmInstance: Realm) {
+    // FIX #3: Guard the spin-wait with a 5-second timeout so we can never
+    // loop forever if isInitializing gets stuck (e.g. after a hard process kill).
+    if (this.isInitializing) {
+      const MAX_WAIT_MS = 5000;
+      const start = Date.now();
+      while (this.isInitializing) {
+        if (Date.now() - start > MAX_WAIT_MS) {
+          Logger.warn('[LocationService] initializeLight timed out waiting for init — forcing clear');
+          this.isInitializing = false;
+          break;
+        }
+        await new Promise<void>(resolve => setTimeout(resolve, 100));
+      }
     }
-  }
-  
-  if (this.realm && !this.realm.isClosed) {
+
+    if (this.realm && !this.realm.isClosed) {
+      this.isReady = true;
+      return;
+    }
+
+    if (!realmInstance || realmInstance.isClosed) {
+      Logger.error('[LocationService] Cannot initialize task with closed Realm');
+      return;
+    }
+
+    this.realm = realmInstance;
+
+    try {
+      silentZoneManager.setRealm(realmInstance);
+    } catch (e) {
+      Logger.warn('[LocationService] Manager setup failed:', e);
+    }
+
     this.isReady = true;
-    return;
   }
-
-  if (!realmInstance || realmInstance.isClosed) {
-    Logger.error('[LocationService] Cannot initialize task with closed Realm');
-    return;
-  }
-
-  this.realm = realmInstance;
-  
-  try {
-    silentZoneManager.setRealm(realmInstance);
-  } catch (e) {
-    Logger.warn('[LocationService] Manager setup failed:', e);
-  }
-  
-  this.isReady = true;
-}
 
   /**
    * Main Sync: Ensures the "First Link" in the chain is set for all places.
@@ -346,15 +369,36 @@ async initializeLight(realmInstance: Realm) {
       return;
     }
 
+    // For Android 14+, we must be extremely careful starting from transition
+    if (Platform.OS === 'android' && Platform.Version >= 34) {
+      const { AppState } = require('react-native');
+      if (AppState.currentState !== 'active' && AppState.currentState !== 'unknown') {
+        Logger.warn('[Service] Postponing foreground start - app not active');
+        return;
+      }
+    }
+
     this.geofencesActive = true;
-    await gpsManager.startWatching(
-      (loc) => this.processLocationUpdate(loc),
-      (err) => Logger.error('[GPS] Error:', err)
-    );
-    
-    // Sync native geofences as a secondary layer
-    await this.syncNativeGeofences();
-    await this.updateForegroundService();
+    try {
+      await gpsManager.startWatching(
+        (loc) => {
+          // FIX #4: The GPS callback fires frequently. Wrap in .catch() so any
+          // throw inside processLocationUpdate (Realm conflict, null ref, etc.)
+          // never becomes a fatal unhandled promise rejection.
+          this.processLocationUpdate(loc).catch(err =>
+            Logger.error('[GPS] processLocationUpdate unhandled error:', err)
+          );
+        },
+        (err) => Logger.error('[GPS] Watcher error:', err)
+      );
+      
+      // Sync native geofences as a secondary layer
+      await this.syncNativeGeofences();
+      await this.updateForegroundService();
+    } catch (e) {
+      Logger.error('[LocationService] Failed to start monitoring:', e);
+      this.geofencesActive = false;
+    }
   }
 
   /**
@@ -392,10 +436,10 @@ async initializeLight(realmInstance: Realm) {
    */
   private async processLocationUpdate(location: any) {
     if (!this.realm) return;
-    
+
     // 1. Determine which zones we are INSIDE
     const insideIds = LocationValidator.determineInsidePlaces(location, this.realm);
-    
+
     // 2. Handle Entries
     for (const id of insideIds) {
       if (!CheckInService.isPlaceActive(this.realm, id)) {
@@ -404,7 +448,10 @@ async initializeLight(realmInstance: Realm) {
     }
 
     // 3. Handle Exits for active zones
-    const activeLogs = Array.from(CheckInService.getActiveCheckIns(this.realm));
+    // FIX #5: Use .snapshot() instead of Array.from() to get a stable copy
+    // without the overhead of Array.from on every GPS tick. snapshot() is the
+    // Realm-idiomatic way to get a frozen-in-time copy of a Results collection.
+    const activeLogs = CheckInService.getActiveCheckIns(this.realm).snapshot();
     for (const log of activeLogs) {
       const placeId = log.placeId as string;
       if (!insideIds.includes(placeId)) {
@@ -412,7 +459,10 @@ async initializeLight(realmInstance: Realm) {
         const place = PlaceService.getPlaceById(this.realm, placeId);
         if (place) {
           const distance = LocationValidator.calculateDistance(
-            location.latitude, location.longitude, (place as any).latitude, (place as any).longitude
+            location.latitude,
+            location.longitude,
+            (place as any).latitude,
+            (place as any).longitude
           );
           if (distance > (place as any).radius + 20) {
             await silentZoneManager.handleExit(placeId);
@@ -503,7 +553,12 @@ async initializeLight(realmInstance: Realm) {
    */
   async forceLocationCheck(): Promise<void> {
     return gpsManager.forceLocationCheck(
-      (location) => this.processLocationUpdate(location),
+      (location) => {
+        // FIX #4 (applied here too): always catch the async callback promise
+        this.processLocationUpdate(location).catch(err =>
+          Logger.error('[GPS] forceLocationCheck processLocationUpdate failed:', err)
+        );
+      },
       (error) => Logger.error('[GPS] Force check failed:', error),
       1, 3
     );

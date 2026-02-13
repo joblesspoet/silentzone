@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StatusBar } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { navigationRef } from './src/navigation/NavigationService';
@@ -10,27 +10,37 @@ import { PermissionsProvider } from './src/permissions/PermissionsContext';
 import { locationService } from './src/services/LocationService';
 import { Logger } from './src/services/Logger';
 import { SettingsService } from './src/services/SettingsService';
+import { PreferencesService } from './src/database/services/PreferencesService';
 
 const AppContent = () => {
     const realm = useRealm();
+  const hasInitialized = useRef(false);          // ✅ run once per mount
 
-    useEffect(() => {
-        const initializeApp = async () => {
-            try {
-                if (realm) {
-                    Logger.setRealm(realm);
-                    const enabled = await SettingsService.getLoggingEnabled();
-                    Logger.setEnabled(enabled);
-                }
+  useEffect(() => {
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
 
-                await locationService.initialize(realm);
-            } catch (error: any) {
-                console.error('[App] 🔥 Initialization Error:', error);
-            }
-        };
+    const initializeApp = async () => {
+      try {
+        if (realm) {
+          Logger.setRealm(realm);
+          const enabled = await SettingsService.getLoggingEnabled();
+          Logger.setEnabled(enabled);
+        }
+        const prefs = PreferencesService.getPreferences(realm);
+        if (prefs?.onboardingCompleted) {
+          await locationService.initialize(realm);
+        } else {
+          console.log('[App] Onboarding not complete, deferring LocationService init.');
+          locationService.setRealmReference(realm);
+        }
+      } catch (error: any) {
+        console.error('[App] 🔥 Initialization Error:', error);
+      }
+    };
 
-        initializeApp();
-    }, [realm]);
+    initializeApp();
+  }, [realm]);
 
     return (
       <NavigationContainer ref={navigationRef} theme={{

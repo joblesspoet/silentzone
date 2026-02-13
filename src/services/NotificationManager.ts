@@ -114,8 +114,13 @@ class NotificationManager {
           pressAction: { id: 'default', launchActivity: 'default' },
         },
       });
-    } catch (error) {
+    } catch (error: any) {
       Logger.error('[NotificationManager] Foreground update failed:', error);
+      // Specific handling for Android 14+ background start restrictions
+      if (error?.message?.includes('ForegroundServiceStartNotAllowedException') || 
+          error?.message?.includes('RemoteServiceException')) {
+        Logger.warn('[NotificationManager] Service start blocked by OS - user likely in settings. Will retry on next focus.');
+      }
     }
   }
 

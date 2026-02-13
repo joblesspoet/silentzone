@@ -20,8 +20,8 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
   const insets = useSafeAreaInsets();
 
   const handleSkip = () => {
-    // Skip to the last onboarding screen, which will then go to permissions
-    navigation.navigate('OnboardingAutoSilence');
+    // Skip to the unified permission screen
+    navigation.navigate('PermissionRequired');
   };
 
   return (

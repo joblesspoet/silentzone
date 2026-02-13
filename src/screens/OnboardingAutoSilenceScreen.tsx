@@ -21,7 +21,7 @@ export const OnboardingAutoSilenceScreen: React.FC<Props> = ({ navigation }) => 
 
   const handleFinish = () => {
     // Don't mark onboarding complete yet - that happens after permissions
-    navigation.replace('PermissionLocation');
+    navigation.replace('PermissionRequired');
   };
 
   return (

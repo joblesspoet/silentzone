@@ -40,11 +40,30 @@ let cachedRealm = null;
 
 /**
  * Gets the Realm instance for background tasks.
- * In React Native, the JS context might be shared, so we must be careful.
+ *
+ * FIX #2: First tries to reuse the shared instance that RealmProvider already
+ * opened. This prevents two separate Realm instances writing to the same file
+ * simultaneously (which causes write-conflict crashes).
+ * Falls back to opening its own instance only when running truly headless
+ * (i.e. the UI context is not alive).
  */
 const getRealm = async () => {
+  // ── Priority 1: Reuse the UI realm if the app process is alive ──────────
+  try {
+    const { getSharedRealm } = require('./src/database/RealmProvider');
+    const shared = getSharedRealm();
+    if (shared && !shared.isClosed) {
+      cachedRealm = shared;
+      return cachedRealm;
+    }
+  } catch (_) {
+    // Module not yet loaded (pure headless start) — fall through
+  }
+
+  // ── Priority 2: Reuse our own previously-opened background realm ─────────
   if (cachedRealm && !cachedRealm.isClosed) return cachedRealm;
 
+  // ── Priority 3: Open a fresh realm (truly headless / no UI context) ──────
   const Realm = require('realm');
   const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
 
@@ -55,7 +74,7 @@ const getRealm = async () => {
       schemaVersion: SCHEMA_VERSION,
       path: Realm.defaultPath,
     });
-    
+
     // Wire up shared services
     Logger.setRealm(cachedRealm);
     const loggingEnabled = await SettingsService.getLoggingEnabled();

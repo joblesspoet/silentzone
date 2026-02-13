@@ -25,9 +25,10 @@ export const PermissionAlarmScreen: React.FC<Props> = ({ navigation }) => {
 
   const checkStatus = async () => {
       const granted = await PermissionsManager.checkExactAlarmPermission();
-      console.log('Exact alarm permission granted:1234 ', granted);
+      console.log('[PermissionAlarmScreen] checkStatus - Exact alarm granted:', granted, 'Platform.Version:', Platform.Version);
       setIsGranted(granted);
       if (granted) {
+          console.log('[PermissionAlarmScreen] Permission already granted, auto-proceeding...');
           navigation.replace('PermissionNotification');
       }
   };

@@ -59,15 +59,26 @@ class AlarmService {
       }
 
       // 0. Permission Check (Critical for Android 12+)
-      const settings = await notifee.getNotificationSettings();
+      let triggerOptions: any = {
+        type: TriggerType.TIMESTAMP,
+        timestamp,
+        alarmManager: {
+          allowWhileIdle: true,
+          type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
+        },
+      };
+
       if (Platform.OS === 'android' && Platform.Version >= 31) {
+        const settings = await notifee.getNotificationSettings();
         if (settings.android.alarm !== 1) { // 1 = ENABLED
-           Logger.warn(`[AlarmService] Missing SCHEDULE_EXACT_ALARM permission for ${id}.`);
-           // TODO: We could fall back to inexact alarm here, but for now we skip to avoid crash
-           // or we could try to schedule with 'allowWhileIdle: false' as a fallback?
-           // For stability, we will return.
-           // actually, let's try to schedule INEXACT if permission is missing?
-           // No, let's just log and return for now to stop the crash.
+           Logger.warn(`[AlarmService] Missing SCHEDULE_EXACT_ALARM permission for ${id}. Falling back to inexact.`);
+           
+           // On Android 14+, using SET_EXACT_AND_ALLOW_WHILE_IDLE without permission triggers SecurityException.
+           // We MUST fall back to SET (inexact) if permission is missing.
+           triggerOptions.alarmManager.type = AlarmType.SET;
+           
+           // If we are on Android 14+, we might even want to disable allowWhileIdle if it still causes issues,
+           // but SET should be safe.
         }
       }
 
@@ -94,14 +105,7 @@ class AlarmService {
             scheduledTime: new Date(timestamp).toISOString(),
           },
         },
-        {
-          type: TriggerType.TIMESTAMP,
-          timestamp,
-          alarmManager: {
-            allowWhileIdle: true,
-            type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
-          },
-        }
+        triggerOptions
       );
 
       Logger.info(`[AlarmService] ⏰ Set ${action} for ${new Date(timestamp).toLocaleTimeString()} (ID: ${id})`);
