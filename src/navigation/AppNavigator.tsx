@@ -11,7 +11,6 @@ import { EditPlaceScreen } from '../screens/EditPlaceScreen';
 import { UnifiedPermissionScreen } from '../screens/UnifiedPermissionScreen';
 import { LogViewerScreen } from '../screens/LogViewerScreen';
 
-import { PermissionBackgroundLocationScreen } from '../screens/PermissionBackgroundLocationScreen';
 
 export type RootStackParamList = {
   Splash: undefined;
