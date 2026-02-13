@@ -17,7 +17,7 @@ interface Props {
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CheckInService } from '../database/services/CheckInService';
-import { PermissionBlock } from '../components/PermissionBlock';
+import { PermissionBanner } from '../components/PermissionBanner';
 import { locationService } from '../services/LocationService';
 
 import { gpsManager } from '../services/GPSManager';
@@ -253,7 +253,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
             ]}
             onPress={() => {
               if (!hasAllPermissions) {
-                Alert.alert("Action Required", "Please resolve permission issues to manage tracking.");
+                navigation.navigate('PermissionRequired');
                 return;
               }
               if (activeCount > 0) {
@@ -290,21 +290,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {!hasAllPermissions && (
           <View style={styles.section}>
-            <PermissionBlock
-              missingType={getFirstMissingPermission()}
-              onPress={async () => {
-                const missing = getFirstMissingPermission();
-                switch (missing) {
-                  case 'LOCATION': await requestLocationFlow(); break;
-                  case 'BACKGROUND_LOCATION': await requestBackgroundLocationFlow(); break;
-                  case 'NOTIFICATION': await requestNotificationFlow(); break;
-                  case 'DND': await requestDndFlow(); break;
-                  case 'BATTERY': await requestBatteryExemption(); break;
-                  case 'ALARM':
-                    navigation.navigate('OnboardingAutoSilenceScreen');
-                    break;
-                }
-              }}
+            <PermissionBanner 
+              missingType={getFirstMissingPermission()} 
+              onPress={() => navigation.navigate('PermissionRequired')} 
             />
           </View>
         )}
@@ -347,17 +335,17 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                     isCurrentLocation={isInside && place.isEnabled && trackingEnabled && hasFullPermissions}
                     onToggle={() => {
                       if (hasAllPermissions) handleToggle(place.id);
-                      else Alert.alert("Permissions Required", "Please resolve permission issues to manage places.");
+                      else navigation.navigate('PermissionRequired');
                     }}
                     onDelete={() => {
                       if (hasAllPermissions) handleDelete(place.id, place.name);
-                      else Alert.alert("Permissions Required", "Please resolve permission issues to manage places.");
+                      else navigation.navigate('PermissionRequired');
                     }}
                     onPress={() => {
                       if (hasAllPermissions) {
                         navigation.navigate('PlaceDetail', { placeId: place.id });
                       } else {
-                        Alert.alert("Permissions Required", "Please resolve permission issues to view details.");
+                        navigation.navigate('PermissionRequired');
                       }
                     }}
                     isPaused={!trackingEnabled || !hasFullPermissions}
