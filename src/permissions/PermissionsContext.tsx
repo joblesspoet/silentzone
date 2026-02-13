@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import { PermissionStatus, RESULTS } from 'react-native-permissions';
 import { PermissionsManager } from './PermissionsManager';
@@ -12,6 +12,7 @@ interface PermissionsContextType {
   dndStatus: PermissionStatus;
   refreshPermissions: () => Promise<void>;
   requestLocationFlow: () => Promise<boolean>; // Returns true if sufficient permission granted
+  requestBackgroundLocationFlow: () => Promise<boolean>;
   requestNotificationFlow: () => Promise<boolean>;
   requestDndFlow: () => Promise<boolean>;
   requestBatteryExemption: () => Promise<boolean>;
@@ -41,6 +42,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   const [exactAlarmStatus, setExactAlarmStatus] = useState(true); // Default to true (safe assumption for old android)
   const [isLoading, setIsLoading] = useState(true);
   const [previousPermissionState, setPreviousPermissionState] = useState<string>('');
+  const isRefreshing = useRef(false);
 
   const hasAllPermissions = (
     (locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED) &&
@@ -52,101 +54,105 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   );
 
   const refreshPermissions = async () => {
-    // Small delay to allow Android to properly apply permission changes when returning from settings
-    if (Platform.OS === 'android') {
-      await new Promise<void>(resolve => setTimeout(resolve, 500));
+    if (isRefreshing.current) {
+      console.log('[PermissionsContext] Refresh already in progress, skipping...');
+      return;
     }
-    
-    const loc = await PermissionsManager.getLocationStatus();
-    const bg = await PermissionsManager.getBackgroundLocationStatus();
-    const notif = await PermissionsManager.getNotificationStatus();
-    const dnd = await PermissionsManager.getDndStatus();
-    const battery = await PermissionsManager.isBatteryOptimizationEnabled();
-    const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
 
-    console.log('[PermissionsContext] Refreshed permissions:', {
-      location: loc,
-      background: bg,
-      notification: notif,
-      dnd: dnd,
-      battery: battery,
-      exactAlarm: exactAlarm
-    });
+    isRefreshing.current = true;
+    try {
+      console.log('[PermissionsContext] Starting permission refresh...');
+      // Small delay to allow Android to properly apply permission changes when returning from settings
+      if (Platform.OS === 'android') {
+        await new Promise<void>(resolve => setTimeout(resolve, 800)); // Increased slightly for safety
+      }
+      
+      const loc = await PermissionsManager.getLocationStatus();
+      const bg = await PermissionsManager.getBackgroundLocationStatus();
+      const notif = await PermissionsManager.getNotificationStatus();
+      const dnd = await PermissionsManager.getDndStatus();
+      const battery = await PermissionsManager.isBatteryOptimizationEnabled();
+      const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
 
-    setLocationStatus(loc);
-    setBgLocationStatus(bg);
-    setNotificationStatus(notif);
-    setDndStatus(dnd);
-    setIsBatteryOptimized(battery);
-    setExactAlarmStatus(exactAlarm);
-    setIsLoading(false);
-
-    // Create a permission state string for comparison
-    const currentState = `${loc}-${bg}-${notif}-${dnd}-${battery}-${exactAlarm}`;
-    
-    // Check if permissions changed
-    if (previousPermissionState && previousPermissionState !== currentState) {
-      console.log('[PermissionsContext] Permission state changed:', {
-        previous: previousPermissionState,
-        current: currentState
+      console.log('[PermissionsContext] Refreshed permissions:', {
+        location: loc,
+        background: bg,
+        notification: notif,
+        dnd: dnd,
+        battery: battery,
+        exactAlarm: exactAlarm
       });
+
+      setLocationStatus(loc);
+      setBgLocationStatus(bg);
+      setNotificationStatus(notif);
+      setDndStatus(dnd);
+      setIsBatteryOptimized(battery);
+      setExactAlarmStatus(exactAlarm);
+      setIsLoading(false);
+
+      // Create a permission state string for comparison
+      const currentState = `${loc}-${bg}-${notif}-${dnd}-${battery}-${exactAlarm}`;
       
-      // Calculate if we had all permissions before
-      const prevParts = previousPermissionState.split('-');
-      const hadAllPermissions = (
-        (prevParts[0] === RESULTS.GRANTED || prevParts[0] === RESULTS.LIMITED) &&
-        (prevParts[1] === RESULTS.GRANTED || prevParts[1] === RESULTS.LIMITED) &&
-        prevParts[2] === RESULTS.GRANTED &&
-        prevParts[3] === RESULTS.GRANTED &&
-        prevParts[4] === 'true' &&
-        prevParts[5] === 'true'
-      );
-      
-      // Calculate if we have all permissions now
-      const hasAllNow = (
-        (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
-        (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
-        notif === RESULTS.GRANTED &&
-        dnd === RESULTS.GRANTED &&
-        battery &&
-        exactAlarm
-      );
-      
-      console.log('[PermissionsContext] Permission check:', {
-        hadAllPermissions,
-        hasAllNow
-      });
-      
-      if (hadAllPermissions && !hasAllNow) {
-        console.log(`[PermissionsContext] Critical permissions revoked! Stopping geofencing. Status: Loc=${loc}, Bg=${bg}, Notif=${notif}, Exact=${exactAlarm}`);
+      // Check if permissions changed
+      if (previousPermissionState && previousPermissionState !== currentState) {
+        console.log('[PermissionsContext] Permission state changed:', {
+          previous: previousPermissionState,
+          current: currentState
+        });
         
-        // Stop background services/geofencing immediately and restore state
-        locationService.purgeAllAlarms();
+        // Calculate if we had all permissions before
+        const prevParts = previousPermissionState.split('-');
+        const hadAllPermissions = (
+          (prevParts[0] === RESULTS.GRANTED || prevParts[0] === RESULTS.LIMITED) &&
+          (prevParts[1] === RESULTS.GRANTED || prevParts[1] === RESULTS.LIMITED) &&
+          prevParts[2] === RESULTS.GRANTED &&
+          prevParts[3] === RESULTS.GRANTED &&
+          prevParts[4] === 'true' &&
+          prevParts[5] === 'true'
+        );
+        
+        // Calculate if we have all permissions now
+        const hasAllNow = (
+          (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
+          (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
+          notif === RESULTS.GRANTED &&
+          dnd === RESULTS.GRANTED &&
+          battery &&
+          exactAlarm
+        );
+        
+        if (hadAllPermissions && !hasAllNow) {
+          console.log(`[PermissionsContext] Critical permissions revoked! Stopping geofencing.`);
+          locationService.purgeAllAlarms();
+          
+          const getFirstMissingScreen = () => {
+            const locationOk = (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) && (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED);
+            if (!locationOk) return 'PermissionLocation';
+            if (notif !== RESULTS.GRANTED) return 'PermissionNotification';
+            if (dnd !== RESULTS.GRANTED) return 'PermissionDnd';
+            if (!battery) return 'PermissionBattery'; 
+            return 'PermissionLocation';
+          };
 
-        // Determine which permission is missing and navigate to that screen
-        const getFirstMissingScreen = () => {
-          const locationOk = (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) && (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED);
-          if (!locationOk) return 'PermissionLocation';
-          if (notif !== RESULTS.GRANTED) return 'PermissionNotification';
-          if (dnd !== RESULTS.GRANTED) return 'PermissionDnd';
-          if (!battery) return 'PermissionBattery'; // You might need to creation this screen or handle it
-          return 'PermissionLocation';
-        };
-
-        const target = getFirstMissingScreen();
-        navigate(target);
-      } else if (!hadAllPermissions && hasAllNow) {
-        console.log('[PermissionsContext] All permissions granted! Geofencing can resume.');
-        // Explicitly resync geofences to ensure monitoring restarts immediately
-        try {
-          await locationService.syncGeofences();
-        } catch (e) {
-          console.warn('[PermissionsContext] Failed to resync geofences after permissions restored:', e);
+          const target = getFirstMissingScreen();
+          navigate(target);
+        } else if (!hadAllPermissions && hasAllNow) {
+          console.log('[PermissionsContext] All permissions granted! Geofencing can resume.');
+          try {
+            await locationService.syncGeofences();
+          } catch (e) {
+            console.warn('[PermissionsContext] Failed to resync geofences:', e);
+          }
         }
       }
+      
+      setPreviousPermissionState(currentState);
+    } catch (err) {
+      console.error('[PermissionsContext] Refresh error:', err);
+    } finally {
+      isRefreshing.current = false;
     }
-    
-    setPreviousPermissionState(currentState);
   };
 
   useEffect(() => {
@@ -166,20 +172,23 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   }, []);
 
   const requestLocationFlow = async (): Promise<boolean> => {
-    // 1. Request When In Use
+    // 1. Request When In Use (Foreground)
     let status = await PermissionsManager.requestLocationWhenInUse();
-    
-    // 2. If granted, try to upgrade to Always (if needed/desired immediately)
-    // Note: iOS often requires two steps or shows "Keep Only While Using" initially.
-    // For this flow, we'll request Always if InUse is granted.
-    if (status === RESULTS.GRANTED || status === RESULTS.LIMITED) {
-      const bgStatus = await PermissionsManager.requestLocationAlways();
-      setBgLocationStatus(bgStatus);
-    }
-    
     setLocationStatus(status);
-    await refreshPermissions(); // Refresh to update state
+    
+    // 2. Refresh immediately to update state
+    await refreshPermissions(); 
+    
     return status === RESULTS.GRANTED || status === RESULTS.LIMITED;
+  };
+
+  const requestBackgroundLocationFlow = async (): Promise<boolean> => {
+    // Step 2: Request Always (Background)
+    const bgStatus = await PermissionsManager.requestLocationAlways();
+    setBgLocationStatus(bgStatus);
+    
+    await refreshPermissions();
+    return bgStatus === RESULTS.GRANTED;
   };
 
   const requestNotificationFlow = async (): Promise<boolean> => {
@@ -190,18 +199,16 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const requestDndFlow = async (): Promise<boolean> => {
+    // Note: This opens external settings. AppState listener will catch the return.
     const status = await PermissionsManager.requestDndPermission();
-    // Since requestDndPermission opens settings, we can't reliably know the result immediately
-    // Refresh will happen when app returns to foreground
     setDndStatus(status);
-    await refreshPermissions(); // Refresh to update state
     return status === RESULTS.GRANTED;
   };
     
   const requestBatteryExemption = async (): Promise<boolean> => {
+     // Note: This opens external settings. AppState listener will catch the return.
      const granted = await PermissionsManager.requestBatteryOptimization();
      setIsBatteryOptimized(granted);
-     await refreshPermissions();
      return granted;
   };
 
@@ -214,6 +221,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         dndStatus,
         refreshPermissions,
         requestLocationFlow,
+        requestBackgroundLocationFlow,
         requestNotificationFlow,
         requestDndFlow,
         requestBatteryExemption,

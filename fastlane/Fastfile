@@ -11,13 +11,13 @@ platform :android do
   end
 
   desc "Build production APK"
-lane :build_apk do
-  gradle(
-    task: "assemble",
-    build_type: "Release",
-    project_dir: "android"
-  )
-end
+  lane :build_apk do
+    gradle(
+      task: "assemble",
+      build_type: "Release",
+      project_dir: "android"
+    )
+  end
 
 desc "Build debug APK"
 lane :build_debug do

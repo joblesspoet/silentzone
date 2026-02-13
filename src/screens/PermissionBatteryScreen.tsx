@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
@@ -16,37 +16,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export const PermissionBatteryScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
   const { requestBatteryExemption, isBatteryOptimized } = usePermissions();
-  const [checking, setChecking] = useState(true);
   const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    // If we land here and it's already optimized (granted), proceed
-    if (isBatteryOptimized) {
-      completeSetup();
-    }
-    setChecking(false);
-  }, [isBatteryOptimized]);
-
   const completeSetup = () => {
-    // Mark onboarding as complete if not already
-    // Note: This logic depends on where this screen is in the flow.
-    // If it's part of onboarding, we might want to navigate to next step.
-    // If it's a blocking check from Context, we return to Home.
-    
-    // For now, assume it's the final check or blocking check
     navigation.replace('PermissionDnd');
   };
 
   const handleGrant = async () => {
     if (Platform.OS === 'android') {
       try {
-        const granted = await requestBatteryExemption();
-        if (granted) {
-          completeSetup();
-        }
+        await requestBatteryExemption();
+        // Context will refresh state, useEffect below handles navigation
       } catch (error) {
         console.error('Failed to request Battery permission:', error);
-        // Don't auto-complete on error, let user try again or skip
       }
     } else {
       completeSetup();
@@ -57,13 +39,12 @@ export const PermissionBatteryScreen: React.FC<Props> = ({ navigation }) => {
     completeSetup();
   };
 
-  if (checking) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.description}>Checking permissions...</Text>
-      </View>
-    );
-  }
+  // Auto-proceed when permission is granted
+  useEffect(() => {
+    if (isBatteryOptimized) {
+      completeSetup();
+    }
+  }, [isBatteryOptimized]);
 
   return (
     <View style={styles.container}>

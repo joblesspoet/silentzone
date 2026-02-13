@@ -30,6 +30,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     notificationStatus,
     hasAllPermissions,
     requestLocationFlow,
+    requestBackgroundLocationFlow,
     requestNotificationFlow,
     requestDndFlow,
     requestBatteryExemption,
@@ -280,7 +281,7 @@ useEffect(() => {
                 const missing = getFirstMissingPermission();
                 switch (missing) {
                   case 'LOCATION': await requestLocationFlow(); break;
-                  case 'BACKGROUND_LOCATION': await requestLocationFlow(); break;
+                  case 'BACKGROUND_LOCATION': await requestBackgroundLocationFlow(); break;
                   case 'NOTIFICATION': await requestNotificationFlow(); break;
                   case 'DND': await requestDndFlow(); break;
                   case 'BATTERY': await requestBatteryExemption(); break;

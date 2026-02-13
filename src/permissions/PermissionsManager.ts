@@ -131,7 +131,8 @@ export const PermissionsManager = {
       if (Platform.OS === 'ios') {
         return await request(PERMISSIONS.IOS.LOCATION_ALWAYS);
       } else {
-        return await request(PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION);
+        const rnpStatus = await request(PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION);
+        return rnpStatus;
       }
     } catch (error) {
       console.error('Error requesting background location:', error);

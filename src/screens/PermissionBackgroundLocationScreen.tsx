@@ -1,28 +1,24 @@
 import React from 'react';
-import { View, Text, StyleSheet, Image, ScrollView, Platform, TouchableOpacity, Linking } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, Linking, Image } from 'react-native';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
 import { CustomButton } from '../components/CustomButton';
 import { usePermissions } from '../permissions/PermissionsContext';
 import { PRIVACY_POLICY_URL } from '../constants/ProductDetails';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface Props {
   navigation: any;
 }
 
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
-  const { requestLocationFlow, locationStatus } = usePermissions();
+export const PermissionBackgroundLocationScreen: React.FC<Props> = ({ navigation }) => {
+  const { requestBackgroundLocationFlow, backgroundLocationStatus } = usePermissions();
   const insets = useSafeAreaInsets();
 
   const handleGrant = async () => {
-    const granted = await requestLocationFlow();
-    if (granted && Platform.OS === 'android' && Number(Platform.Version) >= 29) {
-      navigation.replace('PermissionBackgroundLocation');
-    } else {
-      navigation.replace('PermissionAlarm');
-    }
+    // This will trigger the requestBackgroundLocationFlow in PermissionsContext
+    await requestBackgroundLocationFlow();
+    navigation.replace('PermissionAlarm');
   };
 
   const handleSkip = () => {
@@ -34,50 +30,53 @@ export const PermissionLocationScreen: React.FC<Props> = ({ navigation }) => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.imageContainer}>
           <View style={styles.iconCircle}>
-            <MaterialIcon name="location-pin" size={48} color={theme.colors.primary} />
+            <MaterialIcon name="shutter-speed" size={48} color={theme.colors.error} />
           </View>
-          {/* Pulsing rings could go here */}
           <View style={[styles.ring, styles.ring1]} />
           <View style={[styles.ring, styles.ring2]} />
         </View>
 
-        <Text style={styles.title}>Enable Location Access</Text>
+        <Text style={styles.title}>24/7 Automatic Tracking</Text>
         <Text style={styles.description}>
-          Silent Zone accesses your location <Text style={{ fontWeight: 'bold' }}>even when the app is closed or not in use</Text> to automatically trigger silencing whenever you enter your saved places.
+          For Silent Zone to work even when your phone is in your pocket and locked, you must grant "Allow all the time" access.
         </Text>
 
         <View style={styles.infoBox}>
-          <View style={styles.infoRow}>
-            <MaterialIcon name="my-location" size={20} color={theme.colors.text.secondary.light} />
-            <Text style={styles.infoText}>Detects when you enter/exit zones</Text>
+          <Text style={styles.infoTitle}>Critical Step for Android:</Text>
+          <View style={styles.stepRow}>
+            <Text style={styles.stepNumber}>1.</Text>
+            <Text style={styles.stepText}>Tap the button below</Text>
           </View>
-          <View style={styles.infoRow}>
-            <MaterialIcon name="update" size={20} color={theme.colors.text.secondary.light} />
-            <Text style={styles.infoText}>Triggers without opening the app</Text>
+          <View style={styles.stepRow}>
+            <Text style={styles.stepNumber}>2.</Text>
+            <Text style={styles.stepText}>Select <Text style={styles.bold}>Permissions</Text></Text>
           </View>
-          <View style={styles.infoRow}>
-            <MaterialIcon name="lock" size={20} color={theme.colors.text.secondary.light} />
-            <Text style={styles.infoText}>Location data never leaves your device</Text>
+          <View style={styles.stepRow}>
+            <Text style={styles.stepNumber}>3.</Text>
+            <Text style={styles.stepText}>Choose <Text style={styles.bold}>Location</Text></Text>
+          </View>
+          <View style={styles.stepRow}>
+            <Text style={styles.stepNumber}>4.</Text>
+            <Text style={styles.stepText}>Select <Text style={styles.bold}>"Allow all the time"</Text></Text>
           </View>
         </View>
 
-        <Text style={styles.note}>
-          {Platform.OS === 'ios' ? 
-            "Please select 'Allow While Using App' first. Later, for automatic background silencing, you can upgrade to 'Always'." : 
-            "For full automatic functionality, please choose 'Allow all the time' in settings if prompted."}
+        <Text style={styles.warningNote}>
+          <MaterialIcon name="info-outline" size={14} color={theme.colors.error} />
+          {" Without this, the app cannot silence your phone automatically."}
         </Text>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, theme.spacing.xl) }]}>
         <CustomButton 
-          title="Grant Location Access" 
+          title="Enable Always Allow" 
           onPress={handleGrant} 
           fullWidth 
           style={styles.grantButton}
         />
         <View style={styles.footerLinks}>
           <CustomButton 
-             title="Maybe Later" 
+             title="Skip (Manual Mode)" 
              onPress={handleSkip} 
              variant="link"
           />
@@ -114,7 +113,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: theme.colors.primary + '1A',
+    backgroundColor: theme.colors.error + '1A',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -123,7 +122,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: theme.colors.primary + '33', // 20%
+    borderColor: theme.colors.error + '33',
   },
   ring1: { width: 120, height: 120 },
   ring2: { width: 160, height: 160, opacity: 0.5 },
@@ -146,38 +145,55 @@ const styles = StyleSheet.create({
   },
   infoBox: {
     backgroundColor: theme.colors.surface.light,
-    padding: theme.spacing.md,
+    padding: theme.spacing.lg,
     borderRadius: theme.layout.borderRadius.lg,
     width: '100%',
     marginBottom: theme.spacing.lg,
     borderWidth: 1,
     borderColor: theme.colors.border.light,
   },
-  infoRow: {
+  infoTitle: {
+    fontFamily: theme.typography.primary,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.text.primary.light,
+    marginBottom: theme.spacing.md,
+  },
+  stepRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: theme.spacing.sm,
-    gap: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
   },
-  infoText: {
+  stepNumber: {
     fontFamily: theme.typography.primary,
-    fontSize: theme.typography.sizes.sm,
+    fontSize: theme.typography.sizes.md,
+    fontWeight: theme.typography.weights.bold,
+    color: theme.colors.primary,
+    width: 30,
+  },
+  stepText: {
+    fontFamily: theme.typography.primary,
+    fontSize: theme.typography.sizes.md,
     color: theme.colors.text.secondary.light,
   },
-  note: {
+  bold: {
+    fontWeight: 'bold',
+    color: theme.colors.text.primary.light,
+  },
+  warningNote: {
     fontFamily: theme.typography.primary,
     fontSize: 12,
-    color: theme.colors.text.secondary.light,
+    color: theme.colors.error,
     textAlign: 'center',
-    fontStyle: 'italic',
+    paddingHorizontal: theme.spacing.md,
   },
   footer: {
     padding: theme.spacing.xl,
-    paddingBottom: theme.spacing.xl, // Will be overridden in component
     backgroundColor: theme.colors.white,
   },
   grantButton: {
     marginBottom: theme.spacing.sm,
+    backgroundColor: theme.colors.error,
   },
   footerLinks: {
     flexDirection: 'row',

@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
 import { CustomButton } from '../components/CustomButton';
-import RingerMode from '../modules/RingerMode';
 import { useRealm } from '../database/RealmProvider';
 import { PreferencesService } from '../database/services/PreferencesService';
+import { usePermissions } from '../permissions/PermissionsContext';
+import { RESULTS } from 'react-native-permissions';
 
 interface Props {
   navigation: any;
@@ -15,27 +16,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
-  const [hasPermission, setHasPermission] = useState(false);
-  const [checking, setChecking] = useState(true);
+  const { dndStatus, requestDndFlow } = usePermissions();
   const insets = useSafeAreaInsets();
 
-  useEffect(() => {
-    checkPermission();
-  }, []);
-
-  const checkPermission = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await RingerMode.checkDndPermission();
-        setHasPermission(granted);
-      } catch (error) {
-        console.error('Failed to check DND permission:', error);
-      }
-    }
-    setChecking(false);
-  };
-
   const completeSetup = () => {
+    console.log('[PermissionDndScreen] Marking onboarding complete and navigating home.');
     // Mark onboarding as complete
     PreferencesService.setOnboardingComplete(realm);
     
@@ -49,15 +34,11 @@ export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
   const handleGrant = async () => {
     if (Platform.OS === 'android') {
       try {
-        await RingerMode.requestDndPermission();
-        // Wait a bit then complete setup
-        setTimeout(async () => {
-          const granted = await RingerMode.checkDndPermission();
-          completeSetup();
-        }, 2000);
+        await requestDndFlow();
+        // Context will refresh state when app returns to foreground.
+        // useEffect below will handle auto-completion.
       } catch (error) {
         console.error('Failed to request DND permission:', error);
-        completeSetup(); // Complete anyway
       }
     } else {
       completeSetup();
@@ -68,20 +49,12 @@ export const PermissionDndScreen: React.FC<Props> = ({ navigation }) => {
     completeSetup();
   };
 
-  // If already has permission, auto-proceed
+  // Auto-proceed when permission is granted (detect via context)
   useEffect(() => {
-    if (!checking && hasPermission) {
+    if (dndStatus === RESULTS.GRANTED) {
       completeSetup();
     }
-  }, [checking, hasPermission]);
-
-  if (checking) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.description}>Checking permissions...</Text>
-      </View>
-    );
-  }
+  }, [dndStatus]);
 
   return (
     <View style={styles.container}>

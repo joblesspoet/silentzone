@@ -15,9 +15,12 @@ import { PermissionBatteryScreen } from '../screens/PermissionBatteryScreen';
 import { PermissionAlarmScreen } from '../screens/PermissionAlarmScreen';
 import { LogViewerScreen } from '../screens/LogViewerScreen';
 
+import { PermissionBackgroundLocationScreen } from '../screens/PermissionBackgroundLocationScreen';
+
 export type RootStackParamList = {
   Splash: undefined;
   PermissionLocation: undefined;
+  PermissionBackgroundLocation: undefined;
   PermissionNotification: undefined;
   PermissionDnd: undefined;
   PermissionBattery: undefined;
@@ -45,6 +48,7 @@ export const AppNavigator = () => {
     >
       <Stack.Screen name="Splash" component={SplashScreen} />
       <Stack.Screen name="PermissionLocation" component={PermissionLocationScreen} />
+      <Stack.Screen name="PermissionBackgroundLocation" component={PermissionBackgroundLocationScreen} />
       <Stack.Screen name="PermissionNotification" component={PermissionNotificationScreen} />
       <Stack.Screen name="PermissionDnd" component={PermissionDndScreen} />
       <Stack.Screen name="PermissionAlarm" component={PermissionAlarmScreen} />

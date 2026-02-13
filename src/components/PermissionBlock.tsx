@@ -9,6 +9,13 @@ interface PermissionBlockProps {
 }
 
 export const PermissionBlock: React.FC<PermissionBlockProps> = ({ missingType, onPress }) => {
+  const isCritical = missingType === 'LOCATION' || 
+                    missingType === 'BACKGROUND_LOCATION' || 
+                    missingType === 'DND' || 
+                    missingType === 'ALARM';
+                    
+  const severityColor = isCritical ? theme.colors.error : theme.colors.warning;
+
   const getMessage = () => {
     switch (missingType) {
       case 'LOCATION':
@@ -40,20 +47,26 @@ export const PermissionBlock: React.FC<PermissionBlockProps> = ({ missingType, o
     }
   };
 
+  const getIcon = () => {
+    if (missingType === 'LOCATION' || missingType === 'BACKGROUND_LOCATION') return 'location-off';
+    if (isCritical) return 'error-outline';
+    return 'warning-amber';
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={styles.iconContainer}>
+    <View style={[styles.container, { backgroundColor: severityColor + '15', borderColor: severityColor + '40' }]}>
+      <View style={[styles.iconContainer, { backgroundColor: severityColor + '20' }]}>
         <MaterialIcon 
-          name={(missingType === 'LOCATION' || missingType === 'BACKGROUND_LOCATION') ? 'location-off' : 'warning-amber'} 
+          name={getIcon()} 
           size={32} 
-          color={theme.colors.warning} 
+          color={severityColor} 
         />
       </View>
       <View style={styles.textContainer}>
         <Text style={styles.title}>{getTitle()}</Text>
         <Text style={styles.subtitle}>{getMessage()}</Text>
       </View>
-      <TouchableOpacity style={styles.button} onPress={onPress} activeOpacity={0.8}>
+      <TouchableOpacity style={[styles.button, { backgroundColor: severityColor }]} onPress={onPress} activeOpacity={0.8}>
         <Text style={styles.buttonText}>Fix Now</Text>
         <MaterialIcon name="chevron-right" size={18} color={theme.colors.white} />
       </TouchableOpacity>
@@ -63,20 +76,17 @@ export const PermissionBlock: React.FC<PermissionBlockProps> = ({ missingType, o
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: theme.colors.warning + '15', // Subtle version of warning
     borderRadius: theme.layout.borderRadius.lg,
     padding: theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: theme.colors.warning + '40',
     marginBottom: theme.spacing.xl,
   },
   iconContainer: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: theme.colors.warning + '20',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: theme.spacing.md,
@@ -99,7 +109,6 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   button: {
-    backgroundColor: theme.colors.warning,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
     borderRadius: theme.layout.borderRadius.md,
