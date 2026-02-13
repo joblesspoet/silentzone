@@ -127,13 +127,6 @@ export class ScheduleManager {
                scheduleStart.setHours(startHours, startMins, 0, 0);
                scheduleStart.setDate(scheduleStart.getDate() + dayOffset);
                
-               const scheduleEnd = new Date(scheduleStart);
-               const durationMinutes = isOvernight 
-                  ? (1440 - startTimeMinutes % 1440) + (endTimeMinutes % 1440)
-                  : endTimeMinutes - startTimeMinutes;
-               
-               scheduleEnd.setMinutes(scheduleEnd.getMinutes() + (isOvernight ? (endHours * 60 + endMins) + (1440 - (startHours * 60 + startMins)) : (endHours * 60 + endMins) - (startHours * 60 + startMins)));
-               
                // Simpler duration calculation
                const startTotal = startHours * 60 + startMins;
                const endTotal = endHours * 60 + endMins;
@@ -154,8 +147,17 @@ export class ScheduleManager {
       }
     }
 
-    upcomingSchedules.sort((a, b) => a.minutesUntilStart - b.minutesUntilStart);
-    return { activePlaces, upcomingSchedules };
+    // Deduplicate: same place + same start time (occurs when dayOffset -1 overlaps current day window)
+    const seen = new Set<string>();
+    const dedupedSchedules = upcomingSchedules.filter(s => {
+      const key = `${s.placeId}-${s.startTime.getTime()}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    dedupedSchedules.sort((a, b) => a.minutesUntilStart - b.minutesUntilStart);
+    return { activePlaces, upcomingSchedules: dedupedSchedules };
   }
 
   static getCurrentOrNextSchedule(place: any): UpcomingSchedule | null {

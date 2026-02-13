@@ -289,20 +289,22 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         })),
       });
       
-      // ✅ UNIFIED: Use surgical sync for the new place
-      // This ensures 72-hour alarms are created via the central engine
-      if (isSilencingEnabled && newPlace) {
-        await locationService.syncGeofences(false, [newPlace.id]);
-        Logger.info(`[AddPlace] ✅ Triggered initial sync for new place: ${placeName.trim()}`);
-      } else {
-        locationService.syncGeofences();
-      }
-      locationService.forceLocationCheck();
-
+      // ✅ FIX: Enable tracking BEFORE syncing the place
+      // If tracking was auto-paused, syncGeofences would return early if we didn't do this first.
       const prefs = PreferencesService.getPreferences(realm);
       if (isSilencingEnabled && prefs && !(prefs as any).trackingEnabled) {
         PreferencesService.updatePreferences(realm, { trackingEnabled: true });
+        Logger.info('[AddPlace] Auto-resumed tracking for new place');
       }
+
+      // ✅ UNIFIED: The engine is now autonomous (setupReactiveSync).
+      // We call syncGeofences() once here just to be immediate, 
+      // but the listener will catch the DB change anyway.
+      if (isSilencingEnabled && newPlace) {
+        await locationService.syncGeofences();
+        Logger.info(`[AddPlace] ✅ Triggered initial sync for new place: ${placeName.trim()}`);
+      }
+      locationService.forceLocationCheck();
 
         navigation.goBack();
       } catch (error) {

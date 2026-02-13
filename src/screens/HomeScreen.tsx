@@ -165,6 +165,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       console.log('[HomeScreen] No active places, auto-pausing tracking');
       PreferencesService.deferredUpdatePreferences(realm, {
         trackingEnabled: false,
+      }).then(() => {
+        // ✅ CRITICAL: Force a sync to stop the service immediately
+        locationService.syncGeofences();
       });
     }
   }, [activeCount, trackingEnabled, realm, isInitialLoad]);

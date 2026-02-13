@@ -138,6 +138,7 @@ setRealmReference(realmInstance: Realm) {
 
     try {
       silentZoneManager.setRealm(realmInstance);
+      this.setupReactiveSync(); // ✅ Restore autonomous monitoring
     } catch (e) {
       Logger.warn('[LocationService] Manager setup failed:', e);
     }
@@ -148,14 +149,11 @@ setRealmReference(realmInstance: Realm) {
   /**
    * Main Sync: Ensures the "First Link" in the chain is set for all places.
    * Can be used for a global reset or for specific updated places.
-   * 
-   * @param forceAlarmSync Force a full re-schedule of all alarms
-   * @param specificPlaceIds Optional list of IDs to sync specifically
    */
-  async syncGeofences(forceAlarmSync: boolean = false, specificPlaceIds?: string[]) {
+  async syncGeofences() {
     if (!this.realm || this.realm.isClosed) return;
     
-    // Concurrency guard: Prevent multiple overlapping syncs
+    // Concurrency guard: Prevent multiple overlapping syncs (especially from listeners + manual calls)
     if (this.isSyncing) {
       Logger.info('[LocationService] Sync already in progress, skipping...');
       return;
@@ -175,23 +173,9 @@ setRealmReference(realmInstance: Realm) {
       }
 
       const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
-      
-      // Cleanup: If specific IDs are provided, ensure those that are now disabled have their alarms purged
-      if (specificPlaceIds) {
-        for (const id of specificPlaceIds) {
-          const isStillEnabled = enabledPlaces.some(p => (p as any).id === id);
-          if (!isStillEnabled) {
-            Logger.info(`[LocationService] Place ${id} disabled or removed, purging alarms...`);
-            await alarmService.cancelAlarmsForPlace(id);
-          }
-        }
-      }
+      Logger.info(`[LocationService] Syncing ${enabledPlaces.length} enabled places...`);
 
       for (const place of enabledPlaces) {
-        // If specific IDs are provided, only sync those
-        if (specificPlaceIds && !specificPlaceIds.includes((place as any).id)) {
-          continue;
-        }
         await this.seedNextAlarmForPlace(place);
       }
 
@@ -200,6 +184,38 @@ setRealmReference(realmInstance: Realm) {
       Logger.error('[LocationService] Sync failed:', error);
     } finally {
       this.isSyncing = false;
+    }
+  }
+
+  /**
+   * Set up autonomous observation of the database.
+   * This is what made the "Earlier Build" feel so robust.
+   */
+  private setupReactiveSync() {
+    if (!this.realm || this.realm.isClosed) return;
+
+    try {
+      // 1. Watch Places
+      const places = this.realm.objects('Place');
+      places.addListener((collection, changes) => {
+        if (changes.insertions.length > 0 || changes.deletions.length > 0 || changes.newModifications.length > 0) {
+          Logger.info('[LocationService] Reactive: Places modified, resyncing...');
+          this.syncGeofences().catch(e => Logger.error('[LocationService] Reactive sync failed:', e));
+        }
+      });
+
+      // 2. Watch Preferences (specifically trackingEnabled)
+      const prefs = this.realm.objects('Preferences');
+      prefs.addListener((collection, changes) => {
+        if (changes.newModifications.length > 0) {
+          Logger.info('[LocationService] Reactive: Preferences modified, resyncing...');
+          this.syncGeofences().catch(e => Logger.error('[LocationService] Reactive sync failed:', e));
+        }
+      });
+
+      Logger.info('[LocationService] Autonomous monitoring established ✅');
+    } catch (error) {
+      Logger.error('[LocationService] Failed to setup reactive sync:', error);
     }
   }
 
@@ -228,12 +244,17 @@ setRealmReference(realmInstance: Realm) {
 
       // Rule: If warmup is in future, use it. 
       // Else if last chance is in future, use that as backup.
+      // Else if start is IMMINENT (less than 2 mins), schedule an ASAP alarm (now + 5s)
+      // to bypass Android background service start restrictions.
       if (warmUpTime > Date.now() + 60000) {
         finalTrigger = warmUpTime;
         Logger.info(`[LocationService] Setting warmup alarm for ${place.name} at T-15`);
       } else if (lastChanceTime > Date.now() + 30000) {
         finalTrigger = lastChanceTime;
         Logger.info(`[LocationService] ${place.name} warmup passed, scheduling T-1 safety alarm`);
+      } else if (startTime > Date.now() + 10000) {
+        finalTrigger = Date.now() + 5000;
+        Logger.info(`[LocationService] ${place.name} start imminent, scheduling immediate (T+5s) backup alarm`);
       }
 
       if (finalTrigger) {
@@ -373,8 +394,7 @@ setRealmReference(realmInstance: Realm) {
     if (Platform.OS === 'android' && Platform.Version >= 34) {
       const { AppState } = require('react-native');
       if (AppState.currentState !== 'active' && AppState.currentState !== 'unknown') {
-        Logger.warn('[Service] Postponing foreground start - app not active');
-        return;
+        Logger.info('[Service] Starting foreground service from background (triggered by alarm/system)');
       }
     }
 
@@ -458,13 +478,13 @@ setRealmReference(realmInstance: Realm) {
         // Double check distance with hysteresis
         const place = PlaceService.getPlaceById(this.realm, placeId);
         if (place) {
-          const distance = LocationValidator.calculateDistance(
-            location.latitude,
-            location.longitude,
-            (place as any).latitude,
-            (place as any).longitude
+          const isDefinitelyOutside = LocationValidator.isOutsidePlace(
+            location, 
+            place, 
+            CONFIG.EXIT_HYSTERESIS_METERS || 20
           );
-          if (distance > (place as any).radius + 20) {
+
+          if (isDefinitelyOutside) {
             await silentZoneManager.handleExit(placeId);
           }
         }

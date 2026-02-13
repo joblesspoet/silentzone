@@ -30,6 +30,7 @@ export class GPSManager {
 
   private onLocationUpdate: LocationCallback | null = null;
   private onError: LocationErrorCallback | null = null;
+  private _watchActive: boolean = false;
 
   /**
    * Start watching position with verification
@@ -42,6 +43,7 @@ export class GPSManager {
   ): Promise<void> {
     this.onLocationUpdate = onLocation;
     this.onError = onError;
+    this._watchActive = true;
 
     // Clear any existing watchers
     this.stopWatching();
@@ -101,7 +103,10 @@ export class GPSManager {
           Logger.error('[GPSManager] Error processing location:', error);
         }
       },
-      (error) => onError(error),
+      (error) => {
+        Logger.error('[GPSManager] Watcher error, starting fallback polling:', error);
+        this.startFallbackPolling(onLocation, onError);
+      },
       defaultConfig
     );
 
@@ -253,6 +258,8 @@ export class GPSManager {
     Logger.info(`[GPSManager] GPS verification attempt ${attemptNumber}/${maxAttempts} (${timeoutDuration / 1000}s timeout)`);
 
     this.verificationTimeout = setTimeout(async () => {
+      if (!this._watchActive) return;
+
       if (!this.lastKnownLocation) {
         Logger.warn(`[GPSManager] GPS verification attempt ${attemptNumber}/${maxAttempts} failed - No location updates`);
 
@@ -361,6 +368,7 @@ export class GPSManager {
       this.watchId = null;
     }
 
+    this._watchActive = false;
     this.stopFallbackPolling();
   }
 

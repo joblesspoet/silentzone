@@ -48,14 +48,12 @@ export class LocationValidator {
   /**
    * Determine which places user is inside based on GPS location
    * 
+  /**
+   * Determine which places user is inside based on GPS location
+   * 
    * CRITICAL: Accounts for GPS accuracy to prevent false positives
    * - Requires accuracy < 50% of zone radius
    * - Calculates "effective distance" accounting for uncertainty
-   * 
-   * Example: 50m radius zone
-   * - Good: 20m distance, 10m accuracy → effective 10m ✅ INSIDE
-   * - Poor: 45m distance, 30m accuracy → effective 15m ✅ INSIDE (barely)
-   * - Bad: 40m distance, 60m accuracy → REJECTED (accuracy too low)
    */
   static determineInsidePlaces(location: LocationState, realm: Realm): string[] {
     const enabledPlaces = realm ? PlaceService.getEnabledPlaces(realm) : [];
@@ -69,49 +67,52 @@ export class LocationValidator {
     );
     
     for (const place of enabledPlaces) {
-      const placeId = (place as any).id;
-      const placeName = (place as any).name;
-      const radius = (place as any).radius;
-      
-      // Calculate distance from place center
+      const p = place as any;
       const distance = this.calculateDistance(
         location.latitude,
         location.longitude,
-        (place as any).latitude,
-        (place as any).longitude
+        p.latitude,
+        p.longitude
       );
       
-      
-      
-      // CRITICAL CALCULATION #2: Account for GPS uncertainty
       // effectiveDistance = minimum possible distance (best case)
-      // If effective distance <= radius, we're DEFINITELY inside
       const effectiveDistance = Math.max(0, distance - location.accuracy);
       
-      // Check if we're inside (accounting for uncertainty)
-      if (effectiveDistance <= radius) {
+      if (effectiveDistance <= p.radius) {
         Logger.info(
-          `[Location] ✅ INSIDE ${placeName}: ` +
-          `distance=${Math.round(distance)}m, ` +
-          `accuracy=±${Math.round(location.accuracy)}m, ` +
-          `effective=${Math.round(effectiveDistance)}m <= ${radius}m radius`
+          `[Location] ✅ INSIDE ${p.name}: ` +
+          `dist=${Math.round(distance)}m, acc=±${Math.round(location.accuracy)}m, ` +
+          `eff=${Math.round(effectiveDistance)}m <= ${p.radius}m`
         );
-        insidePlaces.push(placeId);
-        
+        insidePlaces.push(p.id);
       } else {
-        // Outside the zone
         Logger.info(
-          `[Location] Outside ${placeName}: ` +
-          `effective distance ${Math.round(effectiveDistance)}m > ${radius}m`
+          `[Location] Outside ${p.name}: ` +
+          `eff ${Math.round(effectiveDistance)}m > ${p.radius}m`
         );
       }
     }
     
-    if (insidePlaces.length === 0) {
-      Logger.info('[Location] Not inside any enabled zones');
-    }
-    
     return insidePlaces;
+  }
+
+  /**
+   * Check if user is definitely outside a place
+   * Uses effective distance with an optional hysteresis buffer
+   */
+  static isOutsidePlace(location: LocationState, place: any, buffer: number = 0): boolean {
+    const p = place as any;
+    const distance = this.calculateDistance(
+      location.latitude,
+      location.longitude,
+      p.latitude,
+      p.longitude
+    );
+
+    // effectiveDistance = minimum possible distance (best case)
+    // If even the BEST case distance is greater than radius + buffer, we're definitely outside
+    const effectiveDistance = Math.max(0, distance - location.accuracy);
+    return effectiveDistance > p.radius + buffer;
   }
 
   static calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {

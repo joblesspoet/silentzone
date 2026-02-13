@@ -117,27 +117,31 @@ export class SilentZoneManager {
         const currentMode = await RingerMode.getRingerMode();
         const currentVolume = await RingerMode.getStreamVolume(RingerMode.STREAM_TYPES.MUSIC);
 
-        Logger.info(
-          `[SilentZoneManager] Saving current state for ${placeName}: ` +
-          `mode=${currentMode}, volume=${currentVolume}`
-        );
+        // ✅ OVERLAPPING LOGIC: Inherit the ORIGINAL sound state from the 
+        // oldest active zone. This ensures that when we exit this new zone,
+        // we don't accidentally "restore" a silent state.
+        let restoreMode = currentMode;
+        let restoreVolume = currentVolume;
 
-        // Validate that we're actually silent
-        if (currentMode !== RINGER_MODE.silent) {
-          Logger.warn(
-            `[SilentZoneManager] WARNING: Phone not silent in overlapping zone! ` +
-            `Mode=${currentMode}, expected=${RINGER_MODE.silent}`
-          );
+        if (activeLogs.length > 0) {
+          const oldestLog = activeLogs[0];
+          if (oldestLog.savedVolumeLevel !== null && oldestLog.savedVolumeLevel !== undefined) {
+             restoreMode = oldestLog.savedVolumeLevel;
+             Logger.info(`[SilentZoneManager] Overlapping: Inheriting restore mode ${restoreMode} from ${oldestLog.placeId}`);
+          }
+          if (oldestLog.savedMediaVolume !== null && oldestLog.savedMediaVolume !== undefined) {
+             restoreVolume = oldestLog.savedMediaVolume;
+          }
         }
 
-        const result = CheckInService.logCheckIn(
+        const log = CheckInService.logCheckIn(
           this.realm!,
           placeId,
-          currentMode,
-          currentVolume
+          restoreMode,
+          restoreVolume
         );
 
-        if (!result) {
+        if (!log) {
           Logger.error(`[SilentZoneManager] Failed to log overlapping check-in for ${placeName}`);
           return false;
         }

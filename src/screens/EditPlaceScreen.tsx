@@ -20,6 +20,7 @@ import { PrayerTimeService, PrayerConfig } from '../services/PrayerTimeService';
 
 import { PreferencesService } from '../database/services/PreferencesService';
 import { Modal } from 'react-native';
+import { Logger } from '../services/Logger';
 
 
 const DEFAULT_REGION = {
@@ -337,23 +338,23 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
             startTime: s.startTime,
             endTime: s.endTime,
             days: s.days,
-            label: s.label
         })),
       });
 
       if (success) {
-              locationService.syncGeofences(false, [placeId]);
-              
+              // ✅ FIX: Enable tracking BEFORE syncing the place
               const prefs = PreferencesService.getPreferences(realm);
               if (isEnabled && prefs && !(prefs as any).trackingEnabled) {
                 PreferencesService.updatePreferences(realm, { trackingEnabled: true });
+                Logger.info('[EditPlace] Auto-resumed tracking for updated place');
               }
 
+              await locationService.syncGeofences();
+              
               // CRITICAL FIX: Immediately check if we are ALREADY inside the place we just edited
-              // This fixes the case where user is stationary at home and adds a schedule
               locationService.forceLocationCheck();
 
-          navigation.goBack();
+              navigation.goBack();
       } else {
           Alert.alert("Error", "Failed to update place.");
       }
