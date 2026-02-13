@@ -18,6 +18,7 @@ interface PermissionsContextType {
   requestNotificationFlow: () => Promise<boolean>;
   requestDndFlow: () => Promise<boolean>;
   requestBatteryExemption: () => Promise<boolean>;
+  requestExactAlarmFlow: () => Promise<boolean>;
   isLoading: boolean;
   hasAllPermissions: boolean;
   isBatteryOptimized: boolean;
@@ -215,6 +216,21 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
     return granted;
   };
 
+  const requestExactAlarmFlow = async (): Promise<boolean> => {
+    // 1. Request (opens settings on Android 12+)
+    await PermissionsManager.requestExactAlarmPermission();
+    
+    // 2. Wait for user to toggle and return (Android needs time to propagate)
+    if (Platform.OS === 'android') {
+      await new Promise<void>(resolve => setTimeout(resolve, 1000));
+    }
+
+    // 3. Refresh state
+    const granted = await PermissionsManager.checkExactAlarmPermission();
+    setExactAlarmStatus(granted);
+    return granted;
+  };
+
   return (
     <PermissionsContext.Provider
       value={{
@@ -228,6 +244,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         requestNotificationFlow,
         requestDndFlow,
         requestBatteryExemption,
+        requestExactAlarmFlow,
         isLoading,
         hasAllPermissions,
         isBatteryOptimized,

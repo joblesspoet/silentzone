@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, AppState } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, AppState, ActivityIndicator } from 'react-native';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
 import { CustomButton } from '../components/CustomButton';
@@ -16,9 +16,10 @@ interface PermissionItemProps {
   isGranted: boolean;
   onPress: () => void;
   icon: string;
+  isLoading?: boolean;
 }
 
-const PermissionItem: React.FC<PermissionItemProps> = ({ title, description, isGranted, onPress, icon }) => (
+const PermissionItem: React.FC<PermissionItemProps> = ({ title, description, isGranted, onPress, icon, isLoading }) => (
   <View style={styles.permissionItem}>
     <View style={styles.iconContainer}>
       <MaterialIcon
@@ -34,9 +35,11 @@ const PermissionItem: React.FC<PermissionItemProps> = ({ title, description, isG
     <TouchableOpacity
       style={[styles.statusButton, isGranted ? styles.buttonGranted : styles.buttonPending]}
       onPress={onPress}
-      disabled={isGranted}
+      disabled={isGranted || isLoading}
     >
-      {isGranted ? (
+      {isLoading ? (
+        <ActivityIndicator size="small" color={theme.colors.white} />
+      ) : isGranted ? (
         <MaterialIcon name="check" size={20} color={theme.colors.white} />
       ) : (
         <Text style={styles.buttonText}>Allow</Text>
@@ -60,9 +63,24 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
     requestNotificationFlow,
     requestDndFlow,
     requestBatteryExemption,
+    requestExactAlarmFlow,
     refreshPermissions,
     hasAllPermissions,
   } = usePermissions();
+
+  const [processingType, setProcessingType] = useState<string | null>(null);
+
+  const wrapAction = async (type: string, action: () => Promise<any>) => {
+    setProcessingType(type);
+    try {
+      // Just waiting for the promise to resolve/reject
+      await action();
+    } catch (e) {
+      console.error(`[UnifiedPermissionScreen] Error requesting ${type}:`, e);
+    } finally {
+      setProcessingType(null);
+    }
+  };
 
   const isLocationGranted = locationStatus === RESULTS.GRANTED;
   const isBgGranted = backgroundLocationStatus === RESULTS.GRANTED;
@@ -119,42 +137,48 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
           description="Used to know when you are near a Silent Zone."
           isGranted={isLocationGranted}
           icon="location-on"
-          onPress={requestLocationFlow}
+          isLoading={processingType === 'LOCATION'}
+          onPress={() => wrapAction('LOCATION', requestLocationFlow)}
         />
         <PermissionItem
           title="Background Location"
           description='Requires "Allow all the time" to work while your phone is in your pocket.'
           isGranted={isBgGranted}
           icon="my-location"
-          onPress={requestBackgroundLocationFlow}
+          isLoading={processingType === 'BACKGROUND'}
+          onPress={() => wrapAction('BACKGROUND', requestBackgroundLocationFlow)}
         />
         <PermissionItem
           title="Notifications"
           description="Know when your phone is being silenced or restored."
           isGranted={isNotificationGranted}
           icon="notifications"
-          onPress={requestNotificationFlow}
+          isLoading={processingType === 'NOTIFICATION'}
+          onPress={() => wrapAction('NOTIFICATION', requestNotificationFlow)}
         />
         <PermissionItem
           title="Do Not Disturb"
           description="Required to actually silence the ringer on Android."
           isGranted={isDndGranted}
           icon="do-not-disturb-on"
-          onPress={requestDndFlow}
+          isLoading={processingType === 'DND'}
+          onPress={() => wrapAction('DND', requestDndFlow)}
         />
         <PermissionItem
           title="Exact Alarms"
           description="Guarantees the app wakes up exactly at the right time."
           isGranted={exactAlarmStatus}
           icon="alarm"
-          onPress={refreshPermissions}
+          isLoading={processingType === 'ALARM'}
+          onPress={() => wrapAction('ALARM', requestExactAlarmFlow)}
         />
         <PermissionItem
           title="Battery Optimization"
           description="Prevents Android from killing the app in the background."
           isGranted={isBatteryOptimized}
           icon="battery-charging-full"
-          onPress={requestBatteryExemption}
+          isLoading={processingType === 'BATTERY'}
+          onPress={() => wrapAction('BATTERY', requestBatteryExemption)}
         />
       </ScrollView>
 
