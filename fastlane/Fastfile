@@ -10,6 +10,53 @@ platform :android do
     gradle(task: "bundleRelease", project_dir: "android")
   end
 
+  desc "Build production APK"
+lane :build_apk do
+  gradle(
+    task: "assemble",
+    build_type: "Release",
+    project_dir: "android"
+  )
+end
+
+desc "Build debug APK"
+lane :build_debug do
+  gradle(
+    task: "assemble",
+    build_type: "Debug",
+    project_dir: "android"
+  )
+end
+
+
+desc "Build and install debug APK on emulator"
+lane :install_debug do
+  gradle(
+    task: "assemble",
+    build_type: "Debug",
+    project_dir: "android"
+  )
+
+  adb(
+    command: "install -r android/app/build/outputs/apk/debug/app-debug.apk"
+  )
+end
+
+desc "Build and install APK on emulator"
+lane :install_emulator do
+  # Build the APK first
+  gradle(
+    task: "assemble",
+    build_type: "Release",
+    project_dir: "android"
+  )
+
+  # Install on all connected devices/emulators
+  adb(
+    command: "install -r android/app/build/outputs/apk/release/app-release.apk"
+  )
+end
+
   desc "Deploy to Internal Testing"
   lane :deploy do
     build

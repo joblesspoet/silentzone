@@ -1,5 +1,5 @@
 /**
- * Silent Zone - Background Entry Point
+ * Silent Zone - Background Entry Point (Production Safe)
  * 
  * This file handles OS-level events (Alarms, Geofences, Boot) and dispatches 
  * them to the appropriate services. It mirrors the Android 'BroadcastReceiver' pattern.
@@ -22,96 +22,90 @@ const { SettingsService } = require('./src/services/SettingsService');
 // STATE: Event Deduplication
 // ============================================================================
 
-/**
- * Tracks recently processed alarms to prevent double-execution 
- * if Android re-delivers an intent during high system load.
- */
 const processedAlarms = new Set();
-const DEBOUNCE_TIME = 30000; // 30 seconds is enough for immediate re-delivery
+const DEBOUNCE_TIME = 30000; // 30 seconds
 
 const isDuplicate = (id) => {
   if (processedAlarms.has(id)) return true;
   processedAlarms.add(id);
-  // Cleanup after a delay
   setTimeout(() => processedAlarms.delete(id), DEBOUNCE_TIME);
   return false;
 };
 
 // ============================================================================
-// DATABASE: Realm Singleton Management
+// DATABASE: Realm Singleton Management (Isolated for Dispatcher)
 // ============================================================================
 
 let cachedRealm = null;
 
 /**
- * Ensures we only have one Realm instance active in the background process.
+ * Gets the Realm instance for background tasks.
+ * In React Native, the JS context might be shared, so we must be careful.
  */
 const getRealm = async () => {
-    if (cachedRealm && !cachedRealm.isClosed) return cachedRealm;
-    
-    const Realm = require('realm');
-    const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
-    
-    try {
-        console.log('[Dispatcher:getRealm] Opening background Realm...');
-        const realm = await Realm.open({
-            schema: schemas,
-            schemaVersion: SCHEMA_VERSION,
-        });
-        console.log('[Dispatcher:getRealm] Background Realm opened.');
-        
-        // Wire up services with the active realm instance
-        Logger.setRealm(realm);
-        const loggingEnabled = await SettingsService.getLoggingEnabled();
-        Logger.setEnabled(loggingEnabled);
+  if (cachedRealm && !cachedRealm.isClosed) return cachedRealm;
 
-        cachedRealm = realm;
-        return realm;
-    } catch (error) {
-        console.error('[Dispatcher:getRealm] CRITICAL FAILURE:', error);
-        throw error; // Re-throw to caller
-    }
+  const Realm = require('realm');
+  const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
+
+  try {
+    console.log('[Dispatcher] Opening background Realm...');
+    cachedRealm = await Realm.open({
+      schema: schemas,
+      schemaVersion: SCHEMA_VERSION,
+      path: Realm.defaultPath,
+    });
+    
+    // Wire up shared services
+    Logger.setRealm(cachedRealm);
+    const loggingEnabled = await SettingsService.getLoggingEnabled();
+    Logger.setEnabled(loggingEnabled);
+
+    return cachedRealm;
+  } catch (error) {
+    console.error('[Dispatcher] CRITICAL REALM FAILURE:', error);
+    throw error;
+  }
+};
+
+/**
+ * Background tasks should ideally not close the Realm if the app is alive,
+ * but specifically for Headless tasks, we often must cleanup if we are the only ones.
+ */
+const closeRealmIfPossible = () => {
+  // We keep it open for the duration of the JS context in this simplified version
+  // React Native will eventually kill the process/context
 };
 
 // ============================================================================
-// HANDLER: Alarm Events
+// HANDLER: Alarm Events (With Full Error Boundaries)
 // ============================================================================
 
-/**
- * Global handler for trigger notifications fired by AlarmService.
- */
 const handleAlarmEvent = async ({ type, detail }) => {
   const { notification } = detail;
-
-  // We only care about our internal trigger alarms
   const isAlarmAction = notification?.data?.action && notification?.id?.startsWith('place-');
   
   if (type === EventType.TRIGGER_NOTIFICATION_CREATED || !isAlarmAction) return;
 
   const alarmId = notification.id;
-  if (isDuplicate(alarmId)) {
-    console.log(`[Dispatcher] Skipping duplicate: ${alarmId}`);
-    return;
-  }
+  if (isDuplicate(alarmId)) return;
 
   try {
-      console.log(`[Dispatcher] ⏰ TRIGGERED: ${notification.data.action} for ${alarmId}`);
-      
-      const realm = await getRealm();
-      
-      // Pass the event directly to the LocationService (The Brain)
-      await locationService.initializeLight(realm);
-      await locationService.handleAlarmFired({
-          notification: { id: alarmId, data: notification.data },
-      });
-      
-      console.log(`[Dispatcher] ✅ Handled: ${alarmId}`);
+    console.log(`[Dispatcher] ⏰ Trigger: ${notification.data.action} -> ${alarmId}`);
+    const realm = await getRealm();
+    
+    // Non-destructive init
+    await locationService.initializeLight(realm);
+    
+    await locationService.handleAlarmFired({
+      notification: { id: alarmId, data: notification.data },
+    });
   } catch (err) {
-      console.error(`[Dispatcher] ❌ Error handling ${alarmId}:`, err);
+    console.error(`[Dispatcher] ❌ Alarm Error (${alarmId}):`, err);
   }
 };
 
-// Register Notifee listeners
+// Register listeners
 notifee.onBackgroundEvent(handleAlarmEvent);
 notifee.onForegroundEvent(handleAlarmEvent);
 
@@ -124,13 +118,16 @@ AppRegistry.registerHeadlessTask('GeofenceTask', () => async (taskData) => {
   
   try {
     const realm = await getRealm();
-    await locationService.initialize(realm);
+    await locationService.initializeLight(realm);
     
-    // Handle entries and exits
     if (taskData.event === 'ENTER') {
-      for (const id of taskData.ids) await locationService.handleGeofenceEntry(id);
+      for (const id of taskData.ids) {
+        try { await locationService.handleGeofenceEntry(id); } catch (e) {}
+      }
     } else if (taskData.event === 'EXIT') {
-      for (const id of taskData.ids) await locationService.handleGeofenceExit(id);
+      for (const id of taskData.ids) {
+        try { await locationService.handleGeofenceExit(id); } catch (e) {}
+      }
     }
   } catch (error) {
     console.error('[Dispatcher] Geofence Failure:', error);
@@ -148,8 +145,8 @@ AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async () => {
     const realm = await getRealm();
     const { notificationManager } = require('./src/services/NotificationManager');
     
-    await locationService.initialize(realm);
-    await locationService.syncGeofences(); // Re-seed the initial 'Next' alarms
+    await locationService.initializeLight(realm);
+    await locationService.syncGeofences();
     
     await notificationManager.showResumedAlert();
     console.log('[Dispatcher] ✅ Engine Resumed');

@@ -56,12 +56,12 @@ export class ScheduleManager {
     const upcomingSchedules: UpcomingSchedule[] = [];
 
     for (const place of enabledPlaces) {
-      if (!place.schedules || !Array.isArray(place.schedules) || place.schedules.length === 0) {
+      if (!place.schedules || place.schedules.length === 0) {
         continue;
       }
 
       // 3. Validation: Ensure schedule data is intact
-      const validSchedules = place.schedules.filter((s: any) => 
+      const validSchedules: any[] = Array.from(place.schedules as any || []).filter((s: any) => 
           s.startTime && s.endTime && s.startTime.includes(':') && s.endTime.includes(':')
       );
 

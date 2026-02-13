@@ -242,6 +242,7 @@ useEffect(() => {
               }
               if (activeCount > 0) {
                 PreferencesService.toggleTracking(realm);
+                locationService.syncGeofences();
               } else {
                 Alert.alert(
                   "No Active Places", 

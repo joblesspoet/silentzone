@@ -28,11 +28,6 @@ class LocationService {
   private geofencesActive = false;
   private lastTriggerTime: { [key: string]: number } = {};
 
-  // Persist references to Realm Results to prevent garbage collection of listeners
-  private placeResults: Realm.Results<any> | null = null;
-  private preferenceResults: Realm.Results<any> | null = null;
-  private checkinResults: Realm.Results<any> | null = null;
-
   /**
    * Initialize the service with the active database instance.
    * Restores the engine state and seeds initial alarms.
@@ -44,9 +39,9 @@ class LocationService {
     if (this.isInitializing) return;
 
     this.isInitializing = true;
+    
     try {
-      // 1. Core Realm Setup
-      Logger.info('[LocationService] Engine initialization started...');
+      console.log('[LocationService] Engine initialization started...');
       this.realm = realmInstance;
       
       try {
@@ -55,39 +50,20 @@ class LocationService {
         Logger.error('[LocationService] Failed to set realm on manager:', e);
       }
       
-      // 2. Platform Channels (Non-fatal)
       if (Platform.OS === 'android') {
         try {
-            Logger.info('[LocationService] Ensuring notification channels...');
             await notificationManager.createNotificationChannels();
         } catch (e) {
-            Logger.error('[LocationService] Channel creation failed (continuing):', e);
+            Logger.error('[LocationService] Channel creation failed:', e);
         }
       }
 
-      // 3. Initial Seed (Non-fatal)
-      try {
-        Logger.info('[LocationService] Syncing geofences for initial seed...');
-        await this.syncGeofences();
-      } catch (e) {
-        Logger.error('[LocationService] Initial seed failed (continuing):', e);
-      }
-      
+      await this.syncGeofences();
       this.isReady = true;
-      
-      // 4. Listeners
-      try {
-         this.setupReactiveSync();
-      } catch (e) {
-         Logger.error('[LocationService] Reactive sync setup failed:', e);
-      }
-      
       
       Logger.info('[LocationService] Engine Initialized Successfully ✅');
     } catch (error) {
-      // Catch-all for unexpected failures (e.g. Realm access)
       console.error('[LocationService] CRITICAL INITIALIZATION FAILURE:', error);
-      // We do NOT re-throw, to allow the UI to populate even if background engine fails
     } finally {
       this.isInitializing = false;
     }
@@ -115,17 +91,36 @@ class LocationService {
   }
 
   /**
-   * Non-destructive initialization for background events.
-   * Used when the app is woken up by the OS to handle an event.
-   * 
-   * @param realmInstance The active Realm database instance
-   */
-  async initializeLight(realmInstance: Realm) {
-    if (this.isInitializing || (this.isReady && this.realm === realmInstance)) return;
-    this.realm = realmInstance;
-    silentZoneManager.setRealm(realmInstance);
-    this.isReady = true;
+ * Non-destructive initialization for background events.
+ * Validates Realm is open and not closed before proceeding.
+ */
+async initializeLight(realmInstance: Realm) {
+  if (this.isInitializing) {
+    while (this.isInitializing) {
+      await new Promise<void>(resolve => setTimeout(() => resolve(), 100));
+    }
   }
+  
+  if (this.realm && !this.realm.isClosed) {
+    this.isReady = true;
+    return;
+  }
+
+  if (!realmInstance || realmInstance.isClosed) {
+    Logger.error('[LocationService] Cannot initialize task with closed Realm');
+    return;
+  }
+
+  this.realm = realmInstance;
+  
+  try {
+    silentZoneManager.setRealm(realmInstance);
+  } catch (e) {
+    Logger.warn('[LocationService] Manager setup failed:', e);
+  }
+  
+  this.isReady = true;
+}
 
   /**
    * Main Sync: Ensures the "First Link" in the chain is set for all places.
@@ -434,8 +429,9 @@ class LocationService {
     Logger.info(`[LocationService] Verifying entry for ${place.name}: ` +
                 `schedule=${schedule ? schedule.startTime.toLocaleTimeString() : 'None'}`);
 
-    // Allow activation 1 minute early for smooth flow
-    if (schedule && now >= schedule.startTime.getTime() - 60000 && now < schedule.endTime.getTime()) {
+    // Allow activation slightly early for smooth flow (e.g. 1 minute before)
+    const startBuffer = 60 * 1000; 
+    if (schedule && now >= schedule.startTime.getTime() - startBuffer && now < schedule.endTime.getTime()) {
       Logger.info(`[LocationService] Window matched for ${place.name}. Activating silence.`);
       await silentZoneManager.activateSilentZone(place);
       await this.updateForegroundService();
@@ -489,42 +485,6 @@ class LocationService {
     for (const p of all) await alarmService.cancelAlarmsForPlace((p as any).id);
   }
 
-  /**
-   * Sets up reactive listeners on the Realm database.
-   * Automatically triggers syncs or UI updates when data changes (CRUD operations).
-   */
-  private setupReactiveSync() {
-    if (!this.realm || this.placeResults) return;
-    
-    //// 1. Places Listener
-    //this.placeResults = this.realm.objects('Place');
-    //this.placeResults.addListener(() => {
-    //  if (!this.isReady) return;
-    //  Logger.info('[LocationService] Places changed, re-syncing...');
-    //  this.syncGeofences().catch(err => {
-    //    Logger.error('[LocationService] Places reactive sync failed:', err);
-    //  });
-    //});
-
-    //// 2. Preferences Listener
-    //this.preferenceResults = this.realm.objects('Preferences');
-    //this.preferenceResults.addListener(() => {
-    //  if (!this.isReady) return;
-    //  Logger.info('[LocationService] Preferences changed, re-syncing...');
-    //  this.syncGeofences().catch(err => {
-    //    Logger.error('[LocationService] Preferences reactive sync failed:', err);
-    //  });
-    //});
-
-    //// 3. Check-in Logs Listener
-    //this.checkinResults = this.realm.objects('CheckInLog');
-    //this.checkinResults.addListener(() => {
-    //  if (!this.isReady) return;
-    //  this.updateForegroundService().catch(err => {
-    //    Logger.error('[LocationService] Foreground service update failed:', err);
-    //  });
-    //});
-  }
 
   /**
    * Public API: Force a location check immediately.

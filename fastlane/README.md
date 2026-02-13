@@ -23,6 +23,38 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Build the AAB
 
+### android build_apk
+
+```sh
+[bundle exec] fastlane android build_apk
+```
+
+Build production APK
+
+### android build_debug
+
+```sh
+[bundle exec] fastlane android build_debug
+```
+
+Build debug APK
+
+### android install_debug
+
+```sh
+[bundle exec] fastlane android install_debug
+```
+
+Build and install debug APK on emulator
+
+### android install_emulator
+
+```sh
+[bundle exec] fastlane android install_emulator
+```
+
+Build and install APK on emulator
+
 ### android deploy
 
 ```sh
