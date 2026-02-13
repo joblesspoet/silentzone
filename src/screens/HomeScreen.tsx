@@ -166,8 +166,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       PreferencesService.deferredUpdatePreferences(realm, {
         trackingEnabled: false,
       }).then(() => {
-        // ✅ CRITICAL: Force a sync to stop the service immediately
-        locationService.syncGeofences();
+        // ✅ CRITICAL (Event-Driven): Force stop service immediately
+        locationService.onGlobalTrackingChanged(false);
       });
     }
   }, [activeCount, trackingEnabled, realm, isInitialLoad]);
@@ -178,7 +178,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
     const success = PlaceService.togglePlaceEnabled(realm, id);
     if (success !== null) {
-      await locationService.syncGeofences();
+      // ✅ Event-Driven: Notify place toggle
+      await locationService.onPlaceToggled(id, !currentlyEnabled);
     }
   };
 
@@ -194,7 +195,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
           onPress: async () => {
             const success = await PlaceService.deletePlace(realm, id);
             if (success) {
-              await locationService.syncGeofences();
+              // ✅ Event-Driven: Notify place deletion
+              await locationService.onPlaceDeleted(id);
             }
           }
         }
@@ -255,8 +257,11 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                 return;
               }
               if (activeCount > 0) {
+                // Toggle global tracking (read current state first to flip it)
+                const newState = !trackingEnabled;
                 PreferencesService.toggleTracking(realm);
-                locationService.syncGeofences();
+                // ✅ Event-Driven: Notify global change
+                locationService.onGlobalTrackingChanged(newState);
               } else {
                 Alert.alert("No Active Places", "Please enable at least one place to start tracking.");
               }

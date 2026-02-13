@@ -98,7 +98,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const handleToggle = async (val: boolean) => {
     const success = PlaceService.updatePlace(realm, placeId, { isEnabled: val });
     if (success) {
-      await locationService.syncGeofences();
+      await locationService.onPlaceToggled(placeId, val);
     }
   };
 
@@ -115,7 +115,7 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
             isDeleting.current = true; // Flag to suppress listeners
             const success = await PlaceService.deletePlace(realm, placeId);
             if (success) {
-              await locationService.syncGeofences();
+              await locationService.onPlaceDeleted(placeId);
             }
             navigation.goBack();
           }

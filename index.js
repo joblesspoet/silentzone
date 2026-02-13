@@ -171,7 +171,7 @@ AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async () => {
     const { notificationManager } = require('./src/services/NotificationManager');
     
     await locationService.initializeLight(realm);
-    await locationService.syncGeofences();
+    await locationService.refreshAllWatchers();
     
     await notificationManager.showResumedAlert();
     console.log('[Dispatcher] ✅ Engine Resumed');

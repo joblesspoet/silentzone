@@ -18,6 +18,16 @@ export const CheckInService = {
     return RealmWriteHelper.safeWrite(
       realm,
       () => {
+        // FIX: Idempotency Check - Prevent Duplicate "Active" Logs
+        const existingActive = realm
+          .objects('CheckInLog')
+          .filtered('placeId == $0 AND checkOutTime == null', placeId);
+        
+        if (existingActive.length > 0) {
+          console.log(`[CheckInService] 🛑 Idempotent check: Place ${placeId} is already active. Ignoring.`);
+          return existingActive[0];
+        }
+
         const log = realm.create('CheckInLog', {
           id: generateUUID(),
           placeId,

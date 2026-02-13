@@ -349,7 +349,12 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                 Logger.info('[EditPlace] Auto-resumed tracking for updated place');
               }
 
-              await locationService.syncGeofences();
+              // ✅ UNIFIED (Event-Driven): Notify engine of update
+              // This handles rescheduling alarms if schedules changed
+              const updatedPlace = PlaceService.getPlaceById(realm, placeId);
+              if (updatedPlace) {
+                await locationService.onPlaceUpdated(updatedPlace);
+              }
               
               // CRITICAL FIX: Immediately check if we are ALREADY inside the place we just edited
               locationService.forceLocationCheck();

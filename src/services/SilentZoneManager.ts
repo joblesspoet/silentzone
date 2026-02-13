@@ -236,11 +236,21 @@ export class SilentZoneManager {
       }
       CheckInService.logCheckOut(this.realm!, logId);
 
-      // Only notify if this is NOT a scheduled end (i.e., user left early)
+      // Notify for both manual exit (delayed) AND scheduled end (immediate)
       const now = Date.now();
       const lastRestored = this.lastSoundRestoredTime[placeId] || 0;
       
-      if (!isScheduledEnd && (now - lastRestored > 60000)) {
+      if (isScheduledEnd) {
+         // Immediate notification for schedule end
+         notificationBus.emit({
+            type: 'SCHEDULE_END',
+            placeId: placeId,
+            placeName,
+            timestamp: now,
+            source: 'alarm'
+         });
+      } else if (now - lastRestored > 60000) {
+         // Debounced notification for manual exit
          this.lastSoundRestoredTime[placeId] = now;
          notificationBus.emit({
             type: 'SOUND_RESTORED',

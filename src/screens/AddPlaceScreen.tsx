@@ -297,16 +297,13 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
         Logger.info('[AddPlace] Auto-resumed tracking for new place');
       }
 
-      // ✅ UNIFIED: The engine is now autonomous (setupReactiveSync).
-      // We call syncGeofences() once here just to be immediate, 
-      // but the listener will catch the DB change anyway.
+      // ✅ UNIFIED (Event-Driven): Explicitly notify engine of new place
+      // This seeds alarms and starts monitoring if needed.
       if (isSilencingEnabled && newPlace) {
-        await locationService.syncGeofences();
-        Logger.info(`[AddPlace] ✅ Triggered initial sync for new place: ${placeName.trim()}`);
+        await locationService.onPlaceAdded(newPlace);
+        Logger.info(`[AddPlace] ✅ Triggered explicit event for new place: ${placeName.trim()}`);
       }
-      locationService.forceLocationCheck();
-
-        navigation.goBack();
+   navigation.goBack();
       } catch (error) {
         console.error("Failed to save place:", error);
         Alert.alert("Error", "Failed to save place. Please try again.");

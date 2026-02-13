@@ -24,7 +24,6 @@ class LocationService {
   private realm: Realm | null = null;
   private isReady = false;
   private isInitializing = false;
-  private isSyncing = false;
   private geofencesActive = false;
   private lastTriggerTime: { [key: string]: number } = {};
 
@@ -58,7 +57,8 @@ class LocationService {
         }
       }
 
-      await this.syncGeofences();
+      // Initial boot sync - One time only
+      await this.refreshAllWatchers();
       this.isReady = true;
       
       Logger.info('[LocationService] Engine Initialized Successfully ✅');
@@ -138,7 +138,6 @@ setRealmReference(realmInstance: Realm) {
 
     try {
       silentZoneManager.setRealm(realmInstance);
-      this.setupReactiveSync(); // ✅ Restore autonomous monitoring
     } catch (e) {
       Logger.warn('[LocationService] Manager setup failed:', e);
     }
@@ -150,16 +149,89 @@ setRealmReference(realmInstance: Realm) {
    * Main Sync: Ensures the "First Link" in the chain is set for all places.
    * Can be used for a global reset or for specific updated places.
    */
-  async syncGeofences() {
+  /**
+   * EVENT HANDLER: Place Added
+   * Called explicitly by AddPlaceScreen
+   */
+  async onPlaceAdded(place: any) {
+    if (!this.realm) return;
+    Logger.info(`[Event] Place Added: ${place.name}`);
+    await this.seedNextAlarmForPlace(place);
+    await this.refreshMonitoringState();
+  }
+
+  /**
+   * EVENT HANDLER: Place Updated
+   * Called explicitly by EditPlaceScreen
+   */
+  async onPlaceUpdated(place: any) {
+    if (!this.realm) return;
+    Logger.info(`[Event] Place Updated: ${place.name}`);
+    
+    // 1. Always cancel existing alarms first (in case schedules were removed)
+    await alarmService.cancelAlarmsForPlace(place.id as string);
+
+    // 2. Seed new alarms if applicable
+    await this.seedNextAlarmForPlace(place);
+    
+    await this.refreshMonitoringState();
+  }
+
+  /**
+   * EVENT HANDLER: Place Deleted
+   * Called explicitly by HomeScreen
+   */
+  async onPlaceDeleted(placeId: string) {
+    if (!this.realm) return;
+    Logger.info(`[Event] Place Deleted: ${placeId}`);
+    await alarmService.cancelAlarmsForPlace(placeId);
+    await this.refreshMonitoringState();
+  }
+
+  /**
+   * EVENT HANDLER: Place Toggled
+   * Called explicitly by HomeScreen
+   */
+  async onPlaceToggled(placeId: string, isEnabled: boolean) {
+    if (!this.realm) return;
+    Logger.info(`[Event] Place Toggled: ${placeId} -> ${isEnabled}`);
+    
+    if (isEnabled) {
+      const place = PlaceService.getPlaceById(this.realm, placeId);
+      if (place) await this.seedNextAlarmForPlace(place);
+    } else {
+      await alarmService.cancelAlarmsForPlace(placeId);
+      // If we were inside, handle exit
+      if (CheckInService.isPlaceActive(this.realm, placeId)) {
+         await silentZoneManager.handleExit(placeId);
+      }
+    }
+    await this.refreshMonitoringState();
+  }
+
+  /**
+   * EVENT HANDLER: Global Tracking Toggled
+   * Called explicitly by HomeScreen
+   */
+  async onGlobalTrackingChanged(enabled: boolean) {
+    if (!this.realm) return;
+    Logger.info(`[Event] Global Tracking Changed -> ${enabled}`);
+    
+    if (!enabled) {
+      await this.purgeAllAlarms();
+      await this.stopMonitoring();
+    } else {
+      await this.refreshAllWatchers();
+    }
+  }
+
+  /**
+   * Refreshes all alarms and monitoring state from scratch.
+   * Used ONLY during initial boot or global resume.
+   */
+  async refreshAllWatchers() {
     if (!this.realm || this.realm.isClosed) return;
     
-    // Concurrency guard: Prevent multiple overlapping syncs (especially from listeners + manual calls)
-    if (this.isSyncing) {
-      Logger.info('[LocationService] Sync already in progress, skipping...');
-      return;
-    }
-
-    this.isSyncing = true;
     try {
       const prefs = PreferencesService.getPreferences(this.realm);
       const trackingEnabled = prefs?.trackingEnabled ?? true;
@@ -173,7 +245,7 @@ setRealmReference(realmInstance: Realm) {
       }
 
       const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
-      Logger.info(`[LocationService] Syncing ${enabledPlaces.length} enabled places...`);
+      Logger.info(`[LocationService] Refreshing ${enabledPlaces.length} enabled places...`);
 
       for (const place of enabledPlaces) {
         await this.seedNextAlarmForPlace(place);
@@ -181,41 +253,7 @@ setRealmReference(realmInstance: Realm) {
 
       await this.refreshMonitoringState();
     } catch (error) {
-      Logger.error('[LocationService] Sync failed:', error);
-    } finally {
-      this.isSyncing = false;
-    }
-  }
-
-  /**
-   * Set up autonomous observation of the database.
-   * This is what made the "Earlier Build" feel so robust.
-   */
-  private setupReactiveSync() {
-    if (!this.realm || this.realm.isClosed) return;
-
-    try {
-      // 1. Watch Places
-      const places = this.realm.objects('Place');
-      places.addListener((collection, changes) => {
-        if (changes.insertions.length > 0 || changes.deletions.length > 0 || changes.newModifications.length > 0) {
-          Logger.info('[LocationService] Reactive: Places modified, resyncing...');
-          this.syncGeofences().catch(e => Logger.error('[LocationService] Reactive sync failed:', e));
-        }
-      });
-
-      // 2. Watch Preferences (specifically trackingEnabled)
-      const prefs = this.realm.objects('Preferences');
-      prefs.addListener((collection, changes) => {
-        if (changes.newModifications.length > 0) {
-          Logger.info('[LocationService] Reactive: Preferences modified, resyncing...');
-          this.syncGeofences().catch(e => Logger.error('[LocationService] Reactive sync failed:', e));
-        }
-      });
-
-      Logger.info('[LocationService] Autonomous monitoring established ✅');
-    } catch (error) {
-      Logger.error('[LocationService] Failed to setup reactive sync:', error);
+      Logger.error('[LocationService] Refresh failed:', error);
     }
   }
 
