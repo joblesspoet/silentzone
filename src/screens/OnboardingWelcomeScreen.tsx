@@ -43,7 +43,7 @@ export const OnboardingWelcomeScreen: React.FC<Props> = ({ navigation }) => {
           
           <View style={styles.illustrationCircle}>
             <Image
-              source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuBLoUFCyPJJb6RljhzckGUZPloj6FFMQNVG8CCTA1VMbFIM91zfl2PzR_h2JjWLVt999Doqub2nDmHSEyA_8693EGSqf9C5s0JEOOGjHBXXVjoxQqnsNzqZM6akRZl4qHDnM8JUJDmjAMdnckrSJLkmPN4lIXF3oLx2AI3ae2C5HdgJF4rxg4T_MrHTCdnGL6VcNM7QrQDop_2tgE_akWHjA9biq9Y9colC_oCwyn9Qryo4qQiB2I12FgyS8BoRYlqZ9VpsdCyOjhKM' }}
+              source={require('../assets/images/onboarding_welcome.png')}
               style={styles.illustration}
               resizeMode="contain"
             />

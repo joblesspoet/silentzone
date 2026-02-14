@@ -37,7 +37,7 @@ export const OnboardingAddPlacesScreen: React.FC<Props> = ({ navigation }) => {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.illustrationContainer}>
           <Image
-            source={{ uri: 'https://lh3.googleusercontent.com/aida-public/AB6AXuCQCuN5J9sAiZh2InbxTIhWif7s4UNAjCGI0MDBGhIEqWQMdogqhMxRpeTs0Grmnh1s46y8fp6lcOlD4CvhJEBWWu-lf1LSus65Ui8ru5jYyWStcfsAhmscNwO-PXt7zqE2_NHHKV5lqZFQjwYBzPrL6Pv107kQuhsU83u-VgadiyOqjgLNAlJQ_ZXme1ybFI3sKt_m11rslh9bht87vhbwSGll2x6feufaBMiVdsEGP3aeNezLNtq6YnOTPDdZRg1Dshk64QtKvXA0' }}
+            source={require('../assets/images/onboarding_add_places.png')}
             style={styles.illustration}
             resizeMode="cover"
           />
