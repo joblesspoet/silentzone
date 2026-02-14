@@ -57,6 +57,9 @@ class LocationService {
         }
       }
 
+      // Initial sanity check: Clear any STUCK sessions (past end time)
+      await this.checkSessionExpiry();
+
       // Initial boot sync - One time only
       await this.refreshAllWatchers();
       this.isReady = true;
@@ -498,6 +501,10 @@ setRealmReference(realmInstance: Realm) {
     // 1. Determine which zones we are INSIDE
     const insideIds = LocationValidator.determineInsidePlaces(location, this.realm);
 
+    // FIX: Time-Based Expiry Check
+    // Before processing entries, ensure we aren't stuck in a session that should have ended.
+    await this.checkSessionExpiry();
+
     // 2. Handle Entries
     for (const id of insideIds) {
       if (!CheckInService.isPlaceActive(this.realm, id)) {
@@ -634,6 +641,41 @@ setRealmReference(realmInstance: Realm) {
     const place = PlaceService.getPlaceById(this.realm, placeId);
     const schedule = ScheduleManager.getCurrentOrNextSchedule(place);
     return schedule?.endTime.getTime();
+  }
+
+  /**
+   * Safety Net: Checks if any active sessions have exceeded their schedule end time.
+   * Forces a checkout if we are past the end time (+ optional buffer).
+   */
+  private async checkSessionExpiry() {
+    if (!this.realm) return;
+
+    const activeCheckIns = CheckInService.getActiveCheckIns(this.realm).snapshot();
+    const now = Date.now();
+    const EXPIRY_BUFFER_MS = 2 * 60 * 1000; // 2 minutes grace period
+
+    for (const log of activeCheckIns) {
+      const placeId = log.placeId as string;
+      const place = PlaceService.getPlaceById(this.realm, placeId);
+      
+      if (!place) continue;
+
+      // Find the schedule that supposedly triggered this (or a current one)
+      const currentSchedule = ScheduleManager.getCurrentOrNextSchedule(place);
+      
+      // If we have a current schedule, check if it has ended
+      // Note: getCurrentOrNextSchedule returns null if we are NOT in a schedule window.
+      // So if it returns null, or if the returned schedule is in the future, we should probably be out.
+      
+      // Simpler approach: Check if we are strictly OUTSIDE valid hours.
+      const isCurrentlyValid = ScheduleManager.isCurrentScheduleActive(place);
+
+      if (!isCurrentlyValid) {
+        Logger.warn(`[LocationService] ⏳ Session Expiry: active session for ${place.name} is past schedule. Forcing exit.`);
+        await silentZoneManager.handleExit(placeId, true);
+        await this.updateForegroundService();
+      }
+    }
   }
 }
 

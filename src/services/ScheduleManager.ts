@@ -160,9 +160,34 @@ export class ScheduleManager {
     return { activePlaces, upcomingSchedules: dedupedSchedules };
   }
 
-  static getCurrentOrNextSchedule(place: any): UpcomingSchedule | null {
-    if (!place.schedules || place.schedules.length === 0) return null;
-    const { upcomingSchedules } = this.categorizeBySchedule([place]);
+  /**
+   * Checks if the place has a schedule that is currently active (now inside start/end window).
+   */
+  static isCurrentScheduleActive(place: any): boolean {
+    return !!this.getCurrentOrNextSchedule(place, true); // true = strict mode (only if strictly inside window)
+  }
+
+  static getCurrentOrNextSchedule(place: any, strict: boolean = false): UpcomingSchedule | null {
+    if (!place || !place.schedules || place.schedules.length === 0) return null;
+    
+    // Strict Mode: Check for currently active schedule manually if needed, 
+    // or reuse categorizeBySchedule if it supports it. 
+    // Since categorizeBySchedule returns upcoming but filters for effective window,
+    // we can use it, but let's be explicit for strict verification.
+    
+    const { upcomingSchedules, activePlaces } = this.categorizeBySchedule([place]);
+    
+    if (strict) {
+        // In strict mode, we only return a schedule if we are physically INSIDE the valid window right now.
+        // categorizeBySchedule puts active places in 'activePlaces'.
+        const isActive = activePlaces.some(p => p.id === place.id);
+        if (isActive && upcomingSchedules.length > 0) {
+            // If active, the first upcoming schedule is the one we are currently in (minutesUntilStart = 0)
+            return upcomingSchedules[0]; 
+        }
+        return null;
+    }
+
     return upcomingSchedules[0] || null;
   }
 }

@@ -52,11 +52,14 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   // We use `places` as the dependency because Realm writes that affect check-ins will
   // trigger a re-render (via the places Realm listener), which re-runs this memo.
   const activeCheckInIds = useMemo(() => {
+    if (!realm || realm.isClosed) return new Set<string>();
     try {
       const activeCheckIns = CheckInService.getActiveCheckIns(realm);
+      // Verify CheckInService returned a valid collection before mapping
+      if (!activeCheckIns) return new Set<string>();
       return new Set(Array.from(activeCheckIns).map((c: any) => c.placeId as string));
     } catch (e) {
-      console.error('[HomeScreen] Failed to get active check-ins:', e);
+      console.warn('[HomeScreen] Safe-guard: Failed to get active check-ins:', e);
       return new Set<string>();
     }
   }, [places, realm]); // recomputes when places list changes (Realm write → listener fires → setPlaces → re-render)
@@ -67,18 +70,24 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     let prefs: any = null;
 
     try {
-      placesResult = PlaceService.getAllPlaces(realm);
-      setPlaces([...placesResult]);
-      const initialActive = placesResult.filter((p: any) => p.isEnabled).length;
-      setActiveCount(initialActive);
+      if (realm && !realm.isClosed) {
+        placesResult = PlaceService.getAllPlaces(realm);
+        if (placesResult) {
+          setPlaces([...placesResult]);
+          const initialActive = placesResult.filter((p: any) => p.isEnabled).length;
+          setActiveCount(initialActive);
+        }
+      }
     } catch (e) {
       console.error('[HomeScreen] Failed to load places:', e);
     }
 
     try {
-      prefs = PreferencesService.getPreferences(realm);
-      if (prefs) {
-        setTrackingEnabled(prefs.trackingEnabled);
+      if (realm && !realm.isClosed) {
+        prefs = PreferencesService.getPreferences(realm);
+        if (prefs) {
+          setTrackingEnabled(prefs.trackingEnabled);
+        }
       }
     } catch (e) {
       console.error('[HomeScreen] Failed to load preferences:', e);
@@ -92,9 +101,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     // Listener for places - ONLY UPDATE UI, DON'T CHANGE TRACKING
     const placesListener = (collection: any) => {
       try {
-        setPlaces([...collection]);
-        const currentActive = collection.filter((p: any) => p.isEnabled).length;
-        setActiveCount(currentActive);
+        // Double check collection validity
+        if (collection && !realm.isClosed) {
+          setPlaces([...collection]);
+          const currentActive = collection.filter((p: any) => p.isEnabled).length;
+          setActiveCount(currentActive);
+        }
       } catch (e) {
         console.error('[HomeScreen] Places listener error:', e);
       }
@@ -103,7 +115,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     // Listener for preferences
     const prefsListener = (p: any) => {
       try {
-        setTrackingEnabled(!!p.trackingEnabled);
+        if (p && p.isValid && p.isValid()) {
+           setTrackingEnabled(!!p.trackingEnabled);
+        }
       } catch (e) {
         console.error('[HomeScreen] Prefs listener error:', e);
       }
