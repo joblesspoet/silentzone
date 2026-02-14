@@ -130,8 +130,8 @@ export const PermissionsManager = {
     } catch (error) {
       console.error('Error requesting background location:', error);
       if (Platform.OS === 'android') {
-        console.log('Falling back to settings for background location...');
-        Linking.openSettings();
+        console.log('Falling back to app details for background location...');
+        PermissionsManager.openPermissionSettings('LOCATION');
       }
       return RESULTS.DENIED;
     }
@@ -140,6 +140,10 @@ export const PermissionsManager = {
   requestNotifications: async (): Promise<PermissionStatus> => {
     try {
       const { status } = await requestNotifications(['alert', 'sound', 'badge']);
+      if (Platform.OS === 'android' && status === RESULTS.BLOCKED) {
+         // If blocked, the OS dialog won't show. We must redirect.
+         PermissionsManager.openPermissionSettings('NOTIFICATION');
+      }
       return status;
     } catch (error) {
       console.error('Error requesting notifications:', error);
@@ -296,11 +300,11 @@ export const PermissionsManager = {
         await ExactAlarmModule.openExactAlarmSettings();
         return RESULTS.DENIED; // waiting for user to return from settings
       }
-      Linking.openSettings();
+      PermissionsManager.openPermissionSettings('ALARM');
       return RESULTS.DENIED;
     } catch (error) {
       console.error('Error requesting exact alarm permission:', error);
-      Linking.openSettings();
+      PermissionsManager.openPermissionSettings('ALARM');
       return RESULTS.DENIED;
     }
   },
@@ -310,6 +314,61 @@ export const PermissionsManager = {
       await AsyncStorage.setItem(EXACT_ALARM_OVERRIDE_KEY, granted ? 'true' : 'false');
     } catch (e) {
       console.error('Failed to set alarm override', e);
+    }
+  },
+
+  /**
+   * Opens the specific settings page for a given permission type on Android.
+   * Falls back to general App Settings on iOS or if intent fails.
+   */
+  openPermissionSettings: async (type: 'NOTIFICATION' | 'ALARM' | 'BATTERY' | 'LOCATION' | 'DND') => {
+    if (Platform.OS !== 'android') {
+      Linking.openSettings();
+      return;
+    }
+
+    let action = '';
+    const packageName = 'com.qybrix.silentzone'; 
+
+    try {
+      switch (type) {
+        case 'NOTIFICATION':
+          // ACTION_APP_NOTIFICATION_SETTINGS
+          action = 'android.settings.APP_NOTIFICATION_SETTINGS'; 
+          await Linking.sendIntent(action, [{ key: 'android.provider.extra.APP_PACKAGE', value: packageName }]);
+          return;
+        
+        case 'ALARM':
+          // ACTION_REQUEST_SCHEDULE_EXACT_ALARM
+          action = 'android.settings.REQUEST_SCHEDULE_EXACT_ALARM';
+          await Linking.sendIntent(action, [{ key: 'android.provider.extra.APP_PACKAGE', value: packageName }]);
+          return;
+
+        case 'BATTERY':
+          // ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
+          action = 'android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS';
+          await Linking.sendIntent(action);
+          return;
+
+        case 'LOCATION':
+          // ACTION_APPLICATION_DETAILS_SETTINGS (Best for Background Location on Android 11+)
+          action = 'android.settings.APPLICATION_DETAILS_SETTINGS';
+          await Linking.sendIntent(action, [{ key: 'package', value: packageName }]); // package:com.qybrix.silentzone
+          return;
+
+        case 'DND':
+          // ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS
+          action = 'android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS';
+          await Linking.sendIntent(action);
+          return;
+
+        default:
+          await Linking.openSettings();
+          return;
+      }
+    } catch (error) {
+      console.warn(`[PermissionsManager] Failed to launch specific intent for ${type}, falling back to settings.`, error);
+      Linking.openSettings();
     }
   }
 };

@@ -185,6 +185,13 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const requestLocationFlow = async (): Promise<boolean> => {
     let status = await PermissionsManager.requestLocationWhenInUse();
+    
+    // If blocked or denied, we might want to suggest settings?
+    // For foreground location, RNP usually handles the dialog well, but if blocked:
+    if (Platform.OS === 'android' && status === RESULTS.BLOCKED) {
+        PermissionsManager.openPermissionSettings('LOCATION');
+    }
+
     setLocationStatus(status);
     await refreshPermissions();
     return status === RESULTS.GRANTED || status === RESULTS.LIMITED;
@@ -205,6 +212,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   };
 
   const requestDndFlow = async (): Promise<boolean> => {
+    // RingerMode.requestDndPermission inherently opens settings on Android
     const status = await PermissionsManager.requestDndPermission();
     setDndStatus(status);
     return status === RESULTS.GRANTED;
@@ -212,6 +220,10 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
 
   const requestBatteryExemption = async (): Promise<boolean> => {
     const granted = await PermissionsManager.requestBatteryOptimization();
+    if (!granted && Platform.OS === 'android') {
+        // If the dialog was denied or didn't show, force specific settings
+        PermissionsManager.openPermissionSettings('BATTERY');
+    }
     setIsBatteryOptimized(granted);
     return granted;
   };
