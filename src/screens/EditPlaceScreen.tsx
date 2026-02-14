@@ -590,6 +590,10 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                   )}
                 </View>
 
+                <Text style={{ fontSize: 11, color: theme.colors.text.secondary.dark, marginTop: -4, marginBottom: 8 }}>
+                  (Use 24-hour format, e.g., 14:00 for 2:00 PM)
+                </Text>
+
                 {selectedCategory.id === 'mosque' && (
                     <TouchableOpacity 
                         onPress={() => setShowPrayerConfig(true)}

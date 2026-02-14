@@ -27,6 +27,7 @@ export class GPSManager {
   private verificationTimeout: ReturnType<typeof setTimeout> | null = null;
   private fallbackPolling: ReturnType<typeof setInterval> | null = null;
   private pollCount: number = 0;
+  private startRequestId: number = 0;
 
   private onLocationUpdate: LocationCallback | null = null;
   private onError: LocationErrorCallback | null = null;
@@ -41,6 +42,10 @@ export class GPSManager {
     deadline?: number,
     config?: Partial<GPSConfig>
   ): Promise<void> {
+    // Increment request ID to invalidate any pending starts
+    this.startRequestId++;
+    const currentRequestId = this.startRequestId;
+
     this.onLocationUpdate = onLocation;
     this.onError = onError;
     this._watchActive = true;
@@ -49,10 +54,16 @@ export class GPSManager {
     this.stopWatching();
 
     // ✅ Add user feedback before waiting
-    Logger.info('[GPSManager] 📡 Acquiring GPS signal...');
+    Logger.info(`[GPSManager] 📡 Acquiring GPS signal... (req=${currentRequestId})`);
 
     // Give time for foreground service to be ready
     await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
+
+    // RACE CONDITION CHECK: If a new request came in during the wait, abort this one.
+    if (this.startRequestId !== currentRequestId) {
+        Logger.info(`[GPSManager] Aborting start request ${currentRequestId} (superseded by ${this.startRequestId})`);
+        return;
+    }
 
     const defaultConfig: GPSConfig = {
         enableHighAccuracy: true,

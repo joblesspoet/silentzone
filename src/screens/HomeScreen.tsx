@@ -198,9 +198,13 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   };
 
   const handleDelete = (id: string, name: string) => {
+    const isCurrentlyActive = activeCheckInIds.has(id);
+    
     Alert.alert(
       `Delete ${name}?`,
-      "This will stop monitoring this location and remove it from your list.",
+      isCurrentlyActive 
+        ? "⚠️ This place is currently ACTIVE. Deleting it will immediately restore your ringer volume. Are you sure?"
+        : "This will stop monitoring this location and remove it from your list.",
       [
         { text: "Cancel", style: "cancel" },
         {

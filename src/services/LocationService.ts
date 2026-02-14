@@ -423,42 +423,45 @@ setRealmReference(realmInstance: Realm) {
    * Activates the foreground service, GPS watcher, and native geofences.
    */
   private async startMonitoring() {
-    if (this.geofencesActive) return;
-    
     const hasPerms = await PermissionsManager.hasCriticalPermissions();
     if (!hasPerms) {
       Logger.error('[Service] Cannot start: Missing permissions');
       return;
     }
 
-    // For Android 14+, we must be extremely careful starting from transition
-    if (Platform.OS === 'android' && Platform.Version >= 34) {
-      const { AppState } = require('react-native');
-      if (AppState.currentState !== 'active' && AppState.currentState !== 'unknown') {
-        Logger.info('[Service] Starting foreground service from background (triggered by alarm/system)');
-      }
+    // SURGICAL SYNC: If already active, we don't restart GPS, but we still force sync geofences/notifications.
+    const isAlreadyWatching = this.geofencesActive && gpsManager.isWatching();
+    
+    if (isAlreadyWatching) {
+        Logger.info('[Service] Surgical Sync: Refreshing geofences without restarting GPS');
+    } else {
+        Logger.info('[Service] Full Start: Activating GPS and Monitoring');
     }
 
     this.geofencesActive = true;
     try {
-      await gpsManager.startWatching(
-        (loc) => {
-          // FIX #4: The GPS callback fires frequently. Wrap in .catch() so any
-          // throw inside processLocationUpdate (Realm conflict, null ref, etc.)
-          // never becomes a fatal unhandled promise rejection.
-          this.processLocationUpdate(loc).catch(err =>
-            Logger.error('[GPS] processLocationUpdate unhandled error:', err)
+      if (!isAlreadyWatching) {
+          await gpsManager.startWatching(
+            (loc) => {
+              // FIX #4: The GPS callback fires frequently. Wrap in .catch() so any
+              // throw inside processLocationUpdate (Realm conflict, null ref, etc.)
+              // never becomes a fatal unhandled promise rejection.
+              this.processLocationUpdate(loc).catch(err =>
+                Logger.error('[GPS] processLocationUpdate unhandled error:', err)
+              );
+            },
+            (err) => Logger.error('[GPS] Watcher error:', err)
           );
-        },
-        (err) => Logger.error('[GPS] Watcher error:', err)
-      );
+      }
       
       // Sync native geofences as a secondary layer
       await this.syncNativeGeofences();
       await this.updateForegroundService();
     } catch (e) {
-      Logger.error('[LocationService] Failed to start monitoring:', e);
-      this.geofencesActive = false;
+      Logger.error('[LocationService] Failed to start or sync monitoring:', e);
+      if (!isAlreadyWatching) {
+          this.geofencesActive = false;
+      }
     }
   }
 
