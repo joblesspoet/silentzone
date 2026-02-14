@@ -32,6 +32,8 @@ export class GPSManager {
   private onLocationUpdate: LocationCallback | null = null;
   private onError: LocationErrorCallback | null = null;
   private _watchActive: boolean = false;
+  private lastUpdateTimestamp: number = 0;
+  private watchdogInterval: ReturnType<typeof setInterval> | null = null;
 
   /**
    * Start watching position with verification
@@ -55,6 +57,10 @@ export class GPSManager {
 
     // ✅ Add user feedback before waiting
     Logger.info(`[GPSManager] 📡 Acquiring GPS signal... (req=${currentRequestId})`);
+
+    // Reset watchdog timestamp
+    this.lastUpdateTimestamp = Date.now();
+    this.startWatchdog(onLocation, onError);
 
     // Give time for foreground service to be ready
     await new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
@@ -108,6 +114,9 @@ export class GPSManager {
 
           // Stop fallback polling if active
           this.stopFallbackPolling();
+
+          // Refresh watchdog heartbeat
+          this.lastUpdateTimestamp = Date.now();
 
           onLocation(location);
         } catch (error) {
@@ -381,6 +390,41 @@ export class GPSManager {
 
     this._watchActive = false;
     this.stopFallbackPolling();
+    this.stopWatchdog();
+  }
+
+  /**
+   * Watchdog: Periodically monitors for "GPS silence" and kicks the stream if it stalls.
+   */
+  private startWatchdog(onLocation: LocationCallback, onError: LocationErrorCallback) {
+    this.stopWatchdog(); // Ensure only one exists
+    
+    // Check every 2 minutes
+    this.watchdogInterval = setInterval(() => {
+        if (!this._watchActive) return;
+
+        const now = Date.now();
+        const diff = now - this.lastUpdateTimestamp;
+
+        if (diff > CONFIG.GPS_WATCHDOG_THRESHOLD) {
+            Logger.warn(`[GPSManager] ⚠️ WATCHDOG: No GPS update for ${Math.round(diff / 1000)}s. Kicking driver...`);
+            
+            // Re-trigger watch by calling internal restart
+            this.forceLocationCheck(onLocation, onError, 1, 1).catch(e => 
+                Logger.error('[GPSManager] Watchdog kick failed:', e)
+            );
+
+            // Update timestamp so we don't kick repeatedly too fast
+            this.lastUpdateTimestamp = now;
+        }
+    }, 120 * 1000); // Check every 2 minutes
+  }
+
+  private stopWatchdog() {
+    if (this.watchdogInterval) {
+        clearInterval(this.watchdogInterval);
+        this.watchdogInterval = null;
+    }
   }
 
   /**

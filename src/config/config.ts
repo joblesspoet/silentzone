@@ -16,6 +16,7 @@ export const CONFIG = {
   // GPS settings
   GPS_TIMEOUT: 30000,           // 30 seconds
   GPS_MAXIMUM_AGE: 30000,       // 30 seconds (was 5s) - allow slightly older cached locations
+  GPS_WATCHDOG_THRESHOLD: 10 * 60 * 1000, // 10 minutes - force restart if no updates
   
   // Check intervals - ADAPTIVE
   INTERVALS: {

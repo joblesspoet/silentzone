@@ -494,43 +494,43 @@ export const AddPlaceScreen: React.FC<Props> = ({ navigation }) => {
                   )}
                 </View>
 
-                <Text style={{ fontSize: 11, color: theme.colors.text.secondary.dark, marginTop: -4, marginBottom: 8 }}>
-                  (Use 24-hour format, e.g., 14:00 for 2:00 PM)
-                </Text>
+                <View style={{flexDirection: 'row', alignItems: 'center', gap: 12}}>
+                  {selectedCategory.id === 'mosque' && (
+                      <TouchableOpacity 
+                          onPress={() => setShowPrayerConfig(true)}
+                          style={styles.addSlotButton}
+                      >
+                          <MaterialIcon name="auto-awesome" size={18} color={theme.colors.primary} />
+                          <Text style={styles.addSlotText}>Auto-Fill</Text>
+                      </TouchableOpacity>
+                  )}
 
-                {selectedCategory.id === 'mosque' && (
-                    <TouchableOpacity 
-                        onPress={() => setShowPrayerConfig(true)}
-                        style={[styles.addSlotButton, { marginRight: 16 }]}
-                    >
-                        <MaterialIcon name="auto-awesome" size={18} color={theme.colors.primary} />
-                        <Text style={styles.addSlotText}>Auto-Fill</Text>
-                    </TouchableOpacity>
-                )}
-
-                <TouchableOpacity 
-                    onPress={() => {
-                        if (schedules.length >= 10) {
-                            setLimitError(true);
-                            return; 
-                        }
-                        const newSlot: ScheduleSlot = {
-                            id: Math.random().toString(),
-                            startTime: '12:00',
-                            endTime: '13:00',
-                            days: [],
-                            label: 'Interval ' + (schedules.length + 1)
-                        };
-                        setSchedules([newSlot, ...schedules]);
-                        setScheduleError(false);
-                    }}
-                    style={[styles.addSlotButton, schedules.length >= 10 && { opacity: 0.5 }]}
-                    disabled={schedules.length >= 10}
-                >
-                    <MaterialIcon name="add" size={18} color={theme.colors.primary} />
-                    <Text style={styles.addSlotText}>Add Time</Text>
-                </TouchableOpacity>
+                  <TouchableOpacity 
+                      onPress={() => {
+                          if (schedules.length >= 10) {
+                              setLimitError(true);
+                              return; 
+                          }
+                          const newSlot: ScheduleSlot = {
+                              id: Math.random().toString(),
+                              startTime: '12:00',
+                              endTime: '13:00',
+                              days: [],
+                              label: 'Interval ' + (schedules.length + 1)
+                          };
+                          setSchedules([newSlot, ...schedules]);
+                          setScheduleError(false);
+                      }}
+                      style={[styles.addSlotButton, schedules.length >= 10 && { opacity: 0.5 }]}
+                      disabled={schedules.length >= 10}
+                  >
+                      <MaterialIcon name="add" size={18} color={theme.colors.primary} />
+                      <Text style={styles.addSlotText}>Add Time</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
+
+              <Text style={styles.timeHint}>💡 Use 24-hour format (e.g., 14:00 for 2:00 PM)</Text>
 
               {/* Validation Messages */}
               {limitError && (
@@ -912,6 +912,13 @@ const styles = StyleSheet.create({
   card: { backgroundColor: theme.colors.surface.light, borderRadius: theme.layout.borderRadius.lg, padding: theme.spacing.lg, marginBottom: theme.spacing.lg, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: theme.colors.border.light, ...theme.layout.shadows.soft },
   cardTitle: { fontSize: theme.typography.sizes.md, fontWeight: theme.typography.weights.medium, color: theme.colors.text.primary.light },
   cardSubtitle: { fontSize: theme.typography.sizes.xs, color: theme.colors.text.secondary.light },
+  timeHint: {
+    fontSize: 11,
+    color: theme.colors.primary,
+    fontWeight: '700',
+    marginTop: -8,
+    marginBottom: 12,
+  },
   scheduleSection: { marginTop: -8, marginBottom: theme.spacing.xl },
   addSlotButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   addSlotText: { fontSize: theme.typography.sizes.sm, color: theme.colors.primary, fontWeight: theme.typography.weights.bold },
