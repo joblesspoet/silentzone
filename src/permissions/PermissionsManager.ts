@@ -207,13 +207,15 @@ export const PermissionsManager = {
     const dnd = await PermissionsManager.getDndStatus();
     const notif = await PermissionsManager.getNotificationStatus();
     const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
+    const battery = await PermissionsManager.isBatteryOptimizationEnabled();
 
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
       (dnd === RESULTS.GRANTED) &&
       (notif === RESULTS.GRANTED) &&
-      exactAlarm
+      exactAlarm &&
+      battery
     );
   },
 
@@ -222,14 +224,16 @@ export const PermissionsManager = {
     const bg = await PermissionsManager.getBackgroundLocationStatus();
     const notif = await PermissionsManager.getNotificationStatus();
     const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
+    const battery = await PermissionsManager.isBatteryOptimizationEnabled();
 
-    console.log(`[PermissionsManager] Check - Loc: ${loc}, Bg: ${bg}, Notif: ${notif}, Alarm: ${exactAlarm}`);
+    console.log(`[PermissionsManager] Check - Loc: ${loc}, Bg: ${bg}, Notif: ${notif}, Alarm: ${exactAlarm}, Battery: ${battery}`);
 
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
       (notif === RESULTS.GRANTED) &&
-      exactAlarm
+      exactAlarm &&
+      battery
     );
   },
 

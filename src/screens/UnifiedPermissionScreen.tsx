@@ -173,10 +173,10 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
           onPress={() => wrapAction('ALARM', requestExactAlarmFlow)}
         />
         <PermissionItem
-          title="Battery Optimization"
-          description="Prevents Android from killing the app in the background."
+          title="Force Background Execution"
+          description="MANDATORY: Disable battery optimization (Set to 'Unrestricted') so Android doesn't kill the app."
           isGranted={isBatteryOptimized}
-          icon="battery-charging-full"
+          icon="battery-saver"
           isLoading={processingType === 'BATTERY'}
           onPress={() => wrapAction('BATTERY', requestBatteryExemption)}
         />

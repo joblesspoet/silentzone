@@ -138,18 +138,18 @@ notifee.onForegroundEvent(handleAlarmEvent);
 // HANDLER: Geofence Events (Native Android API)
 // ============================================================================
 
-AppRegistry.registerHeadlessTask('GeofenceTask', () => async (taskData) => {
+AppRegistry.registerHeadlessTask('onGeofenceTransition', () => async (taskData) => {
   console.log('[Dispatcher] 🌎 Geofence Event:', taskData.event, taskData.ids);
   
   try {
     const realm = await getRealm();
     await locationService.initializeLight(realm);
     
-    if (taskData.event === 'ENTER') {
+    if (taskData.event === 'onEnter' || taskData.event === 'ENTER') {
       for (const id of taskData.ids) {
         try { await locationService.handleGeofenceEntry(id); } catch (e) {}
       }
-    } else if (taskData.event === 'EXIT') {
+    } else if (taskData.event === 'onExit' || taskData.event === 'EXIT') {
       for (const id of taskData.ids) {
         try { await locationService.handleGeofenceExit(id); } catch (e) {}
       }

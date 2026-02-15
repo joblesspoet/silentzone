@@ -126,20 +126,6 @@ jest.mock('../src/services/GPSManager', () => ({
   })),
 }));
 
-jest.mock('../src/services/TimerManager', () => ({
-  timerManager: {
-    schedule: jest.fn(),
-    clear: jest.fn(),
-    clearAll: jest.fn(),
-    hasTimer: jest.fn().mockReturnValue(false),
-  },
-  TimerManager: jest.fn().mockImplementation(() => ({
-    schedule: jest.fn(),
-    clear: jest.fn(),
-    clearAll: jest.fn(),
-    hasTimer: jest.fn().mockReturnValue(false),
-  })),
-}));
 
 // 5.7 Mock Permissions
 jest.mock('react-native-permissions', () => ({
@@ -164,10 +150,11 @@ jest.mock('../src/config/config', () => ({
     DISTANCE: { VERY_CLOSE: 50 },
     MAX_ACCEPTABLE_ACCURACY: 50,
     EXIT_BUFFER_MULTIPLIER: 1.2,
-    SCHEDULE: {
-      PRE_ACTIVATION_MINUTES: 15,
-      SMALL_RADIUS_THRESHOLD: 100,
-    },
+      SCHEDULE: {
+        PRE_ACTIVATION_MINUTES: 15,
+        SMALL_RADIUS_THRESHOLD: 100,
+        POST_GRACE_MINUTES: 0,
+      },
     DEBOUNCE_TIME: 2000,
     CHANNELS: { ALERTS: 'alerts', SERVICE: 'service' },
   },
@@ -195,12 +182,12 @@ describe('LocationService Logic', () => {
       longitude: 0,
       radius: 100,
       isEnabled: true,
-      schedules: [], // 24/7
+      schedules: [{ startTime: '00:00', endTime: '23:59', days: [] }], // 24/7
     };
 
     (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
     (PlaceService.getPlaceById as jest.Mock).mockReturnValue(mockPlace);
-    (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue([]);
+    (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue({ snapshot: () => [] });
     (CheckInService.isPlaceActive as jest.Mock).mockReturnValue(false);
 
     // Mock SilentZoneManager
@@ -237,14 +224,14 @@ describe('LocationService Logic', () => {
       latitude: 0,
       longitude: 0,
       radius: 100,
-      schedules: [],
+      schedules: [{ startTime: '00:00', endTime: '23:59', days: [] }], // 24/7
     };
 
     const mockLog = { id: 'log-1', placeId: 'place-1' };
 
     (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
     (PlaceService.getPlaceById as jest.Mock).mockReturnValue(mockPlace);
-    (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue([mockLog]);
+    (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue({ snapshot: () => [mockLog] });
     (CheckInService.isPlaceActive as jest.Mock).mockReturnValue(true);
 
     // Mock SilentZoneManager
@@ -262,7 +249,7 @@ describe('LocationService Logic', () => {
 
     // THEN
     // SilentZoneManager should be called to handle exit
-    expect(silentZoneManager.handleExit).toHaveBeenCalledWith('place-1', false);
+    expect(silentZoneManager.handleExit).toHaveBeenCalledWith('place-1');
   });
 
   test('should NOT exit when within hysteresis buffer', async () => {
@@ -275,7 +262,7 @@ describe('LocationService Logic', () => {
       latitude: 0,
       longitude: 0,
       radius: 45, // 45m radius
-      schedules: [],
+      schedules: [{ startTime: '00:00', endTime: '23:59', days: [] }], // 24/7
       name: 'Hajveeri mosque'
     };
 
@@ -283,7 +270,7 @@ describe('LocationService Logic', () => {
 
     (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
     (PlaceService.getPlaceById as jest.Mock).mockReturnValue(mockPlace);
-    (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue([mockLog]);
+    (CheckInService.getActiveCheckIns as jest.Mock).mockReturnValue({ snapshot: () => [mockLog] });
     (CheckInService.isPlaceActive as jest.Mock).mockReturnValue(true);
 
     // Mock SilentZoneManager
