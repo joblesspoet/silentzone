@@ -17,9 +17,22 @@ interface PermissionItemProps {
   onPress: () => void;
   icon: string;
   isLoading?: boolean;
+  // FIX #3: Allow battery item to always show a "Verify" button even when granted,
+  // so the user can re-open App Info to confirm "Unrestricted" specifically.
+  alwaysShowButton?: boolean;
+  grantedLabel?: string;
 }
 
-const PermissionItem: React.FC<PermissionItemProps> = ({ title, description, isGranted, onPress, icon, isLoading }) => (
+const PermissionItem: React.FC<PermissionItemProps> = ({
+  title,
+  description,
+  isGranted,
+  onPress,
+  icon,
+  isLoading,
+  alwaysShowButton = false,
+  grantedLabel,
+}) => (
   <View style={styles.permissionItem}>
     <View style={styles.iconContainer}>
       <MaterialIcon
@@ -33,14 +46,27 @@ const PermissionItem: React.FC<PermissionItemProps> = ({ title, description, isG
       <Text style={styles.itemDescription}>{description}</Text>
     </View>
     <TouchableOpacity
-      style={[styles.statusButton, isGranted ? styles.buttonGranted : styles.buttonPending]}
+      style={[
+        styles.statusButton,
+        // FIX #3: When alwaysShowButton is true (battery), show a different
+        // "Verify" style even when granted — so user can re-open settings to
+        // confirm "Unrestricted" vs "Optimized" specifically.
+        isGranted && !alwaysShowButton ? styles.buttonGranted : 
+        isGranted && alwaysShowButton ? styles.buttonVerify :
+        styles.buttonPending,
+      ]}
       onPress={onPress}
-      disabled={isGranted || isLoading}
+      // FIX #3: Never fully disable the battery button. isIgnoringBatteryOptimizations()
+      // returns true for both "Unrestricted" AND sometimes "Optimized" on certain OEMs.
+      // The user needs to always be able to re-open settings to manually confirm.
+      disabled={(!alwaysShowButton && isGranted) || !!isLoading}
     >
       {isLoading ? (
         <ActivityIndicator size="small" color={theme.colors.white} />
-      ) : isGranted ? (
+      ) : isGranted && !alwaysShowButton ? (
         <MaterialIcon name="check" size={20} color={theme.colors.white} />
+      ) : isGranted && alwaysShowButton ? (
+        <Text style={styles.buttonText}>{grantedLabel ?? 'Verify'}</Text>
       ) : (
         <Text style={styles.buttonText}>Allow</Text>
       )}
@@ -73,7 +99,6 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
   const wrapAction = async (type: string, action: () => Promise<any>) => {
     setProcessingType(type);
     try {
-      // Just waiting for the promise to resolve/reject
       await action();
     } catch (e) {
       console.error(`[UnifiedPermissionScreen] Error requesting ${type}:`, e);
@@ -82,8 +107,17 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
     }
   };
 
-  const isLocationGranted = locationStatus === RESULTS.GRANTED;
-  const isBgGranted = backgroundLocationStatus === RESULTS.GRANTED;
+  // FIX #1: Include RESULTS.LIMITED for location granted checks.
+  // Previously these were strict === RESULTS.GRANTED, so if the OS returned
+  // RESULTS.LIMITED (e.g. Approximate Location on Android 12+), the UI showed
+  // "Allow" even though PermissionsContext.hasAllPermissions considered it granted.
+  // This caused a state where the "Start Application" button was enabled but
+  // the location row still showed a pending "Allow" button — confusing and wrong.
+  const isLocationGranted = locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED;
+
+  // FIX #2: Same fix for background location.
+  const isBgGranted = backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED;
+
   const isNotificationGranted = notificationStatus === RESULTS.GRANTED;
   const isDndGranted = dndStatus === RESULTS.GRANTED;
 
@@ -96,21 +130,12 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
       // 1. Mark onboarding complete in DB
       PreferencesService.setOnboardingComplete(realm);
 
-      // FIX: Explicitly initialize the location engine here.
-      //
-      // App.tsx's init effect ran at startup BEFORE onboarding was complete, so it
-      // only called locationService.setRealmReference() — which skips creating
-      // notification channels. It does not re-run after onboarding finishes.
-      //
-      // PermissionsContext's change-detection would ideally call initialize() when
-      // it next fires, but there is a timing gap between this navigation and the
-      // next AppState 'active' event. During that gap, HomeScreen's setInterval
-      // can fire and reach startMonitoring() → updateForegroundService() →
-      // notificationManager.startForegroundService() on a channel that doesn't
-      // exist yet — causing a fatal crash on Android.
-      //
-      // Calling initialize() here — before navigating — guarantees channels are
-      // created and geofences are seeded before any background code can run.
+      // 2. Explicitly initialize the location engine.
+      // App.tsx's init effect ran at startup BEFORE onboarding was complete,
+      // so it only called locationService.setRealmReference() which skips
+      // creating notification channels. Calling initialize() here — before
+      // navigating — guarantees channels are created and geofences are seeded
+      // before any background code can run.
       await locationService.initialize(realm);
 
       console.log('[UnifiedPermissionScreen] Engine initialized, navigating home.');
@@ -172,12 +197,37 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
           isLoading={processingType === 'ALARM'}
           onPress={() => wrapAction('ALARM', requestExactAlarmFlow)}
         />
+
+        {/*
+          FIX #3: Battery item uses alwaysShowButton + grantedLabel="Verify".
+          
+          WHY: On Android 14/15, isIgnoringBatteryOptimizations() returns true for
+          both "Unrestricted" AND "Optimized" on some OEMs (Samsung One UI 6+, 
+          some Pixel builds). So the checkmark can appear even when the app is only
+          on "Optimized" — which still allows Android to kill it during Doze.
+          
+          The user needs to be able to tap "Verify" even when the check is green,
+          to manually confirm they see "Unrestricted" (not "Optimized") in the
+          App Info → Battery page.
+          
+          If it was already showing checked when they arrived at this screen, it 
+          means Android's API reports it as whitelisted — but they should tap 
+          "Verify" once to double-check the setting says "Unrestricted" specifically.
+        */}
         <PermissionItem
           title="Force Background Execution"
-          description="MANDATORY: Disable battery optimization (Set to 'Unrestricted') so Android doesn't kill the app."
+          description={
+            isBatteryOptimized
+              ? Platform.OS === 'android'
+                ? 'Tap "Verify" to confirm it shows "Unrestricted" in App Battery settings — not just "Optimized".'
+                : 'Battery optimization disabled.'
+              : "MANDATORY: Set battery to 'Unrestricted' so Android doesn't kill the app in background."
+          }
           isGranted={isBatteryOptimized}
           icon="battery-saver"
           isLoading={processingType === 'BATTERY'}
+          alwaysShowButton={Platform.OS === 'android'}
+          grantedLabel="Verify"
           onPress={() => wrapAction('BATTERY', requestBatteryExemption)}
         />
       </ScrollView>
@@ -187,6 +237,18 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
           <View style={styles.warningContainer}>
             <MaterialIcon name="info-outline" size={16} color={theme.colors.error} />
             <Text style={styles.warningText}>All permissions are required for full features.</Text>
+          </View>
+        )}
+        {/*
+          FIX #3 (cont): Show a soft advisory when battery is "granted" so the
+          user knows to verify "Unrestricted" before starting.
+        */}
+        {hasAllPermissions && Platform.OS === 'android' && (
+          <View style={styles.advisoryContainer}>
+            <MaterialIcon name="info-outline" size={16} color={theme.colors.primary} />
+            <Text style={styles.advisoryText}>
+              Please tap "Verify" on Battery to confirm it shows "Unrestricted" before starting.
+            </Text>
           </View>
         )}
         <CustomButton
@@ -278,6 +340,12 @@ const styles = StyleSheet.create({
   buttonGranted: {
     backgroundColor: theme.colors.success,
   },
+  // FIX #3: New style for the battery "Verify" button — distinct from both
+  // "Allow" (pending) and the locked green checkmark (fully granted).
+  buttonVerify: {
+    backgroundColor: theme.colors.primary,
+    opacity: 0.75,
+  },
   buttonText: {
     color: theme.colors.white,
     fontFamily: theme.typography.primary,
@@ -301,5 +369,18 @@ const styles = StyleSheet.create({
     fontFamily: theme.typography.primary,
     fontSize: theme.typography.sizes.xs,
     color: theme.colors.error,
+  },
+  advisoryContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: theme.spacing.md,
+    gap: 4,
+  },
+  advisoryText: {
+    fontFamily: theme.typography.primary,
+    fontSize: theme.typography.sizes.xs,
+    color: theme.colors.primary,
+    flex: 1,
   },
 });

@@ -16,7 +16,7 @@ import { SilentZoneManager, silentZoneManager } from './SilentZoneManager';
 
 /**
  * LocationService - The "Brain" of Silent Zone.
- * 
+ *
  * Implements a "Self-Perpetuating Chain" logic (Native Alarm Style).
  * Each alarm trigger performs its task and immediately schedules the NEXT one.
  */
@@ -30,7 +30,7 @@ class LocationService {
   /**
    * Initialize the service with the active database instance.
    * Restores the engine state and seeds initial alarms.
-   * 
+   *
    * @param realmInstance The active Realm database instance
    */
   async initialize(realmInstance: Realm) {
@@ -50,14 +50,14 @@ class LocationService {
     }
 
     this.isInitializing = true;
-    
+
     try {
       console.log('[LocationService] Engine initialization started...');
       this.realm = realmInstance;
-      
+
       // Ensure manager has the realm immediately
       silentZoneManager.setRealm(realmInstance);
-      
+
       if (Platform.OS === 'android') {
         Logger.info('[LocationService] Setting up notification channels...');
         await notificationManager.createNotificationChannels();
@@ -69,7 +69,7 @@ class LocationService {
       // Initial boot sync
       Logger.info('[LocationService] Performing initial dependency sync...');
       await this.refreshAllWatchers();
-      
+
       this.isReady = true;
       Logger.info('[LocationService] Engine Initialized Successfully ✅');
     } catch (error) {
@@ -81,27 +81,27 @@ class LocationService {
     }
   }
 
-/**
- * Public check: Is the engine currently in the middle of initializing?
- * Used by PermissionsContext to avoid duplicate concurrent init calls.
- */
-isCurrentlyInitializing(): boolean {
-  return this.isInitializing;
-}
-
-/**
- * Set the realm reference without triggering a full initialization.
- * Used during first-time onboarding when there are no places to sync yet.
- */
-setRealmReference(realmInstance: Realm) {
-  this.realm = realmInstance;
-  try {
-    silentZoneManager.setRealm(realmInstance);
-  } catch (e) {
-    Logger.error('[LocationService] Failed to set realm on manager:', e);
+  /**
+   * Public check: Is the engine currently in the middle of initializing?
+   * Used by PermissionsContext to avoid duplicate concurrent init calls.
+   */
+  isCurrentlyInitializing(): boolean {
+    return this.isInitializing;
   }
-  console.log('[LocationService] Realm reference set (deferred init).');
-}
+
+  /**
+   * Set the realm reference without triggering a full initialization.
+   * Used during first-time onboarding when there are no places to sync yet.
+   */
+  setRealmReference(realmInstance: Realm) {
+    this.realm = realmInstance;
+    try {
+      silentZoneManager.setRealm(realmInstance);
+    } catch (e) {
+      Logger.error('[LocationService] Failed to set realm on manager:', e);
+    }
+    console.log('[LocationService] Realm reference set (deferred init).');
+  }
 
   /**
    * Emergency cleanup called during JS crashes to restore phone state
@@ -110,8 +110,6 @@ setRealmReference(realmInstance: Realm) {
     try {
       console.log('[LocationService] EMERGENCY CLEANUP INITIATED');
 
-      // FIX #6: Set realm only once, via the top-level import (not a duplicate require).
-      // Also guard against null before passing it in.
       if (this.realm && !this.realm.isClosed) {
         silentZoneManager.setRealm(this.realm);
         CheckInService.closeAllCheckIns(this.realm);
@@ -129,8 +127,6 @@ setRealmReference(realmInstance: Realm) {
    * Validates Realm is open and not closed before proceeding.
    */
   async initializeLight(realmInstance: Realm) {
-    // FIX #3: Guard the spin-wait with a 5-second timeout so we can never
-    // loop forever if isInitializing gets stuck (e.g. after a hard process kill).
     if (this.isInitializing) {
       const MAX_WAIT_MS = 5000;
       const start = Date.now();
@@ -166,12 +162,7 @@ setRealmReference(realmInstance: Realm) {
   }
 
   /**
-   * Main Sync: Ensures the "First Link" in the chain is set for all places.
-   * Can be used for a global reset or for specific updated places.
-   */
-  /**
    * EVENT HANDLER: Place Added
-   * Called explicitly by AddPlaceScreen
    */
   async onPlaceAdded(place: any) {
     if (!this.realm) return;
@@ -182,24 +173,22 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * EVENT HANDLER: Place Updated
-   * Called explicitly by EditPlaceScreen
    */
   async onPlaceUpdated(place: any) {
     if (!this.realm) return;
     Logger.info(`[Event] Place Updated: ${place.name}`);
-    
+
     // 1. Always cancel existing alarms first (in case schedules were removed)
     await alarmService.cancelAlarmsForPlace(place.id as string);
 
     // 2. Seed new alarms if applicable
     await this.seedNextAlarmForPlace(place);
-    
+
     await this.refreshMonitoringState();
   }
 
   /**
    * EVENT HANDLER: Place Deleted
-   * Called explicitly by HomeScreen
    */
   async onPlaceDeleted(placeId: string) {
     if (!this.realm) return;
@@ -210,12 +199,11 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * EVENT HANDLER: Place Toggled
-   * Called explicitly by HomeScreen
    */
   async onPlaceToggled(placeId: string, isEnabled: boolean) {
     if (!this.realm) return;
     Logger.info(`[Event] Place Toggled: ${placeId} -> ${isEnabled}`);
-    
+
     if (isEnabled) {
       const place = PlaceService.getPlaceById(this.realm, placeId);
       if (place) await this.seedNextAlarmForPlace(place);
@@ -231,12 +219,11 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * EVENT HANDLER: Global Tracking Toggled
-   * Called explicitly by HomeScreen
    */
   async onGlobalTrackingChanged(enabled: boolean) {
     if (!this.realm) return;
     Logger.info(`[Event] Global Tracking Changed -> ${enabled}`);
-    
+
     if (!enabled) {
       await this.purgeAllAlarms();
       await this.stopMonitoring();
@@ -251,7 +238,7 @@ setRealmReference(realmInstance: Realm) {
    */
   async refreshAllWatchers() {
     if (!this.realm || this.realm.isClosed) return;
-    
+
     try {
       const prefs = PreferencesService.getPreferences(this.realm);
       const trackingEnabled = prefs?.trackingEnabled ?? true;
@@ -287,7 +274,7 @@ setRealmReference(realmInstance: Realm) {
 
     // Get all upcoming schedule windows (Yesterday, Today, Tomorrow)
     const { upcomingSchedules } = ScheduleManager.categorizeBySchedule([place]);
-    
+
     const startId = `place-${place.id}-start`;
     const endId = `place-${place.id}-end`;
 
@@ -300,17 +287,11 @@ setRealmReference(realmInstance: Realm) {
 
       let finalTrigger: number | null = null;
 
-      // Rule: If warmup is in future, use it. 
-      // Else if last chance is in future, use that as backup.
-      // Else if start is IMMINENT (less than 2 mins), schedule an ASAP alarm (now + 5s)
-      // to bypass Android background service start restrictions.
       if (warmUpTime > Date.now() + 60000) {
         finalTrigger = warmUpTime;
-        Logger.info(`[LocationService] Setting warmup alarm for ${place.name} at T-15`);
-      } else if (lastChanceTime > Date.now() + 30000) {
+      } else if (lastChanceTime > Date.now() + 10000) {
         finalTrigger = lastChanceTime;
-        Logger.info(`[LocationService] ${place.name} warmup passed, scheduling T-1 safety alarm`);
-      } else if (startTime > Date.now() + 10000) {
+      } else if (startTime > Date.now() + 5000 && !this.geofencesActive) {
         finalTrigger = Date.now() + 5000;
         Logger.info(`[LocationService] ${place.name} start imminent, scheduling immediate (T+5s) backup alarm`);
       }
@@ -320,9 +301,10 @@ setRealmReference(realmInstance: Realm) {
       }
     }
 
-    // 2. Find the first END trigger that is still in the FUTURE
+    // 2. Find the first END trigger that is still in the FUTURE (relaxed to 10s)
     const nextTriggerableEnd = upcomingSchedules.find(s => {
-      return s.endTime.getTime() > Date.now() + 60000;
+      const timeToRoll = s.endTime.getTime() - Date.now();
+      return timeToRoll > 10000; // 10 seconds minimum
     });
 
     if (nextTriggerableEnd) {
@@ -334,8 +316,6 @@ setRealmReference(realmInstance: Realm) {
   /**
    * Core logic for when an OS alarm fires.
    * Performs Phase 1 (Immediate Reschedule) and Phase 2 (Execution).
-   * 
-   * @param data The background event data containing notification details
    */
   async handleAlarmFired(data: any) {
     const alarmId = data?.notification?.id;
@@ -367,19 +347,24 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * Handles the 'START_SILENCE' action: Activates GPS and verifies location.
-   * 
-   * @param place The Place object to monitor
    */
   private async handleStartAction(place: any) {
     Logger.info(`[Engine] 📍 Starting monitoring for ${place.name}`);
-    
+
     // 1. Activate Foreground Service & GPS
     await this.startMonitoring();
-    
+
     // 2. Immediate check: Are we already there?
     const deadline = this.calculateDeadlineForPlace(place.id);
+
+    // FIX: Wrap processLocationUpdate in .catch() so any throw inside it
+    // (Realm conflict, null ref, etc.) is caught and logged instead of
+    // silently swallowing the entire check-in on alarm fire.
+    // This is the most critical GPS callback — it must never fail silently.
     await gpsManager.forceLocationCheck(
-      (loc) => this.processLocationUpdate(loc),
+      (loc) => this.processLocationUpdate(loc).catch(err =>
+        Logger.error('[GPS] handleStartAction processLocationUpdate failed:', err)
+      ),
       (err) => Logger.error('[GPS] Start check failed:', err),
       1, 2, deadline
     );
@@ -387,15 +372,13 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * Handles the 'STOP_SILENCE' action: Restores sound and refreshes monitoring.
-   * 
-   * @param placeId ID of the place to stop
    */
   private async handleStopAction(placeId: string) {
-    Logger.info(`[Engine] 扫 Cleaning up for ${placeId}`);
-    
+    Logger.info(`[Engine] 🧹 Cleaning up for ${placeId}`);
+
     // 1. Restore sound if checked in
     await silentZoneManager.handleExit(placeId, true);
-    
+
     // 2. Refresh monitoring state (Stop GPS if no other active zones)
     await this.refreshMonitoringState();
   }
@@ -415,15 +398,14 @@ setRealmReference(realmInstance: Realm) {
       Logger.info(`[LocationService] Active zones: ${activePlaces.map(p => p.name).join(', ')}`);
     }
 
-    const needsMonitoring = activePlaces.length > 0 || 
+    const needsMonitoring = activePlaces.length > 0 ||
       (upcomingSchedules.length > 0 && upcomingSchedules[0].minutesUntilStart <= CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES);
 
     if (needsMonitoring) {
       Logger.info('[LocationService] Monitoring needs active. Starting service...');
       await this.startMonitoring();
-      
+
       // PROACTIVE: If we have active zones, force an immediate check to catch entries
-      // This is critical if the app starts while ALREADY inside a zone.
       if (activePlaces.length > 0) {
         Logger.info('[LocationService] Proactive check initiated for active zones');
         this.forceLocationCheck().catch(err => {
@@ -448,7 +430,7 @@ setRealmReference(realmInstance: Realm) {
 
     // SURGICAL SYNC: If already active, we don't restart GPS, but we still force sync geofences/notifications.
     const isAlreadyWatching = this.geofencesActive && gpsManager.isWatching();
-    
+
     if (isAlreadyWatching) {
         Logger.info('[Service] Surgical Sync: Refreshing geofences without restarting GPS');
     } else {
@@ -460,8 +442,7 @@ setRealmReference(realmInstance: Realm) {
       if (!isAlreadyWatching) {
           await gpsManager.startWatching(
             (loc) => {
-              // FIX #4: The GPS callback fires frequently. Wrap in .catch() so any
-              // throw inside processLocationUpdate (Realm conflict, null ref, etc.)
+              // Wrap in .catch() so any throw inside processLocationUpdate
               // never becomes a fatal unhandled promise rejection.
               this.processLocationUpdate(loc).catch(err =>
                 Logger.error('[GPS] processLocationUpdate unhandled error:', err)
@@ -470,7 +451,7 @@ setRealmReference(realmInstance: Realm) {
             (err) => Logger.error('[GPS] Watcher error:', err)
           );
       }
-      
+
       // Sync native geofences as a secondary layer
       await this.syncNativeGeofences();
       await this.updateForegroundService();
@@ -498,7 +479,7 @@ setRealmReference(realmInstance: Realm) {
   private async syncNativeGeofences() {
     if (!this.realm) return;
     await Geofencing.removeAllGeofence();
-    
+
     const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm));
     for (const place of enabledPlaces) {
       await Geofencing.addGeofence({
@@ -512,8 +493,6 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * Processes a GPS location update. Handles zone entries and exits.
-   * 
-   * @param location The GPS coordinates and accuracy data
    */
   private async processLocationUpdate(location: any) {
     if (!this.realm) return;
@@ -521,8 +500,7 @@ setRealmReference(realmInstance: Realm) {
     // 1. Determine which zones we are INSIDE
     const insideIds = LocationValidator.determineInsidePlaces(location, this.realm);
 
-    // FIX: Time-Based Expiry Check
-    // Before processing entries, ensure we aren't stuck in a session that should have ended.
+    // Time-Based Expiry Check: ensure we aren't stuck in a session that should have ended.
     await this.checkSessionExpiry();
 
     // 2. Handle Entries
@@ -533,9 +511,6 @@ setRealmReference(realmInstance: Realm) {
     }
 
     // 3. Handle Exits for active zones
-    // FIX #5: Use .snapshot() instead of Array.from() to get a stable copy
-    // without the overhead of Array.from on every GPS tick. snapshot() is the
-    // Realm-idiomatic way to get a frozen-in-time copy of a Results collection.
     const activeLogs = CheckInService.getActiveCheckIns(this.realm).snapshot();
     for (const log of activeLogs) {
       const placeId = log.placeId as string;
@@ -544,8 +519,8 @@ setRealmReference(realmInstance: Realm) {
         const place = PlaceService.getPlaceById(this.realm, placeId);
         if (place) {
           const isDefinitelyOutside = LocationValidator.isOutsidePlace(
-            location, 
-            place, 
+            location,
+            place,
             CONFIG.EXIT_HYSTERESIS_METERS || 20
           );
 
@@ -560,8 +535,6 @@ setRealmReference(realmInstance: Realm) {
   /**
    * Handles a geofence entry event (either from GPS manager or native geofence).
    * Verifies if the entry is within a valid schedule window before activating silence.
-   * 
-   * @param placeId ID of the place entered
    */
   async handleGeofenceEntry(placeId: string) {
     if (!this.realm) return;
@@ -571,13 +544,16 @@ setRealmReference(realmInstance: Realm) {
     // Check if we are within the schedule window for this place
     const schedule = ScheduleManager.getCurrentOrNextSchedule(place);
     const now = Date.now();
-    
-    Logger.info(`[LocationService] Verifying entry for ${place.name}: ` +
-                `schedule=${schedule ? schedule.startTime.toLocaleTimeString() : 'None'}`);
 
     // Allow activation slightly early for smooth flow (e.g. 1 minute before)
-    const startBuffer = 60 * 1000; 
-    if (schedule && now >= schedule.startTime.getTime() - startBuffer && now < schedule.endTime.getTime()) {
+    const startBuffer = 60 * 1000;
+    const isInsideWindow = schedule && now >= schedule.startTime.getTime() - startBuffer && now < schedule.endTime.getTime();
+
+    Logger.info(`[LocationService] Verifying entry for ${place.name}: ` +
+                `schedule=${schedule ? schedule.startTime.toLocaleTimeString() : 'None'}, ` +
+                `isInsideWindow=${isInsideWindow}`);
+
+    if (isInsideWindow && schedule) {
       Logger.info(`[LocationService] Window matched for ${place.name}. Activating silence.`);
       await silentZoneManager.activateSilentZone(place);
       await this.updateForegroundService();
@@ -593,8 +569,6 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * Handles a geofence exit event: Restores sound and updates status.
-   * 
-   * @param placeId ID of the place exited
    */
   async handleGeofenceExit(placeId: string) {
     await silentZoneManager.handleExit(placeId);
@@ -602,20 +576,19 @@ setRealmReference(realmInstance: Realm) {
   }
 
   /**
-   * Updates the foreground service notification text and icon
-   * based on the number of enabled places and active sessions.
+   * Updates the foreground service notification text and icon.
    */
   private async updateForegroundService() {
     if (!this.realm) return;
     const enabledCount = PlaceService.getEnabledPlaces(this.realm).length;
     const activeCheckIns = Array.from(CheckInService.getActiveCheckIns(this.realm));
-    const activeName = activeCheckIns.length > 0 
-      ? (PlaceService.getPlaceById(this.realm, activeCheckIns[0].placeId as string) as any)?.name 
+    const activeName = activeCheckIns.length > 0
+      ? (PlaceService.getPlaceById(this.realm, activeCheckIns[0].placeId as string) as any)?.name
       : null;
 
     await notificationManager.startForegroundService(
       enabledCount,
-      [], // upcoming not needed for status
+      [],
       activeName,
       activeCheckIns.length > 0
     );
@@ -623,7 +596,6 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * Public API: Purges all scheduled alarms for all places.
-   * Used for global cleanup when tracking is disabled or permissions revoked.
    */
   async purgeAllAlarms() {
     if (!this.realm || this.realm.isClosed) return;
@@ -631,15 +603,12 @@ setRealmReference(realmInstance: Realm) {
     for (const p of all) await alarmService.cancelAlarmsForPlace((p as any).id);
   }
 
-
   /**
    * Public API: Force a location check immediately.
-   * Useful for UI buttons or after manual place updates.
    */
   async forceLocationCheck(): Promise<void> {
     return gpsManager.forceLocationCheck(
       (location) => {
-        // FIX #4 (applied here too): always catch the async callback promise
         this.processLocationUpdate(location).catch(err =>
           Logger.error('[GPS] forceLocationCheck processLocationUpdate failed:', err)
         );
@@ -651,10 +620,6 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * Helper to find the end time of the current or next schedule for a place.
-   * Used as a timeout for GPS monitoring.
-   * 
-   * @param placeId ID of the place
-   * @returns Timestamp of the schedule end, or undefined
    */
   private calculateDeadlineForPlace(placeId: string): number | undefined {
     if (!this.realm) return undefined;
@@ -665,7 +630,6 @@ setRealmReference(realmInstance: Realm) {
 
   /**
    * Safety Net: Checks if any active sessions have exceeded their schedule end time.
-   * Forces a checkout if we are past the end time (+ optional buffer).
    */
   private async checkSessionExpiry() {
     if (!this.realm) return;
@@ -677,17 +641,9 @@ setRealmReference(realmInstance: Realm) {
     for (const log of activeCheckIns) {
       const placeId = log.placeId as string;
       const place = PlaceService.getPlaceById(this.realm, placeId);
-      
+
       if (!place) continue;
 
-      // Find the schedule that supposedly triggered this (or a current one)
-      const currentSchedule = ScheduleManager.getCurrentOrNextSchedule(place);
-      
-      // If we have a current schedule, check if it has ended
-      // Note: getCurrentOrNextSchedule returns null if we are NOT in a schedule window.
-      // So if it returns null, or if the returned schedule is in the future, we should probably be out.
-      
-      // Simpler approach: Check if we are strictly OUTSIDE valid hours.
       const isCurrentlyValid = ScheduleManager.isCurrentScheduleActive(place);
 
       if (!isCurrentlyValid) {

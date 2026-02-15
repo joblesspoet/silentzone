@@ -145,6 +145,7 @@ AppRegistry.registerHeadlessTask('onGeofenceTransition', () => async (taskData) 
     const realm = await getRealm();
     await locationService.initializeLight(realm);
     
+    Logger.info(`[Dispatcher] 🌎 Geofence Event: ${taskData.event} ${taskData.ids}`);
     if (taskData.event === 'onEnter' || taskData.event === 'ENTER') {
       for (const id of taskData.ids) {
         try { await locationService.handleGeofenceEntry(id); } catch (e) {}

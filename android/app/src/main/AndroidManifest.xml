@@ -11,9 +11,14 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-      <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-      <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-      <uses-permission android:name="android.permission.ACTION_MANAGE_OVERLAY_PERMISSION" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!--
+        REMOVED: android.permission.ACTION_MANAGE_OVERLAY_PERMISSION
+        This is NOT a permission — it is an Intent action string.
+        Declaring it here does absolutely nothing. SYSTEM_ALERT_WINDOW
+        (above) is the actual permission for overlay access.
+    -->
 
     <application
       android:name=".MainApplication"
@@ -26,11 +31,11 @@
       android:enableOnBackInvokedCallback="false"
       android:supportsRtl="true">
 
-      <!-- Google Maps API Key - Required for MapView to function -->
+      <!-- Google Maps API Key -->
       <meta-data
         android:name="com.google.android.geo.API_KEY"
         android:value="${googleMapsApiKey}" />
-      
+
       <activity
         android:name=".MainActivity"
         android:label="@string/app_name"
@@ -45,7 +50,7 @@
         </intent-filter>
       </activity>
 
-      <!-- Android 14 Foreground Service Type Declaration -->
+      <!-- Notifee Foreground Service — keeps GPS running when app is in background -->
       <service
         android:name="app.notifee.core.ForegroundService"
         android:foregroundServiceType="location"
@@ -53,35 +58,89 @@
         android:stopWithTask="false"
         android:enabled="true" />
 
-      <!-- React Native Headless JS Task Service - Required for background execution -->
+      <!--
+        FIX #1: Added foregroundServiceType="location" to HeadlessJsTaskService.
+
+        On Android 14+, any service that accesses location — even indirectly through
+        a headless task — MUST declare its foreground service type. Without this,
+        Android 14 kills the geofence headless tasks (onGeofenceTransition,
+        BootRescheduleTask) the moment they try to read GPS data, with a silent
+        ForegroundServiceStartNotAllowedException. This is why geofence entry/exit
+        events were firing but location was never obtained in headless context.
+      -->
       <service
         android:name="com.facebook.react.HeadlessJsTaskService"
+        android:foregroundServiceType="location"
         android:enabled="true"
         android:exported="false" />
 
-      <!-- Boot Reschedule Service - Custom Headless Task for reboot recovery -->
+      <!-- Boot Reschedule Service -->
       <service
         android:name=".BootRescheduleService"
         android:enabled="true"
         android:exported="false"
         android:foregroundServiceType="location" />
 
-      <!-- Alarm Receiver - Ensures alarms wake up the app even when killed -->
+      <!-- Notifee Alarm Receiver -->
       <receiver
         android:name="app.notifee.core.AlarmReceiver"
         android:enabled="true"
         android:exported="false" />
 
-      <!-- Boot Receiver to reschedule alarms after device reboot -->
+      <!--
+        FIX #2: Removed android:permission="android.permission.RECEIVE_BOOT_COMPLETED"
+        from this receiver.
+
+        The android:permission attribute on a <receiver> means: "only callers who
+        HOLD this permission may send broadcasts to this receiver." It does NOT mean
+        "this receiver requires this permission to run." 
+
+        Effect of the old declaration: you were accidentally restricting who could
+        trigger your boot receiver to only callers that hold RECEIVE_BOOT_COMPLETED.
+        While the Android system itself holds all permissions and still delivers
+        BOOT_COMPLETED, many OEM boot managers (Samsung, Xiaomi, MIUI) and 
+        third-party recovery tools send their own quick-boot variants from processes
+        that do NOT hold RECEIVE_BOOT_COMPLETED. This silently blocked your boot
+        receiver from firing on those devices after a soft reboot.
+
+        The uses-permission at the top of the manifest is all you need to declare
+        that your app wants to receive boot broadcasts.
+
+        FIX #3: Added android:directBootAware="true".
+
+        When a device restarts, Android fires BOOT_COMPLETED in two phases:
+          Phase 1 (Direct Boot): Fires immediately after kernel boots, BEFORE the
+                                 user unlocks the screen. Only direct-boot-aware
+                                 components receive it.
+          Phase 2 (Full Boot):   Fires after the user unlocks (credential storage
+                                 available). This is the standard BOOT_COMPLETED.
+
+        Without directBootAware="true", your BootReceiver only receives Phase 2.
+        On devices with aggressive Doze (Pixel, Samsung with lockscreen delay), 
+        the window between Phase 1 and Phase 2 can be many minutes. During that
+        window all your alarms are gone and nothing reschedules them.
+
+        Note: Your BootRescheduleTask accesses Realm (credential-encrypted storage),
+        so the task itself must handle the case where Realm isn't yet available
+        (it already does via the try/catch in getRealm()). The receiver simply
+        starts the reschedule process — Realm will open fine once Phase 2 is reached.
+      -->
       <receiver
         android:name=".BootReceiver"
         android:enabled="true"
         android:exported="true"
-        android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+        android:directBootAware="true">
         <intent-filter>
           <action android:name="android.intent.action.BOOT_COMPLETED" />
           <action android:name="android.intent.action.QUICKBOOT_POWERON" />
           <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+          <!--
+            FIX #3 (cont): Also listen for ACTION_LOCKED_BOOT_COMPLETED.
+            This is the explicit Direct Boot broadcast. Registering for it
+            ensures your receiver fires in Phase 1 even if the device OEM
+            delays the standard BOOT_COMPLETED until after unlock.
+          -->
+          <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
         </intent-filter>
       </receiver>
 

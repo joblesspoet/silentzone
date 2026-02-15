@@ -50,12 +50,14 @@ export class GPSManager {
 
     this.onLocationUpdate = onLocation;
     this.onError = onError;
+
+    // FIX #1: Call stopWatching() BEFORE setting _watchActive = true.
+    // Previously stopWatching() was called AFTER, which immediately set
+    // _watchActive back to false for the entire session — killing the
+    // watchdog and all verification retries silently.
+    this.stopWatching();
     this._watchActive = true;
 
-    // Clear any existing watchers
-    this.stopWatching();
-
-    // ✅ Add user feedback before waiting
     Logger.info(`[GPSManager] 📡 Acquiring GPS signal... (req=${currentRequestId})`);
 
     // Reset watchdog timestamp
@@ -76,7 +78,7 @@ export class GPSManager {
         distanceFilter: CONFIG.DISTANCE.VERY_CLOSE / 2,
         interval: 10000,
         fastestInterval: 5000,
-        showLocationDialog: true, // ✅ Enable dialog
+        showLocationDialog: true,
         forceRequestLocation: true,
         ...config,
     };
@@ -153,7 +155,7 @@ export class GPSManager {
                     timestamp: pos.timestamp,
                 };
                 Logger.info(`[GPSManager] Quick Network fix acquired: ±${Math.round(loc.accuracy)}m`);
-                // Only provide if it passes basic quality (e.g. < 200m)
+                // Only provide if it passes basic quality
                 if (loc.accuracy < CONFIG.MAX_ACCEPTABLE_ACCURACY) {
                     onLocation(loc);
                 }
@@ -172,14 +174,23 @@ export class GPSManager {
             accuracy: position.coords.accuracy,
             timestamp: position.timestamp,
           };
-          
+
+          // FIX #2: Apply the same accuracy filter to the high-accuracy path.
+          // Previously this path had NO filter, so a cold/inaccurate fix (500m+)
+          // would go straight into processLocationUpdate and cause false check-ins.
+          if (location.accuracy >= CONFIG.MAX_ACCEPTABLE_ACCURACY) {
+            Logger.warn(`[GPSManager] Immediate fix accuracy too poor (±${Math.round(location.accuracy)}m), skipping`);
+            return;
+          }
+
           this.lastKnownLocation = location;
           if (this.verificationTimeout) {
             clearTimeout(this.verificationTimeout);
             this.verificationTimeout = null;
           }
           this.stopFallbackPolling();
-          
+
+          Logger.info(`[GPSManager] Immediate fix acquired: ±${Math.round(location.accuracy)}m`);
           onLocation(location);
         } catch (error) {
           Logger.error('[GPSManager] Error processing immediate location:', error);
@@ -202,7 +213,7 @@ export class GPSManager {
     attemptNumber: number = 1,
     maxAttempts: number = 5,
     deadline?: number,
-    useHighAccuracy: boolean = true // ✅ Added parameter
+    useHighAccuracy: boolean = true
   ): Promise<void> {
     if (attemptNumber > 1 && deadline && Date.now() > deadline) {
       Logger.warn('[GPSManager] Force location check cancelled - Deadline passed');
@@ -223,14 +234,14 @@ export class GPSManager {
               accuracy: position.coords.accuracy,
               timestamp: position.timestamp,
             };
-            
+
             this.lastKnownLocation = location;
             if (this.verificationTimeout) {
               clearTimeout(this.verificationTimeout);
               this.verificationTimeout = null;
             }
             this.stopFallbackPolling();
-            
+
             Logger.info(`[GPSManager] Forced location acquired on attempt ${attemptNumber}`);
             onLocation(location);
             resolve();
@@ -239,7 +250,7 @@ export class GPSManager {
             resolve();
           }
         },
-          async (error) => {
+        async (error) => {
           Logger.error(`[GPSManager] Attempt ${attemptNumber} failed:`, error);
 
           if (attemptNumber < maxAttempts) {
@@ -250,26 +261,26 @@ export class GPSManager {
             }
 
             Logger.info(`[GPSManager] Retrying location check...`);
-            
-            // ✅ FALLBACK STRATEGY: 
-            // If high accuracy failed, try balanced power (Network/WiFi) for the next attempt
-            // This answers the user's need for "alternative lat long"
-            const useHighAccuracy = attemptNumber % 2 !== 0; // Alternate strategies
-            
-            if (!useHighAccuracy) {
+
+            // FIX #3: Renamed local variable from `useHighAccuracy` to `nextUseHighAccuracy`
+            // to avoid shadowing the outer parameter. Previously the outer `useHighAccuracy`
+            // was only respected on attempt #1 — all retries ignored the caller's intent
+            // because the local `const useHighAccuracy` overwrote it in scope.
+            const nextUseHighAccuracy = attemptNumber % 2 !== 0; // Alternate strategies
+
+            if (!nextUseHighAccuracy) {
                 Logger.info('[GPSManager] ⚠️ Switching to NETWORK/WIFI location (High Accuracy OFF)');
             }
 
             await new Promise<void>(r => setTimeout(() => r(), 1000));
-            
-            // Recursive call with modified config
+
             await this.forceLocationCheck(
-                onLocation, 
-                onError, 
-                attemptNumber + 1, 
-                maxAttempts, 
-                deadline, 
-                useHighAccuracy // Pass this down
+                onLocation,
+                onError,
+                attemptNumber + 1,
+                maxAttempts,
+                deadline,
+                nextUseHighAccuracy // FIX #3: use the renamed variable
             );
             resolve();
           } else {
@@ -280,7 +291,7 @@ export class GPSManager {
           }
         },
         {
-          enableHighAccuracy: useHighAccuracy, // Use the strategy
+          enableHighAccuracy: useHighAccuracy,
           timeout,
           maximumAge: 30000,
         }
@@ -297,7 +308,7 @@ export class GPSManager {
       return;
     }
 
-    const timeoutDuration = attemptNumber === 1 ? 40000 : 75000; // Loosened from 30/60
+    const timeoutDuration = attemptNumber === 1 ? 40000 : 75000;
 
     Logger.info(`[GPSManager] GPS verification attempt ${attemptNumber}/${maxAttempts} (${timeoutDuration / 1000}s timeout)`);
 
@@ -374,13 +385,20 @@ export class GPSManager {
       );
     };
 
+    // FIX #4: Run the first poll immediately, then start the interval.
+    // Previously pollGPS() was called before the interval AND again inside
+    // the interval's first tick during the fast→slow switch, causing poll #7
+    // to fire twice back-to-back (wasting battery and a GPS request).
     pollGPS();
 
     this.fallbackPolling = setInterval(() => {
+      // FIX #4 (cont): Check BEFORE calling pollGPS so we don't fire an extra
+      // poll at the exact tick of the fast→slow transition.
       if (this.pollCount >= maxFastPolls && this.fallbackPolling) {
         clearInterval(this.fallbackPolling);
         Logger.info('[GPSManager] Switching to slower polling (30s interval)');
         this.fallbackPolling = setInterval(pollGPS, 30000);
+        return; // Don't fire pollGPS here — the new interval handles it
       }
       pollGPS();
     }, 15000);
@@ -422,7 +440,7 @@ export class GPSManager {
    */
   private startWatchdog(onLocation: LocationCallback, onError: LocationErrorCallback) {
     this.stopWatchdog(); // Ensure only one exists
-    
+
     // Check every 2 minutes
     this.watchdogInterval = setInterval(() => {
         if (!this._watchActive) return;
@@ -432,16 +450,15 @@ export class GPSManager {
 
         if (diff > CONFIG.GPS_WATCHDOG_THRESHOLD) {
             Logger.warn(`[GPSManager] ⚠️ WATCHDOG: No GPS update for ${Math.round(diff / 1000)}s. Kicking driver...`);
-            
-            // Re-trigger watch by calling internal restart
-            this.forceLocationCheck(onLocation, onError, 1, 1).catch(e => 
+
+            this.forceLocationCheck(onLocation, onError, 1, 1).catch(e =>
                 Logger.error('[GPSManager] Watchdog kick failed:', e)
             );
 
             // Update timestamp so we don't kick repeatedly too fast
             this.lastUpdateTimestamp = now;
         }
-    }, 120 * 1000); // Check every 2 minutes
+    }, 120 * 1000);
   }
 
   private stopWatchdog() {
