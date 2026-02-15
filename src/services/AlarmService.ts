@@ -64,7 +64,7 @@ class AlarmService {
         timestamp,
         alarmManager: {
           allowWhileIdle: true,
-          type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE,
+          type: AlarmType.SET_ALARM_CLOCK,
         },
       };
 

@@ -61,16 +61,20 @@ const AppContent = () => {
     );
 };
 
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 function App(): React.JSX.Element {
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.light} />
-      <RealmProvider>
-        <PermissionsProvider>
-          <AppContent />
-        </PermissionsProvider>
-      </RealmProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar barStyle="dark-content" backgroundColor={theme.colors.background.light} />
+        <RealmProvider>
+          <PermissionsProvider>
+            <AppContent />
+          </PermissionsProvider>
+        </RealmProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 };
 

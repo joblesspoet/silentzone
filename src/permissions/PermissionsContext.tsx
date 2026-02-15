@@ -142,17 +142,17 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
         } else if (!hadAllPermissions && hasAllNow) {
           const isComplete = PreferencesService.isOnboardingComplete(realm);
           if (isComplete) {
-            console.log('[PermissionsContext] All permissions granted! Initializing engine.');
-            try {
-              // FIX #2: Call initialize() NOT syncGeofences().
-              //
-              // syncGeofences() skips createNotificationChannels(). On Android, attempting
-              // to post a notification (foreground service start) before channels exist
-              // throws a fatal exception. initialize() creates the channels first, then
-              // internally calls syncGeofences() — correct order guaranteed.
-              await locationService.initialize(realm);
-            } catch (e) {
-              console.warn('[PermissionsContext] Failed to initialize location engine:', e);
+            // Guard: Don't double-initialize if engine is already starting
+            // (e.g. UnifiedPermissionScreen.handleStart() already called initialize())
+            if (locationService.isCurrentlyInitializing()) {
+              console.log('[PermissionsContext] Engine already initializing, skipping duplicate init.');
+            } else {
+              console.log('[PermissionsContext] All permissions granted! Initializing engine.');
+              try {
+                await locationService.initialize(realm);
+              } catch (e) {
+                console.warn('[PermissionsContext] Failed to initialize location engine:', e);
+              }
             }
           } else {
             console.log('[PermissionsContext] All permissions granted, postponing init until onboarding finishes.');

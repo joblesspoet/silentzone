@@ -56,8 +56,17 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     try {
       const activeCheckIns = CheckInService.getActiveCheckIns(realm);
       // Verify CheckInService returned a valid collection before mapping
-      if (!activeCheckIns) return new Set<string>();
-      return new Set(Array.from(activeCheckIns).map((c: any) => c.placeId as string));
+      if (!activeCheckIns || typeof activeCheckIns.map !== 'function') {
+        return new Set<string>();
+      }
+      
+      // Use map safely and filter out any invalid/missing placeIds
+      const ids = Array.from(activeCheckIns)
+        .filter((c: any) => c && c.isValid && c.isValid())
+        .map((c: any) => c.placeId as string)
+        .filter(id => !!id);
+        
+      return new Set(ids);
     } catch (e) {
       console.warn('[HomeScreen] Safe-guard: Failed to get active check-ins:', e);
       return new Set<string>();
@@ -103,8 +112,10 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       try {
         // Double check collection validity
         if (collection && !realm.isClosed) {
-          setPlaces([...collection]);
-          const currentActive = collection.filter((p: any) => p.isEnabled).length;
+          // Verify objects are still valid before spreading
+          const validPlaces = Array.from(collection).filter((p: any) => p && p.isValid && p.isValid());
+          setPlaces([...validPlaces]);
+          const currentActive = validPlaces.filter((p: any) => p.isEnabled).length;
           setActiveCount(currentActive);
         }
       } catch (e) {
@@ -175,7 +186,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   // Separate effect for auto-pause logic (avoids listener conflicts)
   useEffect(() => {
-    if (activeCount === 0 && trackingEnabled && !isInitialLoad) {
+    if (activeCount === 0 && trackingEnabled && !isInitialLoad && places.length > 0) {
       console.log('[HomeScreen] No active places, auto-pausing tracking');
       PreferencesService.deferredUpdatePreferences(realm, {
         trackingEnabled: false,

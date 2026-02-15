@@ -142,6 +142,27 @@ export class GPSManager {
     onError: LocationErrorCallback,
     useHighAccuracy: boolean = true
   ): void {
+    // Proactive: Also try a quick network check in parallel if high accuracy might be slow
+    if (useHighAccuracy) {
+        Geolocation.getCurrentPosition(
+            (pos) => {
+                const loc: LocationState = {
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy,
+                    timestamp: pos.timestamp,
+                };
+                Logger.info(`[GPSManager] Quick Network fix acquired: ±${Math.round(loc.accuracy)}m`);
+                // Only provide if it passes basic quality (e.g. < 200m)
+                if (loc.accuracy < CONFIG.MAX_ACCEPTABLE_ACCURACY) {
+                    onLocation(loc);
+                }
+            },
+            () => {}, // Silent fail for network fallback
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
+        );
+    }
+
     Geolocation.getCurrentPosition(
       async (position) => {
         try {
@@ -164,8 +185,11 @@ export class GPSManager {
           Logger.error('[GPSManager] Error processing immediate location:', error);
         }
       },
-      (error) => onError(error),
-      { enableHighAccuracy: useHighAccuracy, timeout: 15000, maximumAge: CONFIG.GPS_MAXIMUM_AGE }
+      (error) => {
+          Logger.warn(`[GPSManager] Immediate GPS fix failed: ${error.message}`);
+          onError(error);
+      },
+      { enableHighAccuracy: useHighAccuracy, timeout: 20000, maximumAge: CONFIG.GPS_MAXIMUM_AGE }
     );
   }
 

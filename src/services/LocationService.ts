@@ -34,8 +34,20 @@ class LocationService {
    * @param realmInstance The active Realm database instance
    */
   async initialize(realmInstance: Realm) {
-    if (this.isReady && this.realm === realmInstance) return;
-    if (this.isInitializing) return;
+    if (!realmInstance || realmInstance.isClosed) {
+      Logger.warn('[LocationService] Cannot initialize with null or closed Realm');
+      return;
+    }
+
+    if (this.isReady && this.realm === realmInstance) {
+      console.log('[LocationService] Already initialized and Realm instance matches.');
+      return;
+    }
+
+    if (this.isInitializing) {
+      console.log('[LocationService] Initialization already in progress, skipping redundant call.');
+      return;
+    }
 
     this.isInitializing = true;
     
@@ -43,34 +55,39 @@ class LocationService {
       console.log('[LocationService] Engine initialization started...');
       this.realm = realmInstance;
       
-      try {
-        silentZoneManager.setRealm(realmInstance);
-      } catch (e) {
-        Logger.error('[LocationService] Failed to set realm on manager:', e);
-      }
+      // Ensure manager has the realm immediately
+      silentZoneManager.setRealm(realmInstance);
       
       if (Platform.OS === 'android') {
-        try {
-            await notificationManager.createNotificationChannels();
-        } catch (e) {
-            Logger.error('[LocationService] Channel creation failed:', e);
-        }
+        Logger.info('[LocationService] Setting up notification channels...');
+        await notificationManager.createNotificationChannels();
       }
 
       // Initial sanity check: Clear any STUCK sessions (past end time)
       await this.checkSessionExpiry();
 
-      // Initial boot sync - One time only
+      // Initial boot sync
+      Logger.info('[LocationService] Performing initial dependency sync...');
       await this.refreshAllWatchers();
-      this.isReady = true;
       
+      this.isReady = true;
       Logger.info('[LocationService] Engine Initialized Successfully ✅');
     } catch (error) {
+      this.isReady = false;
       console.error('[LocationService] CRITICAL INITIALIZATION FAILURE:', error);
+      Logger.error('[LocationService] Init failed:', error);
     } finally {
       this.isInitializing = false;
     }
   }
+
+/**
+ * Public check: Is the engine currently in the middle of initializing?
+ * Used by PermissionsContext to avoid duplicate concurrent init calls.
+ */
+isCurrentlyInitializing(): boolean {
+  return this.isInitializing;
+}
 
 /**
  * Set the realm reference without triggering a full initialization.
