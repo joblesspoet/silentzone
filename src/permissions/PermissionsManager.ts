@@ -344,16 +344,8 @@ export const PermissionsManager = {
 
   /**
    * Opens the specific settings page for a given permission type.
-   *
-   * BATTERY FIX:
-   * OLD: ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS
-   *      → Dumps user on a list of EVERY app. They must scroll and find yours.
-   *
-   * NEW: Three-tier strategy for Android 14/15 "Unrestricted" mode:
-   *   1. OEM-specific battery page (Samsung, Xiaomi, Huawei) — most direct path
-   *   2. App Info → Battery (Settings → Apps → [App] → Battery → Unrestricted)
-   *      One tap away from "Unrestricted". Works on all stock Android 8+.
-   *   3. Generic list — absolute last resort fallback only
+   * 
+   * ANDROID 15 FIX: Simplified to always use the native module or reliable fallbacks.
    */
   openPermissionSettings: async (type: 'NOTIFICATION' | 'ALARM' | 'BATTERY' | 'LOCATION' | 'DND') => {
     if (Platform.OS !== 'android') {
@@ -361,103 +353,48 @@ export const PermissionsManager = {
       return;
     }
 
+    console.log(`[PermissionsManager] Opening settings for type: ${type}`);
+
     try {
       switch (type) {
         case 'NOTIFICATION':
-          await Linking.sendIntent('android.settings.APP_NOTIFICATION_SETTINGS', [
-            { key: 'android.provider.extra.APP_PACKAGE', value: APP_PACKAGE }
-          ]);
+          // Use native Linking.openSettings() which handles notifications properly
+          await Linking.openSettings();
           return;
 
         case 'ALARM':
-          await Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM', [
-            { key: 'android.provider.extra.APP_PACKAGE', value: APP_PACKAGE }
-          ]);
+          if (ExactAlarmModule?.openExactAlarmSettings) {
+            await ExactAlarmModule.openExactAlarmSettings();
+          } else {
+            await Linking.openSettings();
+          }
           return;
 
-        case 'BATTERY': {
-          const manufacturer = (
-            (Platform as any).constants?.Manufacturer ||
-            (Platform as any).constants?.Brand ||
-            ''
-          ).toLowerCase();
-
-          console.log(`[PermissionsManager] Battery settings — OEM: "${manufacturer}"`);
-
-          // ── Tier 1: Samsung ─────────────────────────────────────────────────
-          // Samsung adds its own Device Care battery layer on top of Android.
-          // isIgnoringBatteryOptimizations() can return true but Samsung still
-          // kills the app unless it's whitelisted in Device Care too.
-          if (manufacturer.includes('samsung')) {
-            try {
-              await Linking.sendIntent(
-                'com.samsung.android.lool.ManuallyManagedAppsActivity'
-              );
-              console.log('[PermissionsManager] Opened Samsung Device Care battery page');
-              return;
-            } catch {
-              // Samsung intent missing on this firmware, fall through
-            }
+        case 'BATTERY':
+          // CRITICAL FIX for Android 15: Always use the native module
+          if (BatteryOptimization?.openBatterySettings) {
+            console.log('[PermissionsManager] Calling native openBatterySettings()');
+            await BatteryOptimization.openBatterySettings();
+          } else {
+            // Fallback: Direct to App Info using package: URI
+            console.log('[PermissionsManager] Native module unavailable, using package: URI');
+            await Linking.openURL(`package:${APP_PACKAGE}`).catch(async () => {
+              // If package: doesn't work, use standard settings
+              await Linking.openSettings();
+            });
           }
-
-          // ── Tier 1: Xiaomi / MIUI ───────────────────────────────────────────
-          // MIUI has AutoStart + Background Activity controls that override AOSP.
-          if (
-            manufacturer.includes('xiaomi') ||
-            manufacturer.includes('redmi') ||
-            manufacturer.includes('poco')
-          ) {
-            try {
-              await Linking.sendIntent('miui.intent.action.APP_PERM_EDITOR', [
-                { key: 'extra_pkgname', value: APP_PACKAGE },
-              ]);
-              console.log('[PermissionsManager] Opened Xiaomi App Permissions page');
-              return;
-            } catch {
-              // Fall through
-            }
-          }
-
-          // ── Tier 1: Huawei / EMUI ───────────────────────────────────────────
-          if (manufacturer.includes('huawei') || manufacturer.includes('honor')) {
-            try {
-              await Linking.sendIntent(
-                'com.huawei.systemmanager/.optimize.process.ProtectActivity'
-              );
-              console.log('[PermissionsManager] Opened Huawei battery settings');
-              return;
-            } catch {
-              // Fall through
-            }
-          }
-
-          // ── Tier 2: Standard App Info → Battery (all AOSP Android 8+) ───────
-          // Settings → Apps → Silent Zone → Battery → [Unrestricted / Optimized / Restricted]
-          // User is one tap from "Unrestricted". Far better than the generic list.
-          try {
-            await Linking.sendIntent('android.settings.APPLICATION_DETAILS_SETTINGS', [
-              { key: 'package', value: APP_PACKAGE }
-            ]);
-            console.log('[PermissionsManager] Opened App Info (tap Battery → Unrestricted)');
-            return;
-          } catch {
-            // Fall through to last resort
-          }
-
-          // ── Tier 3: Generic list — last resort only ──────────────────────────
-          console.warn('[PermissionsManager] All battery intents failed, opening generic list');
-          await Linking.sendIntent('android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS');
           return;
-        }
 
         case 'LOCATION':
-          await Linking.sendIntent('android.settings.APPLICATION_DETAILS_SETTINGS', [
-            { key: 'package', value: APP_PACKAGE }
-          ]);
+          await Linking.openSettings();
           return;
 
         case 'DND':
-          await Linking.sendIntent('android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS');
+          if (RingerMode?.requestDndPermission) {
+            await RingerMode.requestDndPermission();
+          } else {
+            await Linking.openSettings();
+          }
           return;
 
         default:
@@ -465,8 +402,11 @@ export const PermissionsManager = {
           return;
       }
     } catch (error) {
-      console.warn(`[PermissionsManager] Failed to launch intent for ${type}, falling back.`, error);
-      Linking.openSettings();
+      console.error(`[PermissionsManager] Error opening settings for ${type}:`, error);
+      // Final fallback
+      Linking.openSettings().catch(err => {
+        console.error('[PermissionsManager] Fatal: Cannot open any settings', err);
+      });
     }
   }
 };

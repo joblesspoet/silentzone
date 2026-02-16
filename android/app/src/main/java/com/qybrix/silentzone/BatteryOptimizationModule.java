@@ -3,6 +3,7 @@ package com.qybrix.silentzone;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.PowerManager;
 import android.provider.Settings;
 import com.facebook.react.bridge.Promise;
@@ -38,18 +39,18 @@ public class BatteryOptimizationModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void requestIgnoreBatteryOptimizations(Promise promise) {
         try {
-            Intent intent = new Intent();
             String packageName = reactContext.getPackageName();
+            Intent intent = new Intent();
             intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
             intent.setData(Uri.parse("package:" + packageName));
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             reactContext.startActivity(intent);
             promise.resolve(true);
         } catch (Exception e) {
-            // Fallback to general settings if direct request fails (e.g. Google Play restrictions sometimes)
+            // Fallback to Application Details Settings
             try {
-                Intent intent = new Intent();
-                intent.setAction(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.parse("package:" + reactContext.getPackageName()));
                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                 reactContext.startActivity(intent);
                 promise.resolve(true);
@@ -58,17 +59,39 @@ public class BatteryOptimizationModule extends ReactContextBaseJavaModule {
             }
         }
     }
-    
+
     @ReactMethod
     public void openBatterySettings(Promise promise) {
-       try {
-            Intent intent = new Intent();
-            intent.setAction(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+        try {
+            String packageName = reactContext.getPackageName();
+
+            // Android 15+ (API 35+): Direct to App Info where Battery is visible
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.parse("package:" + packageName));
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+                reactContext.startActivity(intent);
+                promise.resolve(true);
+                return;
+            }
+
+            // Android 6+ (API 23+): Try App Info first
+            Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + packageName));
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             reactContext.startActivity(intent);
             promise.resolve(true);
-       } catch (Exception e) {
-            promise.reject("ERROR", e.getMessage());
-       }
+
+        } catch (Exception e) {
+            // Final fallback
+            try {
+                Intent intent = new Intent(Settings.ACTION_SETTINGS);
+                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                reactContext.startActivity(intent);
+                promise.resolve(true);
+            } catch (Exception ex) {
+                promise.reject("ERROR", ex.getMessage());
+            }
+        }
     }
 }

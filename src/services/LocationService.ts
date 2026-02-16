@@ -272,7 +272,13 @@ class LocationService {
    * For a specific place, find the very next START and END alarms and set them.
    * This is the "Daisy Chain" engine.
    */
-  private async seedNextAlarmForPlace(place: any) {
+  private async seedNextAlarmForPlace(placeData: any) {
+    if (!this.realm || this.realm.isClosed) return;
+    
+    // RE-FETCH: Always use a fresh reference in the current thread/context
+    const place = PlaceService.getPlaceById(this.realm, placeData.id) as any;
+    if (!place) return;
+
     const schedules = place.schedules || [];
     if (schedules.length === 0) return;
 
@@ -332,6 +338,11 @@ class LocationService {
   /**
    * Core logic for when an OS alarm fires.
    * Performs Phase 1 (Immediate Reschedule) and Phase 2 (Execution).
+   * 
+   * CRITICAL FIX: For START_SILENCE alarms, we DON'T return immediately.
+   * Instead, we keep the function alive to prevent React Native from killing
+   * the headless task and terminating GPS. The foreground service needs the
+   * process to stay alive to continue monitoring.
    */
   async handleAlarmFired(data: any) {
     const alarmId = data?.notification?.id;
@@ -350,24 +361,39 @@ class LocationService {
        }
     }
 
-    if (!this.realm || !placeId) return;
+    if (!this.realm || this.realm.isClosed) {
+      Logger.error(`[Engine] ❌ Cannot handle alarm: Realm is null or closed (Action: ${action})`);
+      return;
+    }
 
     Logger.info(`[Engine] ⚡ Fire: ${action} for ${placeId}`);
 
-    const place = PlaceService.getPlaceById(this.realm, placeId);
-    if (!place || !place.isEnabled) return;
+    // FETCH FRESH: Always fetch a fresh object in the current execution context
+    // This prevents "thread-isolation" crashes from stale/thawed objects.
+    const place = PlaceService.getPlaceById(this.realm, placeId) as any;
+    
+    if (!place) {
+      Logger.warn(`[Engine] ⚠️ Place ${placeId} not found in DB during alarm fire.`);
+      return;
+    }
+
+    if (!place.isEnabled) {
+      Logger.info(`[Engine] ⏭️ Skipping disabled place: ${place.name}`);
+      return;
+    }
 
     try {
-      // PHASE 1: Immediate Reschedule (DAISY CHAIN)
-      // We don't wait for GPS. We secure the future first.
-      await this.seedNextAlarmForPlace(place);
-
       // PHASE 2: Execute Action
       if (action === ALARM_ACTIONS.START_SILENCE) {
         await this.handleStartAction(place);
       } else if (action === ALARM_ACTIONS.STOP_SILENCE) {
         await this.handleStopAction(placeId);
       }
+
+      // PHASE 1: Immediate Reschedule (DAISY CHAIN)
+      // Moved to AFTER execution so the engine state (geofencesActive) is correctly set
+      // before we decide if we need an immediate backup alarm.
+      await this.seedNextAlarmForPlace(place);
     } catch (error) {
       Logger.error(`[Engine] Action failed for ${placeId}:`, error);
     }
@@ -376,10 +402,20 @@ class LocationService {
   /**
    * Handles the 'START_SILENCE' action: Activates GPS and verifies location.
    */
-  private async handleStartAction(place: any) {
+  private async handleStartAction(placeData: any) {
+    if (!this.realm || this.realm.isClosed) return;
+    
+    // RE-FETCH: Ensure we have a "live" object for this specific method call
+    const place = PlaceService.getPlaceById(this.realm, placeData.id) as any;
+    if (!place) {
+       Logger.error('[Engine] Failed to re-fetch place in handleStartAction');
+       return;
+    }
+
     Logger.info(`[Engine] 📍 Starting monitoring for ${place.name}`);
 
     // 1. Activate Foreground Service & GPS
+    this.geofencesActive = true; // Set explicitly before starting monitoring
     await this.startMonitoring();
 
     // 2. Immediate check: Are we already there?
@@ -390,9 +426,13 @@ class LocationService {
     // silently swallowing the entire check-in on alarm fire.
     // This is the most critical GPS callback — it must never fail silently.
     await gpsManager.forceLocationCheck(
-      (loc) => this.processLocationUpdate(loc).catch(err =>
-        Logger.error('[GPS] handleStartAction processLocationUpdate failed:', err)
-      ),
+      async (loc) => {
+        try {
+          await this.processLocationUpdate(loc);
+        } catch (err) {
+          Logger.error('[GPS] handleStartAction processLocationUpdate failed:', err);
+        }
+      },
       (err) => Logger.error('[GPS] Start check failed:', err),
       1, 2, deadline
     );
@@ -469,12 +509,14 @@ class LocationService {
     try {
       if (!isAlreadyWatching) {
           await gpsManager.startWatching(
-            (loc) => {
+            async (loc) => {
               // Wrap in .catch() so any throw inside processLocationUpdate
               // never becomes a fatal unhandled promise rejection.
-              this.processLocationUpdate(loc).catch(err =>
-                Logger.error('[GPS] processLocationUpdate unhandled error:', err)
-              );
+              try {
+                await this.processLocationUpdate(loc);
+              } catch (err) {
+                Logger.error('[GPS] processLocationUpdate unhandled error:', err);
+              }
             },
             (err) => Logger.error('[GPS] Watcher error:', err)
           );
@@ -544,7 +586,7 @@ class LocationService {
       const placeId = log.placeId as string;
       if (!insideIds.includes(placeId)) {
         // Double check distance with hysteresis
-        const place = PlaceService.getPlaceById(this.realm, placeId);
+        const place = PlaceService.getPlaceById(this.realm, placeId) as any;
         if (place) {
           const isDefinitelyOutside = LocationValidator.isOutsidePlace(
             location,
@@ -573,8 +615,8 @@ class LocationService {
     const schedule = ScheduleManager.getCurrentOrNextSchedule(place);
     const now = Date.now();
 
-    // Allow activation slightly early for smooth flow (e.g. 1 minute before)
-    const startBuffer = 60 * 1000;
+    // Use configuration for activation buffer (matches monitoring window)
+    const startBuffer = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
     const isInsideWindow = schedule && now >= schedule.startTime.getTime() - startBuffer && now < schedule.endTime.getTime();
 
     Logger.info(`[LocationService] Verifying entry for ${place.name}: ` +
@@ -600,6 +642,7 @@ class LocationService {
    */
   async handleGeofenceExit(placeId: string) {
     await silentZoneManager.handleExit(placeId);
+    await this.refreshMonitoringState();
     await this.updateForegroundService();
   }
 
@@ -640,10 +683,12 @@ class LocationService {
    */
   async forceLocationCheck(): Promise<void> {
     return gpsManager.forceLocationCheck(
-      (location) => {
-        this.processLocationUpdate(location).catch(err =>
-          Logger.error('[GPS] forceLocationCheck processLocationUpdate failed:', err)
-        );
+      async (location) => {
+        try {
+          await this.processLocationUpdate(location);
+        } catch (err) {
+          Logger.error('[GPS] forceLocationCheck processLocationUpdate failed:', err);
+        }
       },
       (error) => Logger.error('[GPS] Force check failed:', error),
       1, 3
@@ -672,7 +717,7 @@ class LocationService {
 
     for (const log of activeCheckIns) {
       const placeId = log.placeId as string;
-      const place = PlaceService.getPlaceById(this.realm, placeId);
+      const place = PlaceService.getPlaceById(this.realm, placeId) as any;
 
       if (!place) continue;
 

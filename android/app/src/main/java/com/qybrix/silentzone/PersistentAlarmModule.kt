@@ -457,6 +457,32 @@ class PersistentAlarmReceiver : BroadcastReceiver() {
  */
 class AlarmHandlerService : com.facebook.react.HeadlessJsTaskService() {
     
+    override fun onCreate() {
+        super.onCreate()
+        // On Android 8+, we MUST show a notification immediately when started via startForegroundService
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channelId = "com.qybrix.silentzone.service"
+            val notification = android.app.Notification.Builder(this, channelId)
+                .setContentTitle("🛡️ Silent Zone Engine")
+                .setContentText("Optimizing background sync...")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .build()
+            
+            // Start as foreground service immediately to satisfy OS requirement
+            startForeground(101, notification)
+        }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val result = super.onStartCommand(intent, flags, startId)
+        
+        // If the task finishes, super.onStartCommand will eventually stop the service.
+        // We don't need to manually stopForeground here as we want to keep it
+        // until the Headless JS task completes.
+        
+        return result
+    }
+
     override fun getTaskConfig(intent: Intent?): com.facebook.react.jstasks.HeadlessJsTaskConfig? {
         val alarmId = intent?.getStringExtra(PersistentAlarmModule.EXTRA_ALARM_ID) ?: return null
         val dataBundle = intent.getBundleExtra(PersistentAlarmModule.EXTRA_DATA)

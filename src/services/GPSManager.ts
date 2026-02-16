@@ -5,7 +5,7 @@ import { CONFIG } from '../config/config';
 import { LocationState, LocationValidator } from './LocationValidator';
 import { PermissionsManager } from '../permissions/PermissionsManager';
 
-export type LocationCallback = (location: LocationState) => void;
+export type LocationCallback = (location: LocationState) => void | Promise<void>;
 export type LocationErrorCallback = (error: any) => void;
 
 export interface GPSConfig {
@@ -157,7 +157,9 @@ export class GPSManager {
                 Logger.info(`[GPSManager] Quick Network fix acquired: ±${Math.round(loc.accuracy)}m`);
                 // Only provide if it passes basic quality
                 if (loc.accuracy < CONFIG.MAX_ACCEPTABLE_ACCURACY) {
-                    onLocation(loc);
+                    Promise.resolve(onLocation(loc)).catch(err => 
+                      Logger.error('[GPSManager] Quick Network callback error:', err)
+                    );
                 }
             },
             () => {}, // Silent fail for network fallback
@@ -191,7 +193,7 @@ export class GPSManager {
           this.stopFallbackPolling();
 
           Logger.info(`[GPSManager] Immediate fix acquired: ±${Math.round(location.accuracy)}m`);
-          onLocation(location);
+          await onLocation(location);
         } catch (error) {
           Logger.error('[GPSManager] Error processing immediate location:', error);
         }
@@ -243,7 +245,7 @@ export class GPSManager {
             this.stopFallbackPolling();
 
             Logger.info(`[GPSManager] Forced location acquired on attempt ${attemptNumber}`);
-            onLocation(location);
+            await onLocation(location);
             resolve();
           } catch (error) {
             Logger.error('[GPSManager] Error processing forced location:', error);

@@ -115,7 +115,7 @@ const handleAlarmEvent = async ({ type, detail }) => {
   if (isDuplicate(alarmId)) return;
 
   try {
-    console.log(`[Dispatcher] ⏰ Trigger: Type=${type} Action=${notification.data.action} ID=${alarmId}`);
+    Logger.info(`[Dispatcher] ⏰ Trigger: Type=${type} Action=${notification.data.action} ID=${alarmId}`);
     const realm = await getRealm();
     
     // Non-destructive init
@@ -124,9 +124,9 @@ const handleAlarmEvent = async ({ type, detail }) => {
     await locationService.handleAlarmFired({
       notification: { id: alarmId, data: notification.data },
     });
-    console.log(`[Dispatcher] ✅ Trigger Handled: ${alarmId}`);
+    Logger.info(`[Dispatcher] ✅ Trigger Handled: ${alarmId}`);
   } catch (err) {
-    console.error(`[Dispatcher] ❌ Alarm Error (${alarmId}):`, err);
+    Logger.error(`[Dispatcher] ❌ Alarm Error (${alarmId}):`, err);
   }
 };
 
@@ -139,7 +139,7 @@ notifee.onForegroundEvent(handleAlarmEvent);
 // ============================================================================
 
 AppRegistry.registerHeadlessTask('onGeofenceTransition', () => async (taskData) => {
-  console.log('[Dispatcher] 🌎 Geofence Event:', taskData.event, taskData.ids);
+  Logger.info('[Dispatcher] 🌎 Geofence Event:', taskData.event, taskData.ids);
   
   try {
     const realm = await getRealm();
@@ -156,7 +156,7 @@ AppRegistry.registerHeadlessTask('onGeofenceTransition', () => async (taskData) 
       }
     }
   } catch (error) {
-    console.error('[Dispatcher] Geofence Failure:', error);
+    Logger.error('[Dispatcher] Geofence Failure:', error);
   }
 });
 
