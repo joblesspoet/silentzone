@@ -22,13 +22,21 @@ const { SettingsService } = require('./src/services/SettingsService');
 // STATE: Event Deduplication
 // ============================================================================
 
-const processedAlarms = new Set();
-const DEBOUNCE_TIME = 30000; // 30 seconds
+const processedNotifeeAlarms = new Set();
+const processedNativeAlarms = new Set();
+const DEBOUNCE_TIME = 30000;
 
-const isDuplicate = (id) => {
-  if (processedAlarms.has(id)) return true;
-  processedAlarms.add(id);
-  setTimeout(() => processedAlarms.delete(id), DEBOUNCE_TIME);
+const isNotifeeAlarmDuplicate = (id) => {
+  if (processedNotifeeAlarms.has(id)) return true;
+  processedNotifeeAlarms.add(id);
+  setTimeout(() => processedNotifeeAlarms.delete(id), DEBOUNCE_TIME);
+  return false;
+};
+
+const isNativeAlarmDuplicate = (id) => {
+  if (processedNativeAlarms.has(id)) return true;
+  processedNativeAlarms.add(id);
+  setTimeout(() => processedNativeAlarms.delete(id), DEBOUNCE_TIME);
   return false;
 };
 
@@ -112,7 +120,7 @@ const handleAlarmEvent = async ({ type, detail }) => {
   if (!isTargetEvent || !isAlarmAction) return;
 
   const alarmId = notification.id;
-  if (isDuplicate(alarmId)) return;
+  if (isNotifeeAlarmDuplicate(alarmId)) return;
 
   try {
     Logger.info(`[Dispatcher] ⏰ Trigger: Type=${type} Action=${notification.data.action} ID=${alarmId}`);
@@ -168,27 +176,34 @@ AppRegistry.registerHeadlessTask('AlarmHandler', () => async (taskData) => {
   const { alarmId, timestamp } = taskData;
   Logger.info(`[Dispatcher] ⏰ Persistent Alarm: ID=${alarmId} Time=${new Date(timestamp).toLocaleTimeString()}`);
 
-  if (isDuplicate(alarmId)) return;
+  // CHANGE A: use native-specific dedup set
+  if (isNativeAlarmDuplicate(alarmId)) {
+    Logger.info(`[Dispatcher] 🔕 Deduplicating native alarm: ${alarmId}`);
+    return;
+  }
 
   try {
     const realm = await getRealm();
-    
+
     // Non-destructive init
     await locationService.initializeLight(realm);
-    
-    // We bridge this to the same handler as Notifee alarms
-    // but we wrap the data to match the expected format
+
+    // CHANGE B: Ensure notification channels exist before processing.
+    // initializeLight() doesn't create channels, but handleStartAction
+    // calls updateForegroundService() which needs them.
+    try {
+      const { notificationManager } = require('./src/services/NotificationManager');
+      await notificationManager.createNotificationChannels();
+    } catch (channelErr) {
+      Logger.warn('[Dispatcher] Channel creation skipped (may already exist):', channelErr);
+    }
+
     await locationService.handleAlarmFired({
-      notification: { 
-        id: alarmId, 
-        data: { 
-          // We don't have the full data object here yet, but LocationService 
-          // mainly needs the action and placeId which are usually part of the ID string
-          // or we can reconstruct them if needed.
-          // Note: handleAlarmFired in LocationService parses ID string if data is missing?
-          // Let's check LocationService.ts handleAlarmFired implementation.
-          ...taskData 
-        } 
+      notification: {
+        id: alarmId,
+        data: {
+          ...taskData
+        }
       },
     });
     Logger.info(`[Dispatcher] ✅ Persistent Alarm Handled: ${alarmId}`);

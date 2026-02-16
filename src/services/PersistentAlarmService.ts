@@ -88,6 +88,20 @@ export class PersistentAlarmService {
         : triggerTime;
 
       const now = Date.now();
+      
+      // OPTIMIZATION: Check if EXACTLY this alarm is already scheduled to avoid OS churn
+      // "if alarm exists then don't create it"
+      const existingAlarms = await this.getAllAlarms();
+      const duplicate = existingAlarms.find(a => 
+        a.id === alarmId && 
+        Math.abs(a.triggerTime - triggerTimeMs) < 1000 // Within 1s is same
+      );
+
+      if (duplicate) {
+        // Just return true, it's already there
+        return true;
+      }
+
       const minutesUntilFire = Math.round((triggerTimeMs - now) / 60000);
 
       Logger.info(`[PersistentAlarm] ⏰ Scheduling: ${alarmId}`);

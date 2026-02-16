@@ -147,18 +147,16 @@ class LocationService {
     }
 
     if (!realmInstance || realmInstance.isClosed) {
-      Logger.error('[LocationService] Cannot initialize task with closed Realm');
+      Logger.error('[LocationService] Cannot initialize light with closed Realm');
       return;
     }
 
     this.realm = realmInstance;
-
     try {
       silentZoneManager.setRealm(realmInstance);
     } catch (e) {
       Logger.warn('[LocationService] Manager setup failed:', e);
     }
-
     this.isReady = true;
   }
 
@@ -166,7 +164,8 @@ class LocationService {
    * EVENT HANDLER: Place Added
    */
   async onPlaceAdded(place: any) {
-    if (!this.realm) return;
+    if (!this.realm || this.realm.isClosed) return;
+    if (place.isValid && !place.isValid()) return;
     Logger.info(`[Event] Place Added: ${place.name}`);
     await this.seedNextAlarmForPlace(place);
     await this.refreshMonitoringState();
@@ -176,7 +175,8 @@ class LocationService {
    * EVENT HANDLER: Place Updated
    */
   async onPlaceUpdated(place: any) {
-    if (!this.realm) return;
+    if (!this.realm || this.realm.isClosed) return;
+    if (place.isValid && !place.isValid()) return;
     Logger.info(`[Event] Place Updated: ${place.name}`);
 
     // 1. Always cancel existing alarms first (in case schedules were removed)
@@ -193,7 +193,7 @@ class LocationService {
    * EVENT HANDLER: Place Deleted
    */
   async onPlaceDeleted(placeId: string) {
-    if (!this.realm) return;
+    if (!this.realm || this.realm.isClosed) return;
     Logger.info(`[Event] Place Deleted: ${placeId}`);
     await PersistentAlarmService.cancelAlarm(`place-${placeId}-start`);
     await PersistentAlarmService.cancelAlarm(`place-${placeId}-end`);
@@ -204,7 +204,7 @@ class LocationService {
    * EVENT HANDLER: Place Toggled
    */
   async onPlaceToggled(placeId: string, isEnabled: boolean) {
-    if (!this.realm) return;
+    if (!this.realm || this.realm.isClosed) return;
     Logger.info(`[Event] Place Toggled: ${placeId} -> ${isEnabled}`);
 
     if (isEnabled) {
@@ -225,7 +225,7 @@ class LocationService {
    * EVENT HANDLER: Global Tracking Toggled
    */
   async onGlobalTrackingChanged(enabled: boolean) {
-    if (!this.realm) return;
+    if (!this.realm || this.realm.isClosed) return;
     Logger.info(`[Event] Global Tracking Changed -> ${enabled}`);
 
     if (!enabled) {
@@ -274,6 +274,7 @@ class LocationService {
    */
   private async seedNextAlarmForPlace(placeData: any) {
     if (!this.realm || this.realm.isClosed) return;
+    if (placeData.isValid && !placeData.isValid()) return;
     
     // RE-FETCH: Always use a fresh reference in the current thread/context
     const place = PlaceService.getPlaceById(this.realm, placeData.id) as any;
@@ -301,9 +302,6 @@ class LocationService {
         finalTrigger = warmUpTime;
       } else if (lastChanceTime > Date.now() + 10000) {
         finalTrigger = lastChanceTime;
-      } else if (startTime > Date.now() + 5000 && !this.geofencesActive) {
-        finalTrigger = Date.now() + 5000;
-        Logger.info(`[LocationService] ${place.name} start imminent, scheduling immediate (T+5s) backup alarm`);
       }
 
       if (finalTrigger) {
@@ -583,10 +581,12 @@ class LocationService {
     // 3. Handle Exits for active zones
     const activeLogs = CheckInService.getActiveCheckIns(this.realm).snapshot();
     for (const log of activeLogs) {
+      if (log.isValid && !log.isValid()) continue;
       const placeId = log.placeId as string;
       if (!insideIds.includes(placeId)) {
         // Double check distance with hysteresis
         const place = PlaceService.getPlaceById(this.realm, placeId) as any;
+        if (place && place.isValid && !place.isValid()) continue;
         if (place) {
           const isDefinitelyOutside = LocationValidator.isOutsidePlace(
             location,
@@ -615,9 +615,11 @@ class LocationService {
     const schedule = ScheduleManager.getCurrentOrNextSchedule(place);
     const now = Date.now();
 
-    // Use configuration for activation buffer (matches monitoring window)
-    const startBuffer = CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000;
-    const isInsideWindow = schedule && now >= schedule.startTime.getTime() - startBuffer && now < schedule.endTime.getTime();
+    // FIX: Removed the 15-minute PRE_ACTIVATION buffer from silence activation.
+    // Monitoring starts 15m early (warm-up), but silence only triggers at the exact start time.
+    // We add a tiny 5s grace for clock drift.
+    const startBuffer = 5000; 
+    const isInsideWindow = schedule && now >= (schedule.startTime.getTime() - startBuffer) && now < schedule.endTime.getTime();
 
     Logger.info(`[LocationService] Verifying entry for ${place.name}: ` +
                 `schedule=${schedule ? schedule.startTime.toLocaleTimeString() : 'None'}, ` +
@@ -650,7 +652,7 @@ class LocationService {
    * Updates the foreground service notification text and icon.
    */
   private async updateForegroundService() {
-    if (!this.realm) return;
+    if (!this.realm || this.realm.isClosed) return;
     const enabledCount = PlaceService.getEnabledPlaces(this.realm).length;
     const activeCheckIns = Array.from(CheckInService.getActiveCheckIns(this.realm));
     const activeName = activeCheckIns.length > 0

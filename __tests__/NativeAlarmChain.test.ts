@@ -1,10 +1,4 @@
-import { locationService } from '../src/services/LocationService';
-import { PlaceService } from '../src/database/services/PlaceService';
-import { alarmService, ALARM_ACTIONS } from '../src/services/AlarmService';
-import { ScheduleManager } from '../src/services/ScheduleManager';
-import notifee from '@notifee/react-native';
-import { gpsManager } from '../src/services/GPSManager';
-import { CONFIG } from '../src/config/config';
+import { NativeModules, Platform } from 'react-native';
 
 // --- EXHAUSTIVE MOCKS ---
 
@@ -13,6 +7,17 @@ jest.mock('react-native', () => {
   RN.NativeModules.RNCNetInfo = {};
   RN.NativeModules.RNPermissions = {};
   RN.NativeModules.RNGestureHandlerModule = {};
+  RN.NativeModules.PersistentAlarmModule = {
+    scheduleAlarm: jest.fn().mockResolvedValue(true),
+    cancelAlarm: jest.fn().mockResolvedValue(true),
+    getAllAlarms: jest.fn().mockResolvedValue([]),
+    verifyAlarms: jest.fn().mockResolvedValue(0),
+    isAlarmScheduled: jest.fn().mockResolvedValue(true),
+  };
+  RN.NativeEventEmitter = jest.fn().mockImplementation(() => ({
+    addListener: jest.fn(),
+    removeAllListeners: jest.fn(),
+  }));
   RN.TurboModuleRegistry.getEnforcing = jest.fn();
   Object.defineProperty(RN, 'Platform', {
     get: () => ({
@@ -134,90 +139,112 @@ describe('Native Alarm Chaining Logic', () => {
     ],
   };
 
+  let locationService: any;
+  let PlaceService: any;
+  let alarmService: any;
+  let ALARM_ACTIONS: any;
+  let CONFIG: any;
+  let gpsManager: any;
+
   beforeEach(() => {
     jest.clearAllMocks();
-    (locationService as any).realm = mockRealm;
-    (locationService as any).geofencesActive = false; // Reset to false to test activation
+    
+    // Dynamic require to pick up mocks
+    locationService = require('../src/services/LocationService').locationService;
+    PlaceService = require('../src/database/services/PlaceService').PlaceService;
+    alarmService = require('../src/services/AlarmService').alarmService;
+    ALARM_ACTIONS = require('../src/services/AlarmService').ALARM_ACTIONS;
+    CONFIG = require('../src/config/config').CONFIG;
+    gpsManager = require('../src/services/GPSManager').gpsManager;
+
+    locationService.realm = mockRealm;
+    locationService.geofencesActive = false; // Reset to false to test activation
     mockRealm.objectForPrimaryKey.mockReturnValue({ trackingEnabled: true });
     // IMPORTANT: Ensure Jest is using fake timers for the whole describe block
     jest.useFakeTimers();
   });
 
   test('Logical Case 1: All prayers passed for today (22:00)', async () => {
-    // GIVEN: 22:00 local time
     const now = new Date();
     now.setHours(22, 0, 0, 0);
     jest.setSystemTime(now);
 
-    (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
+    PlaceService.getEnabledPlaces.mockReturnValue([mockPlace]);
 
-    await locationService.syncGeofences();
+    await locationService.refreshAllWatchers();
 
-    // EXPECT: Tomorrow Fajr (05:00 - 10m)
     const expectedTime = new Date(now);
     expectedTime.setDate(expectedTime.getDate() + 1);
     expectedTime.setHours(5, 0, 0, 0);
     const expectedTrigger = expectedTime.getTime() - (CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000);
     
-    expect(notifee.createTriggerNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'place-real-place-uuid-start' }),
-      expect.objectContaining({ timestamp: expectedTrigger })
+    expect(NativeModules.PersistentAlarmModule.scheduleAlarm).toHaveBeenCalledWith(
+      'place-real-place-uuid-start',
+      expectedTrigger,
+      'Silent Zone Engine',
+      'Optimizing background sync...',
+      expect.objectContaining({ placeId: 'real-place-uuid', action: ALARM_ACTIONS.START_SILENCE })
     );
   });
 
   test('Logical Case 2: Join during ongoing prayer (13:00)', async () => {
-    // GIVEN: 13:00 local time (During Dhuhr 12:30-13:30)
     const now = new Date();
     now.setHours(13, 0, 0, 0);
     jest.setSystemTime(now);
 
-    (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
+    PlaceService.getEnabledPlaces.mockReturnValue([mockPlace]);
 
-    await locationService.syncGeofences();
+    await locationService.refreshAllWatchers();
 
-    // 1. Dhuhr END for today
     const endTime = new Date(now);
     endTime.setHours(13, 30, 0, 0);
-    expect(notifee.createTriggerNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'place-real-place-uuid-end' }),
-      expect.objectContaining({ timestamp: endTime.getTime() })
+    expect(NativeModules.PersistentAlarmModule.scheduleAlarm).toHaveBeenCalledWith(
+      'place-real-place-uuid-end',
+      endTime.getTime(),
+      'Silent Zone Engine',
+      'Finalizing session...',
+      expect.objectContaining({ placeId: 'real-place-uuid', action: ALARM_ACTIONS.STOP_SILENCE })
     );
 
-    // 2. Tomorrow Fajr START
     const nextStart = new Date(now);
     nextStart.setDate(nextStart.getDate() + 1);
     nextStart.setHours(5, 0, 0, 0);
     const expectedStartTrigger = nextStart.getTime() - (CONFIG.SCHEDULE.PRE_ACTIVATION_MINUTES * 60 * 1000);
-    expect(notifee.createTriggerNotification).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'place-real-place-uuid-start' }),
-      expect.objectContaining({ timestamp: expectedStartTrigger })
+    expect(NativeModules.PersistentAlarmModule.scheduleAlarm).toHaveBeenCalledWith(
+      'place-real-place-uuid-start',
+      expectedStartTrigger,
+      'Silent Zone Engine',
+      'Optimizing background sync...',
+      expect.objectContaining({ placeId: 'real-place-uuid', action: ALARM_ACTIONS.START_SILENCE })
     );
 
     expect(gpsManager.startWatching).toHaveBeenCalled();
   });
 
   test('Stability: Stable IDs overwrite existing alarms', async () => {
-    (PlaceService.getEnabledPlaces as jest.Mock).mockReturnValue([mockPlace]);
+    PlaceService.getEnabledPlaces.mockReturnValue([mockPlace]);
     
-    (notifee.getTriggerNotifications as jest.Mock).mockResolvedValue([
+    const notifee = require('@notifee/react-native').default;
+    notifee.getTriggerNotifications.mockResolvedValue([
       { notification: { id: 'place-real-place-uuid-start' }, trigger: { timestamp: 12345 } }
     ]);
 
     const newTime = Date.now() + 100000;
     await alarmService.scheduleNativeAlarm('place-real-place-uuid-start', newTime, 'real-place-uuid', 'START');
 
-    expect(notifee.createTriggerNotification).toHaveBeenCalled();
+    expect(NativeModules.PersistentAlarmModule.scheduleAlarm).toHaveBeenCalled();
   });
 
   test('Resilience: Duplicate alarm prevention (Same ID + Same Time)', async () => {
     const targetTime = Date.now() + 500000;
     
-    (notifee.getTriggerNotifications as jest.Mock).mockResolvedValue([
+    const notifee = require('@notifee/react-native').default;
+    notifee.getTriggerNotifications.mockResolvedValue([
       { notification: { id: 'place-real-place-uuid-start' }, trigger: { timestamp: targetTime } }
     ]);
 
     await alarmService.scheduleNativeAlarm('place-real-place-uuid-start', targetTime, 'real-place-uuid', 'START');
 
-    expect(notifee.createTriggerNotification).not.toHaveBeenCalled();
+    expect(NativeModules.PersistentAlarmModule.scheduleAlarm).not.toHaveBeenCalled();
   });
 });

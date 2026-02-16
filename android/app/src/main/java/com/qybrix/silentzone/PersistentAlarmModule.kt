@@ -11,6 +11,8 @@ import android.util.Log
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import kotlinx.coroutines.*
+import android.app.NotificationChannel
+import android.app.NotificationManager as AndroidNotificationManager
 
 /**
  * PersistentAlarmModule - Ultra-reliable alarm scheduling with Doze protection
@@ -459,16 +461,31 @@ class AlarmHandlerService : com.facebook.react.HeadlessJsTaskService() {
     
     override fun onCreate() {
         super.onCreate()
-        // On Android 8+, we MUST show a notification immediately when started via startForegroundService
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channelId = "com.qybrix.silentzone.service"
+            val androidNm = getSystemService(Context.NOTIFICATION_SERVICE) as AndroidNotificationManager
+
+            // Create channel if it doesn't exist yet (safe to call multiple times)
+            if (androidNm.getNotificationChannel(channelId) == null) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "Silent Zone Engine",
+                    AndroidNotificationManager.IMPORTANCE_LOW  // LOW = no sound, no popup
+                ).apply {
+                    description = "Keeps alarm processing alive in background"
+                    setShowBadge(false)
+                }
+                androidNm.createNotificationChannel(channel)
+                Log.i(TAG, "✅ Created notification channel: $channelId")
+            }
+
             val notification = android.app.Notification.Builder(this, channelId)
                 .setContentTitle("🛡️ Silent Zone Engine")
                 .setContentText("Optimizing background sync...")
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .build()
-            
-            // Start as foreground service immediately to satisfy OS requirement
+
             startForeground(101, notification)
         }
     }

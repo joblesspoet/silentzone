@@ -140,6 +140,10 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
           navigate('PermissionRequired' as any);
 
         } else if (!hadAllPermissions && hasAllNow) {
+          if (!realm || realm.isClosed) {
+            console.log('[PermissionsContext] All permissions granted, but Realm is closed. Skipping init.');
+            return;
+          }
           const isComplete = PreferencesService.isOnboardingComplete(realm);
           if (isComplete) {
             if (locationService.isCurrentlyInitializing()) {
@@ -210,6 +214,7 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
   const requestDndFlow = async (): Promise<boolean> => {
     const status = await PermissionsManager.requestDndPermission();
     setDndStatus(status);
+    await refreshPermissions();
     return status === RESULTS.GRANTED;
   };
 
