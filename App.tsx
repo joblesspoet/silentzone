@@ -11,6 +11,7 @@ import { locationService } from './src/services/LocationService';
 import { Logger } from './src/services/Logger';
 import { SettingsService } from './src/services/SettingsService';
 import { PreferencesService } from './src/database/services/PreferencesService';
+import { PersistentAlarmService } from './src/services/PersistentAlarmService';
 
 const AppContent = () => {
     const realm = useRealm();
@@ -19,6 +20,9 @@ const AppContent = () => {
   useEffect(() => {
     if (hasInitialized.current) return;
     hasInitialized.current = true;
+
+    // Initialize persistent alarm system
+    PersistentAlarmService.initialize();
 
     const initializeApp = async () => {
       try {

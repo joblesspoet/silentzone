@@ -41,7 +41,7 @@ class BootReceiver : BroadcastReceiver() {
     }
     
     companion object {
-        private const val TAG = "SilentZone.BootReceiver"
+        internal const val TAG = "SilentZone.BootReceiver"
     }
 }
 
@@ -65,6 +65,6 @@ class BootRescheduleService : HeadlessJsTaskService() {
     }
     
     companion object {
-        private const val TAG = "SilentZone.BootService"
+        internal const val TAG = "SilentZone.BootService"
     }
 }

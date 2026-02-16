@@ -19,6 +19,7 @@ class MainApplication : Application(), ReactApplication {
           add(RingerModePackage())
           add(BatteryOptimizationPackage())
           add(ExactAlarmPackage())
+          add(PersistentAlarmPackage())
         },
     )
   }

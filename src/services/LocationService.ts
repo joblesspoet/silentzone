@@ -8,7 +8,8 @@ import { PermissionsManager } from '../permissions/PermissionsManager';
 import { Logger } from './Logger';
 import { ScheduleManager, UpcomingSchedule } from './ScheduleManager';
 import { LocationValidator } from './LocationValidator';
-import { alarmService, ALARM_ACTIONS } from './AlarmService';
+import { ALARM_ACTIONS } from './AlarmService';
+import { PersistentAlarmService } from './PersistentAlarmService';
 import { notificationManager } from './NotificationManager';
 import { CONFIG } from '../config/config';
 import { GPSManager, gpsManager } from './GPSManager';
@@ -179,7 +180,8 @@ class LocationService {
     Logger.info(`[Event] Place Updated: ${place.name}`);
 
     // 1. Always cancel existing alarms first (in case schedules were removed)
-    await alarmService.cancelAlarmsForPlace(place.id as string);
+    await PersistentAlarmService.cancelAlarm(`place-${place.id}-start`);
+    await PersistentAlarmService.cancelAlarm(`place-${place.id}-end`);
 
     // 2. Seed new alarms if applicable
     await this.seedNextAlarmForPlace(place);
@@ -193,7 +195,8 @@ class LocationService {
   async onPlaceDeleted(placeId: string) {
     if (!this.realm) return;
     Logger.info(`[Event] Place Deleted: ${placeId}`);
-    await alarmService.cancelAlarmsForPlace(placeId);
+    await PersistentAlarmService.cancelAlarm(`place-${placeId}-start`);
+    await PersistentAlarmService.cancelAlarm(`place-${placeId}-end`);
     await this.refreshMonitoringState();
   }
 
@@ -208,7 +211,8 @@ class LocationService {
       const place = PlaceService.getPlaceById(this.realm, placeId);
       if (place) await this.seedNextAlarmForPlace(place);
     } else {
-      await alarmService.cancelAlarmsForPlace(placeId);
+      await PersistentAlarmService.cancelAlarm(`place-${placeId}-start`);
+      await PersistentAlarmService.cancelAlarm(`place-${placeId}-end`);
       // If we were inside, handle exit
       if (CheckInService.isPlaceActive(this.realm, placeId)) {
          await silentZoneManager.handleExit(placeId);
@@ -297,7 +301,13 @@ class LocationService {
       }
 
       if (finalTrigger) {
-        await alarmService.scheduleNativeAlarm(startId, finalTrigger, place.id, ALARM_ACTIONS.START_SILENCE);
+        await PersistentAlarmService.scheduleAlarm(
+          startId,
+          finalTrigger,
+          'Silent Zone Engine',
+          'Optimizing background sync...',
+          { placeId: place.id, action: ALARM_ACTIONS.START_SILENCE }
+        );
       }
     }
 
@@ -309,7 +319,13 @@ class LocationService {
 
     if (nextTriggerableEnd) {
       const triggerEnd = nextTriggerableEnd.endTime.getTime();
-      await alarmService.scheduleNativeAlarm(endId, triggerEnd, place.id, ALARM_ACTIONS.STOP_SILENCE);
+      await PersistentAlarmService.scheduleAlarm(
+        endId, 
+        triggerEnd,
+        'Silent Zone Engine',
+        'Finalizing session...',
+        { placeId: place.id, action: ALARM_ACTIONS.STOP_SILENCE }
+      );
     }
   }
 
@@ -319,8 +335,20 @@ class LocationService {
    */
   async handleAlarmFired(data: any) {
     const alarmId = data?.notification?.id;
-    const action = data?.notification?.data?.action;
-    const placeId = data?.notification?.data?.placeId;
+    let action = data?.notification?.data?.action || data?.notification?.data?.data?.action;
+    let placeId = data?.notification?.data?.placeId || data?.notification?.data?.data?.placeId;
+
+    // Fallback: Parse from ID if data missing (place-UUID-start/end)
+    if (!action || !placeId) {
+       if (alarmId?.startsWith('place-')) {
+          const parts = alarmId.split('-');
+          // Format is place-UUID-start or place-UUID-end
+          // UUID might have dashes, so we take the last part as action and middle as ID
+          action = parts[parts.length - 1] === 'start' ? ALARM_ACTIONS.START_SILENCE : ALARM_ACTIONS.STOP_SILENCE;
+          placeId = alarmId.replace('place-', '').replace(/-(start|end)$/, '');
+          Logger.info(`[Engine] 🧩 Reconstructed action=${action}, placeId=${placeId} from ID=${alarmId}`);
+       }
+    }
 
     if (!this.realm || !placeId) return;
 
@@ -600,7 +628,11 @@ class LocationService {
   async purgeAllAlarms() {
     if (!this.realm || this.realm.isClosed) return;
     const all = Array.from(PlaceService.getAllPlaces(this.realm));
-    for (const p of all) await alarmService.cancelAlarmsForPlace((p as any).id);
+    for (const p of all) {
+      const id = (p as any).id;
+      await PersistentAlarmService.cancelAlarm(`place-${id}-start`);
+      await PersistentAlarmService.cancelAlarm(`place-${id}-end`);
+    }
   }
 
   /**

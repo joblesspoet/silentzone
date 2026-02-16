@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!--
         REMOVED: android.permission.ACTION_MANAGE_OVERLAY_PERMISSION
@@ -143,6 +144,23 @@
           <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
         </intent-filter>
       </receiver>
+
+    <!-- Persistent Alarm Receiver -->
+    <receiver
+      android:name=".PersistentAlarmReceiver"
+      android:enabled="true"
+      android:exported="false">
+      <intent-filter>
+        <action android:name="com.qybrix.silentzone.ALARM_TRIGGERED" />
+      </intent-filter>
+    </receiver>
+
+    <!-- Headless JS Task Service for Alarms -->
+    <service
+      android:name=".AlarmHandlerService"
+      android:enabled="true"
+      android:exported="false"
+      android:foregroundServiceType="location" />
 
     </application>
 </manifest>

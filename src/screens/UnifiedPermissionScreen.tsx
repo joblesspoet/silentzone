@@ -219,9 +219,9 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
           description={
             isBatteryOptimized
               ? Platform.OS === 'android'
-                ? 'Tap "Verify" to confirm it shows "Unrestricted" in App Battery settings — not just "Optimized".'
+                ? 'CRITICAL: Tap "Verify" and ensure "Unrestricted" is selected (NOT "Optimized").'
                 : 'Battery optimization disabled.'
-              : "MANDATORY: Set battery to 'Unrestricted' so Android doesn't kill the app in background."
+              : "MANDATORY: You MUST set battery to 'Unrestricted' so Android doesn't kill the app."
           }
           isGranted={isBatteryOptimized}
           icon="battery-saver"
@@ -245,9 +245,9 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
         */}
         {hasAllPermissions && Platform.OS === 'android' && (
           <View style={styles.advisoryContainer}>
-            <MaterialIcon name="info-outline" size={16} color={theme.colors.primary} />
+            <MaterialIcon name="warning" size={16} color={theme.colors.error} />
             <Text style={styles.advisoryText}>
-              Please tap "Verify" on Battery to confirm it shows "Unrestricted" before starting.
+              IMPORTANT: Tap "Verify" on Battery and confirm "Unrestricted" is selected before starting.
             </Text>
           </View>
         )}

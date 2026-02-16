@@ -21,6 +21,7 @@ import { PermissionBanner } from '../components/PermissionBanner';
 import { locationService } from '../services/LocationService';
 
 import { gpsManager } from '../services/GPSManager';
+import { PersistentAlarmService } from '../services/PersistentAlarmService';
 
 export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   const realm = useRealm();
@@ -267,7 +268,6 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       </TouchableOpacity>
     </View>
   );
-
   return (
     <View style={styles.container}>
       {/* Header */}

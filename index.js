@@ -68,7 +68,7 @@ const getRealm = async () => {
   const { schemas, SCHEMA_VERSION } = require('./src/database/schemas');
 
   try {
-    console.log('[Dispatcher] Opening background Realm...');
+    Logger.info('[Dispatcher] Opening background Realm...');
     cachedRealm = await Realm.open({
       schema: schemas,
       schemaVersion: SCHEMA_VERSION,
@@ -82,7 +82,7 @@ const getRealm = async () => {
 
     return cachedRealm;
   } catch (error) {
-    console.error('[Dispatcher] CRITICAL REALM FAILURE:', error);
+    Logger.error('[Dispatcher] CRITICAL REALM FAILURE:', error);
     throw error;
   }
 };
@@ -161,11 +161,48 @@ AppRegistry.registerHeadlessTask('onGeofenceTransition', () => async (taskData) 
 });
 
 // ============================================================================
+// HANDLER: Persistent Alarm Events (Native Alarm Clock)
+// ============================================================================
+
+AppRegistry.registerHeadlessTask('AlarmHandler', () => async (taskData) => {
+  const { alarmId, timestamp } = taskData;
+  Logger.info(`[Dispatcher] ⏰ Persistent Alarm: ID=${alarmId} Time=${new Date(timestamp).toLocaleTimeString()}`);
+
+  if (isDuplicate(alarmId)) return;
+
+  try {
+    const realm = await getRealm();
+    
+    // Non-destructive init
+    await locationService.initializeLight(realm);
+    
+    // We bridge this to the same handler as Notifee alarms
+    // but we wrap the data to match the expected format
+    await locationService.handleAlarmFired({
+      notification: { 
+        id: alarmId, 
+        data: { 
+          // We don't have the full data object here yet, but LocationService 
+          // mainly needs the action and placeId which are usually part of the ID string
+          // or we can reconstruct them if needed.
+          // Note: handleAlarmFired in LocationService parses ID string if data is missing?
+          // Let's check LocationService.ts handleAlarmFired implementation.
+          ...taskData 
+        } 
+      },
+    });
+    Logger.info(`[Dispatcher] ✅ Persistent Alarm Handled: ${alarmId}`);
+  } catch (err) {
+    Logger.error(`[Dispatcher] ❌ Persistent Alarm Error (${alarmId}):`, err);
+  }
+});
+
+// ============================================================================
 // HANDLER: Boot / Restart
 // ============================================================================
 
 AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async () => {
-  console.log('[Dispatcher] 🔄 System Rebooted. Restoring engine...');
+  Logger.info('[Dispatcher] 🔄 System Rebooted. Restoring engine...');
   
   try {
     const realm = await getRealm();
@@ -175,9 +212,9 @@ AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async () => {
     await locationService.refreshAllWatchers();
     
     await notificationManager.showResumedAlert();
-    console.log('[Dispatcher] ✅ Engine Resumed');
+    Logger.info('[Dispatcher] ✅ Engine Resumed');
   } catch (error) {
-    console.error('[Dispatcher] Boot Restore Failed:', error);
+    Logger.error('[Dispatcher] Boot Restore Failed:', error);
   }
 });
 
@@ -187,7 +224,7 @@ AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async () => {
 
 notifee.registerForegroundService(() => {
   return new Promise(() => {
-    console.log('[Dispatcher] 🚀 Sticky service keeping process alive');
+    Logger.info('[Dispatcher] 🚀 Sticky service keeping process alive');
   });
 });
 

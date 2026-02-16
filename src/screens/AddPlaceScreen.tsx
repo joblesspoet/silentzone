@@ -19,7 +19,7 @@ import { sortSchedules, validateLimit, findOverlappingSchedules, findInvalidTime
 import { PrayerTimeService, PrayerConfig } from '../services/PrayerTimeService';
 import { Modal } from 'react-native';
 import { Logger } from '../services/Logger';
-import { alarmService } from '../services/AlarmService';
+// No longer using AlarmService here, redundant.
 
 
 

@@ -3,7 +3,8 @@
 import Realm from 'realm';
 import { generateUUID } from '../../utils/uuid';
 import { RealmWriteHelper } from '../helpers/RealmWriteHelper';
-import { alarmService } from '../../services/AlarmService';
+// No longer using AlarmService here, persistent system handles it.
+import { PersistentAlarmService } from '../../services/PersistentAlarmService';
 
 export interface PlaceData {
   name: string;
@@ -143,7 +144,8 @@ export const PlaceService = {
   deletePlace: async (realm: Realm, id: string): Promise<boolean> => {
     // CRITICAL: Explicitly cancel and AWAIT cancellation before deleting data
     // This prevents orphaned alarms for a non-existent place
-    await alarmService.cancelAlarmsForPlace(id);
+    await PersistentAlarmService.cancelAlarm(`place-${id}-start`);
+    await PersistentAlarmService.cancelAlarm(`place-${id}-end`);
 
     return RealmWriteHelper.safeWrite(
       realm,
