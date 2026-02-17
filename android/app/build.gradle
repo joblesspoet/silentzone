@@ -85,8 +85,8 @@ android {
         applicationId "com.qybrix.silentzone"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 11
-        versionName "1.1.8"
+        versionCode 12
+        versionName "1.1.9"
 
         Properties properties = new Properties()
         if (project.rootProject.file('local.properties').exists()) {
@@ -149,4 +149,7 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // WorkManager for background alarm guard
+    implementation "androidx.work:work-runtime-ktx:2.9.0"
 }

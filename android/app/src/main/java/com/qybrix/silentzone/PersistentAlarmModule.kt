@@ -30,7 +30,6 @@ class PersistentAlarmModule(reactContext: ReactApplicationContext) : ReactContex
     
     private val alarmManager: AlarmManager = reactContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     private val prefs = reactContext.getSharedPreferences("persistent_alarms", Context.MODE_PRIVATE)
-    private var verificationJob: Job? = null
     
     override fun getName(): String = "PersistentAlarmModule"
     
@@ -94,9 +93,6 @@ class PersistentAlarmModule(reactContext: ReactApplicationContext) : ReactContex
             
             // Store alarm metadata for verification and boot recovery
             saveAlarmMetadata(alarmId, triggerTime, title, body, data)
-            
-            // Start verification timer if not already running
-            startAlarmVerification()
             
             Log.i(TAG, "✅ Alarm scheduled successfully: $alarmId")
             Log.i(TAG, "   Type: setAlarmClock (highest priority)")
@@ -252,26 +248,6 @@ class PersistentAlarmModule(reactContext: ReactApplicationContext) : ReactContex
     }
     
     /**
-     * Start background verification that checks alarms every 15 minutes
-     * This detects if Android silently cancelled alarms during Doze
-     */
-    private fun startAlarmVerification() {
-        if (verificationJob?.isActive == true) {
-            Log.d(TAG, "Verification already running")
-            return
-        }
-        
-        verificationJob = CoroutineScope(Dispatchers.IO).launch {
-            Log.i(TAG, "🛡️ Alarm Guardian started (15min checks)")
-            
-            while (isActive) {
-                delay(15 * 60 * 1000) // Check every 15 minutes
-                performAlarmVerification()
-            }
-        }
-    }
-    
-    /**
      * Verify all scheduled alarms still exist, reschedule if missing
      * Returns: number of alarms that were missing and needed rescheduling
      */
@@ -377,14 +353,6 @@ class PersistentAlarmModule(reactContext: ReactApplicationContext) : ReactContex
         reactApplicationContext
             .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit(eventName, data)
-    }
-    
-    /**
-     * Called when module is destroyed
-     */
-    override fun onCatalystInstanceDestroy() {
-        verificationJob?.cancel()
-        super.onCatalystInstanceDestroy()
     }
     
     companion object {

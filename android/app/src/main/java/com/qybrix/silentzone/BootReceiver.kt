@@ -29,6 +29,9 @@ class BootReceiver : BroadcastReceiver() {
             
             Log.i(TAG, "Device rebooted - Starting alarm rescheduling service")
             
+            // Re-arm the native guard on boot
+            AlarmGuardWorker.schedule(context)
+
             // Start the headless JS task to reschedule alarms
             val serviceIntent = Intent(context, BootRescheduleService::class.java)
             
