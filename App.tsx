@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'react-native';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { navigationRef } from './src/navigation/NavigationService';
@@ -21,43 +21,47 @@ const AppContent = () => {
   const { hasAllPermissions } = usePermissions();
   const hasInitialized = useRef(false);
   const engineBooted = useRef(false);
-
-  useEffect(() => {
-    if (hasInitialized.current) return;
-    hasInitialized.current = true;
-
-    PersistentAlarmService.initialize();
-
-    const wireLogging = async () => {
-      try {
-        if (realm) {
-          Logger.setRealm(realm);
-          const enabled = await SettingsService.getLoggingEnabled();
-          Logger.setEnabled(enabled);
-          locationService.setRealmReference(realm);
-        }
-      } catch (error: any) {
-        console.error('[App] Logging initialization error:', error);
-      }
-    };
-
-    wireLogging();
-  }, [realm]);
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
 
   useEffect(() => {
     if (!realm) return;
 
+    if (!hasInitialized.current) {
+      hasInitialized.current = true;
+      PersistentAlarmService.initialize();
+      const wireLogging = async () => {
+        try {
+          Logger.setRealm(realm);
+          const enabled = await SettingsService.getLoggingEnabled();
+          Logger.setEnabled(enabled);
+          locationService.setRealmReference(realm);
+        } catch (error: any) {
+          console.error('[App] Logging initialization error:', error);
+        }
+      };
+      wireLogging();
+    }
+
     const prefs = PreferencesService.getPreferences(realm);
-    const onboardingCompleted = !!prefs?.onboardingCompleted;
+    setOnboardingCompleted(!!prefs?.onboardingCompleted);
 
-    if (!onboardingCompleted || !hasAllPermissions) {
-      return;
+    if (prefs && typeof (prefs as any).addListener === 'function') {
+      const listener = (p: any) => {
+        if (p && p.isValid && p.isValid()) {
+          setOnboardingCompleted(!!p.onboardingCompleted);
+        }
+      };
+      (prefs as any).addListener(listener);
+      return () => {
+        (prefs as any).removeListener(listener);
+      };
     }
+  }, [realm]);
 
-    if (engineBooted.current) {
-      return;
-    }
-
+  useEffect(() => {
+    if (!realm) return;
+    if (!onboardingCompleted || !hasAllPermissions) return;
+    if (engineBooted.current) return;
     engineBooted.current = true;
 
     const bootEngine = async () => {
@@ -70,7 +74,7 @@ const AppContent = () => {
     };
 
     bootEngine();
-  }, [realm, hasAllPermissions]);
+  }, [realm, onboardingCompleted, hasAllPermissions]);
 
   return (
     <NavigationContainer
