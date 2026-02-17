@@ -649,8 +649,11 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
                       Please add at least one time interval below.
                   </Text>
               )}
+              
+              </View>
 
-              {schedules.length === 0 ? (
+              <View>
+                 {schedules.length === 0 ? (
                   <View style={[
                       styles.emptySchedule,
                       scheduleError && { borderColor: theme.colors.error, backgroundColor: theme.colors.error + '10' }
@@ -826,7 +829,7 @@ export const EditPlaceScreen: React.FC<Props> = ({ navigation, route }) => {
               <Text style={styles.deleteText}>Delete Place</Text>
             </TouchableOpacity>
             
-            <View style={{ height: 40 }} />
+            {/*<View style={{ height: 40 }} />*/}
           </View>
       </ScrollView>
 
@@ -1024,7 +1027,7 @@ const styles = StyleSheet.create({
     marginTop: -8,
     marginBottom: 12,
   },
-  scheduleSection: { marginTop: -8, marginBottom: theme.spacing.xl },
+  scheduleSection: {marginVertical: 10 },
   addSlotButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   addSlotText: { fontSize: theme.typography.sizes.sm, color: theme.colors.primary, fontWeight: theme.typography.weights.bold },
   emptySchedule: { backgroundColor: theme.colors.surface.light, padding: theme.spacing.lg, borderRadius: theme.layout.borderRadius.md, alignItems: 'center', borderStyle: 'dashed', borderWidth: 1, borderColor: theme.colors.border.dark },
