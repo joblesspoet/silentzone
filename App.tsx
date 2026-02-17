@@ -29,7 +29,7 @@ const AppContent = () => {
         if (realm) {
           Logger.setRealm(realm);
           const enabled = await SettingsService.getLoggingEnabled();
-          Logger.setEnabled(enabled);
+          Logger.setEnabled(true);
         }
         const prefs = PreferencesService.getPreferences(realm);
         if (prefs?.onboardingCompleted) {

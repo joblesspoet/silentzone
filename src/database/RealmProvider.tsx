@@ -3,7 +3,7 @@ import Realm from 'realm';
 import { schemas, SCHEMA_VERSION } from './schemas';
 import { migrateFromAsyncStorage } from './migration';
 
-const RealmContext = createContext<Realm | null>(null);
+export const RealmContext = createContext<Realm | null>(null);
 
 // ─── Shared instance so background tasks (index.js) can reuse it ────────────
 let _sharedRealmInstance: Realm | null = null;
@@ -38,6 +38,9 @@ export const RealmProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         });
 
         await migrateFromAsyncStorage(realmInstance);
+        
+        const { ensurePreferencesExist } = require('./services/PreferencesService');
+        ensurePreferencesExist(realmInstance);
 
         // FIX #2: Keep both the ref and the shared module-level pointer in sync
         realmRef.current = realmInstance;

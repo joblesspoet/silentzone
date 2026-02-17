@@ -2,6 +2,7 @@
 
 import Realm from 'realm';
 import { RealmWriteHelper } from '../helpers/RealmWriteHelper';
+import { Logger } from '../../services/Logger';
 
 const PREFS_ID = 'USER_PREFS';
 
@@ -28,11 +29,15 @@ export const PreferencesService = {
    * Creates default preferences if they don't exist
    */
   getPreferences: (realm: Realm): Preferences | null => {
-    console.log(`[PreferencesService] Fetching preferences (ID: ${PREFS_ID})...`);
+    Logger.info(
+      `[PreferencesService] Fetching preferences (ID: ${PREFS_ID})...`,
+    );
     let prefs = realm.objectForPrimaryKey<Preferences>('Preferences', PREFS_ID);
 
     if (!prefs) {
-      console.log('[PreferencesService] No preferences found. Creating defaults...');
+      Logger.info(
+        '[PreferencesService] No preferences found. Creating defaults...',
+      );
       const created = RealmWriteHelper.safeWrite(
         realm,
         () => {
@@ -45,13 +50,15 @@ export const PreferencesService = {
             databaseSeeded: false,
           });
         },
-        'createDefaultPreferences'
+        'createDefaultPreferences',
       );
 
       if (created) {
-        console.log('[PreferencesService] Default preferences created ✅');
+        Logger.info('[PreferencesService] Default preferences created ✅');
       } else {
-        console.error('[PreferencesService] CRITICAL: Failed to create default preferences! ❌');
+        Logger.info(
+          '[PreferencesService] CRITICAL: Failed to create default preferences! ❌',
+        );
       }
       prefs = created;
     }
@@ -63,41 +70,48 @@ export const PreferencesService = {
    * Update preferences - THREAD SAFE
    */
   updatePreferences: (realm: Realm, data: PreferencesData): boolean => {
-    return RealmWriteHelper.safeWrite(
-      realm,
-      () => {
-        let prefs = realm.objectForPrimaryKey<Preferences>('Preferences', PREFS_ID);
+    return (
+      RealmWriteHelper.safeWrite(
+        realm,
+        () => {
+          let prefs = realm.objectForPrimaryKey<Preferences>(
+            'Preferences',
+            PREFS_ID,
+          );
 
-        if (!prefs) {
-          // Create with provided data + defaults
-          prefs = realm.create<Preferences>('Preferences', {
-            id: PREFS_ID,
-            onboardingCompleted: data.onboardingCompleted ?? false,
-            trackingEnabled: data.trackingEnabled ?? true,
-            notificationsEnabled: data.notificationsEnabled ?? true,
-            maxPlaces: data.maxPlaces ?? 3,
-            databaseSeeded: data.databaseSeeded ?? false,
-          });
-          console.log('[PreferencesService] Created preferences with updates');
+          if (!prefs) {
+            // Create with provided data + defaults
+            prefs = realm.create<Preferences>('Preferences', {
+              id: PREFS_ID,
+              onboardingCompleted: data.onboardingCompleted ?? false,
+              trackingEnabled: data.trackingEnabled ?? true,
+              notificationsEnabled: data.notificationsEnabled ?? true,
+              maxPlaces: data.maxPlaces ?? 3,
+              databaseSeeded: data.databaseSeeded ?? false,
+            });
+            console.log(
+              '[PreferencesService] Created preferences with updates',
+            );
+            return true;
+          }
+
+          // Update existing preferences
+          if (data.onboardingCompleted !== undefined)
+            prefs.onboardingCompleted = data.onboardingCompleted;
+          if (data.trackingEnabled !== undefined)
+            prefs.trackingEnabled = data.trackingEnabled;
+          if (data.notificationsEnabled !== undefined)
+            prefs.notificationsEnabled = data.notificationsEnabled;
+          if (data.maxPlaces !== undefined) prefs.maxPlaces = data.maxPlaces;
+          if (data.databaseSeeded !== undefined)
+            prefs.databaseSeeded = data.databaseSeeded;
+
+          console.log('[PreferencesService] Updated preferences:', data);
           return true;
-        }
-
-        // Update existing preferences
-        if (data.onboardingCompleted !== undefined)
-          prefs.onboardingCompleted = data.onboardingCompleted;
-        if (data.trackingEnabled !== undefined)
-          prefs.trackingEnabled = data.trackingEnabled;
-        if (data.notificationsEnabled !== undefined)
-          prefs.notificationsEnabled = data.notificationsEnabled;
-        if (data.maxPlaces !== undefined) prefs.maxPlaces = data.maxPlaces;
-        if (data.databaseSeeded !== undefined)
-          prefs.databaseSeeded = data.databaseSeeded;
-
-        console.log('[PreferencesService] Updated preferences:', data);
-        return true;
-      },
-      'updatePreferences'
-    ) ?? false;
+        },
+        'updatePreferences',
+      ) ?? false
+    );
   },
 
   /**
@@ -106,12 +120,15 @@ export const PreferencesService = {
    */
   deferredUpdatePreferences: async (
     realm: Realm,
-    data: PreferencesData
+    data: PreferencesData,
   ): Promise<boolean> => {
     const result = await RealmWriteHelper.deferredWrite(
       realm,
       () => {
-        let prefs = realm.objectForPrimaryKey<Preferences>('Preferences', PREFS_ID);
+        let prefs = realm.objectForPrimaryKey<Preferences>(
+          'Preferences',
+          PREFS_ID,
+        );
 
         if (!prefs) {
           prefs = realm.create<Preferences>('Preferences', {
@@ -139,7 +156,7 @@ export const PreferencesService = {
         console.log('[PreferencesService] Deferred update:', data);
         return true;
       },
-      'deferredUpdatePreferences'
+      'deferredUpdatePreferences',
     );
 
     return result ?? false;
@@ -166,30 +183,35 @@ export const PreferencesService = {
    * Toggle tracking - THREAD SAFE
    */
   toggleTracking: (realm: Realm): boolean => {
-    return RealmWriteHelper.safeWrite(
-      realm,
-      () => {
-        let prefs = realm.objectForPrimaryKey<Preferences>('Preferences', PREFS_ID);
+    return (
+      RealmWriteHelper.safeWrite(
+        realm,
+        () => {
+          let prefs = realm.objectForPrimaryKey<Preferences>(
+            'Preferences',
+            PREFS_ID,
+          );
 
-        if (!prefs) {
-          prefs = realm.create<Preferences>('Preferences', {
-            id: PREFS_ID,
-            onboardingCompleted: false,
-            trackingEnabled: false, // Start with false since we're toggling
-            notificationsEnabled: true,
-            maxPlaces: 3,
-            databaseSeeded: false,
-          });
-        }
+          if (!prefs) {
+            prefs = realm.create<Preferences>('Preferences', {
+              id: PREFS_ID,
+              onboardingCompleted: false,
+              trackingEnabled: false, // Start with false since we're toggling
+              notificationsEnabled: true,
+              maxPlaces: 3,
+              databaseSeeded: false,
+            });
+          }
 
-        const newState = !prefs.trackingEnabled;
-        prefs.trackingEnabled = newState;
+          const newState = !prefs.trackingEnabled;
+          prefs.trackingEnabled = newState;
 
-        console.log(`[PreferencesService] Tracking toggled: ${newState}`);
-        return newState;
-      },
-      'toggleTracking'
-    ) ?? false;
+          console.log(`[PreferencesService] Tracking toggled: ${newState}`);
+          return newState;
+        },
+        'toggleTracking',
+      ) ?? false
+    );
   },
 
   /**
@@ -204,7 +226,9 @@ export const PreferencesService = {
    * Mark database as seeded - THREAD SAFE
    */
   setDatabaseSeeded: (realm: Realm): boolean => {
-    return PreferencesService.updatePreferences(realm, { databaseSeeded: true });
+    return PreferencesService.updatePreferences(realm, {
+      databaseSeeded: true,
+    });
   },
 
   /**
@@ -222,4 +246,8 @@ export const PreferencesService = {
     const prefs = PreferencesService.getPreferences(realm);
     return prefs?.onboardingCompleted ?? false;
   },
+};
+
+export const ensurePreferencesExist = (realm: Realm): void => {
+  PreferencesService.getPreferences(realm);
 };

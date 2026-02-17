@@ -196,7 +196,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         locationService.onGlobalTrackingChanged(false);
       });
     }
-  }, [activeCount, trackingEnabled, realm, isInitialLoad]);
+  }, [activeCount, trackingEnabled, realm, isInitialLoad, places]);
 
   const handleToggle = async (id: string) => {
     const place = places.find(p => p.id === id);
