@@ -141,23 +141,14 @@ export const PermissionsProvider: React.FC<{ children: ReactNode }> = ({ childre
 
         } else if (!hadAllPermissions && hasAllNow) {
           if (!realm || realm.isClosed) {
-            console.log('[PermissionsContext] All permissions granted, but Realm is closed. Skipping init.');
+            console.log('[PermissionsContext] All permissions granted, but Realm is closed.');
             return;
           }
           const isComplete = PreferencesService.isOnboardingComplete(realm);
           if (isComplete) {
-            if (locationService.isCurrentlyInitializing()) {
-              console.log('[PermissionsContext] Engine already initializing, skipping duplicate init.');
-            } else {
-              console.log('[PermissionsContext] All permissions granted! Initializing engine.');
-              try {
-                await locationService.initialize(realm);
-              } catch (e) {
-                console.warn('[PermissionsContext] Failed to initialize location engine:', e);
-              }
-            }
+            console.log('[PermissionsContext] All permissions granted with onboarding complete.');
           } else {
-            console.log('[PermissionsContext] All permissions granted, postponing init until onboarding finishes.');
+            console.log('[PermissionsContext] All permissions granted, onboarding not complete.');
           }
         }
       }

@@ -123,26 +123,13 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
 
   const handleStart = async () => {
     if (!realm) return;
-
     try {
       console.log('[UnifiedPermissionScreen] Finalizing setup...');
 
-      // 1. Mark onboarding complete in DB
       PreferencesService.setOnboardingComplete(realm);
-
-      // 2. Explicitly initialize the location engine.
-      // App.tsx's init effect ran at startup BEFORE onboarding was complete,
-      // so it only called locationService.setRealmReference() which skips
-      // creating notification channels. Calling initialize() here — before
-      // navigating — guarantees channels are created and geofences are seeded
-      // before any background code can run.
-      await locationService.initialize(realm);
-
-      console.log('[UnifiedPermissionScreen] Engine initialized, navigating home.');
       navigation.replace('Home');
     } catch (error) {
       console.error('[UnifiedPermissionScreen] Error during setup finalization:', error);
-      // Fallback: still navigate — LocationService has its own internal guards
       navigation.replace('Home');
     }
   };
