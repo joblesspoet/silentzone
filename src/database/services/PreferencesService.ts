@@ -29,10 +29,8 @@ export const PreferencesService = {
    * Creates default preferences if they don't exist
    */
   getPreferences: (realm: Realm): Preferences | null => {
-    Logger.info(
-      `[PreferencesService] Fetching preferences (ID: ${PREFS_ID})...`,
-    );
     let prefs = realm.objectForPrimaryKey<Preferences>('Preferences', PREFS_ID);
+
 
     if (!prefs) {
       Logger.info(

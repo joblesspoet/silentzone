@@ -332,7 +332,12 @@ class LocationService {
         finalTrigger = warmUpTime;
       } else if (lastChanceTime > Date.now() + 10000) {
         finalTrigger = lastChanceTime;
+      } else if (startTime > Date.now() + 2000) {
+        // NEW: Precision trigger for exactly the start time
+        // This acts as a final high-priority wake-up if we arrived after warm-ups.
+        finalTrigger = startTime;
       }
+
 
       if (finalTrigger) {
         await PersistentAlarmService.scheduleAlarm(
