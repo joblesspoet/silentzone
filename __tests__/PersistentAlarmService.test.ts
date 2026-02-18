@@ -1,5 +1,6 @@
 import { PersistentAlarmService } from '../src/services/PersistentAlarmService';
 import { NativeModules, Platform } from 'react-native';
+import { Logger } from '../src/services/Logger';
 
 // --- MOCKS ---
 
@@ -81,6 +82,69 @@ describe('PersistentAlarmService', () => {
       (PersistentAlarmModule.scheduleAlarm as jest.Mock).mockResolvedValue(false);
       const result = await PersistentAlarmService.scheduleAlarm('id', Date.now(), 't', 'b', { placeId: '1', action: 'X' });
       expect(result).toBe(false);
+    });
+
+    test('should skip native schedule when duplicate exists and alarm is still scheduled', async () => {
+      const alarmId = 'dup-alarm';
+      const triggerTime = Date.now() + 600000;
+      (PersistentAlarmModule.getAllAlarms as jest.Mock).mockResolvedValue([
+        {
+          id: alarmId,
+          triggerTime,
+          title: 'T',
+          body: 'B',
+          minutesUntilFire: 10,
+        },
+      ]);
+      (PersistentAlarmModule.isAlarmScheduled as jest.Mock).mockResolvedValue(true);
+
+      const result = await PersistentAlarmService.scheduleAlarm(
+        alarmId,
+        triggerTime,
+        'T',
+        'B',
+        { placeId: '1', action: 'X' },
+      );
+
+      expect(result).toBe(true);
+      expect(PersistentAlarmModule.scheduleAlarm).not.toHaveBeenCalled();
+      expect(Logger.warn).not.toHaveBeenCalled();
+    });
+
+    test('should reschedule when duplicate metadata exists but alarm is missing', async () => {
+      const alarmId = 'ghost-alarm';
+      const triggerTime = Date.now() + 600000;
+      (PersistentAlarmModule.getAllAlarms as jest.Mock).mockResolvedValue([
+        {
+          id: alarmId,
+          triggerTime,
+          title: 'T',
+          body: 'B',
+          minutesUntilFire: 10,
+        },
+      ]);
+      (PersistentAlarmModule.isAlarmScheduled as jest.Mock).mockResolvedValue(false);
+      (PersistentAlarmModule.scheduleAlarm as jest.Mock).mockResolvedValue(true);
+
+      const result = await PersistentAlarmService.scheduleAlarm(
+        alarmId,
+        triggerTime,
+        'T',
+        'B',
+        { placeId: '1', action: 'X' },
+      );
+
+      expect(result).toBe(true);
+      expect(PersistentAlarmModule.scheduleAlarm).toHaveBeenCalledWith(
+        alarmId,
+        triggerTime,
+        'T',
+        'B',
+        { placeId: '1', action: 'X' },
+      );
+      expect(Logger.warn).toHaveBeenCalledWith(
+        `[PersistentAlarm] Ghost metadata detected for ${alarmId}, rescheduling alarm`,
+      );
     });
 
     test('should return false on non-android platforms', async () => {
