@@ -205,7 +205,18 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     const success = PlaceService.togglePlaceEnabled(realm, id);
     if (success !== null) {
       // ✅ Event-Driven: Notify place toggle
-      await locationService.onPlaceToggled(id, !currentlyEnabled);
+      const willBeEnabled = !currentlyEnabled;
+      await locationService.onPlaceToggled(id, willBeEnabled);
+
+      // Auto-resume tracking when a single place becomes active
+      const nextActiveCount = willBeEnabled ? activeCount + 1 : activeCount - 1;
+      if (willBeEnabled && nextActiveCount === 1 && !trackingEnabled) {
+        PreferencesService.deferredUpdatePreferences(realm, {
+          trackingEnabled: true,
+        }).then(() => {
+          locationService.onGlobalTrackingChanged(true);
+        });
+      }
     }
   };
 

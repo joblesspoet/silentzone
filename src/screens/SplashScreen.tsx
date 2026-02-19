@@ -1,12 +1,12 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withRepeat, 
-  withSequence, 
-  withTiming, 
-  Easing 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
 } from 'react-native-reanimated';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
@@ -20,13 +20,16 @@ import { PermissionsManager } from '../permissions/PermissionsManager';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type SplashScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Splash'>;
+type SplashScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Splash'
+>;
 
 export const SplashScreen = () => {
   const navigation = useNavigation<SplashScreenNavigationProp>();
   const realm = useRealm();
   const insets = useSafeAreaInsets();
-  
+
   // Animation Values
   const pulseScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(1);
@@ -38,38 +41,38 @@ export const SplashScreen = () => {
     pulseScale.value = withRepeat(
       withSequence(
         withTiming(1.05, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
-        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) })
+        withTiming(1, { duration: 1500, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
-      true
+      true,
     );
     pulseOpacity.value = withRepeat(
       withSequence(
         withTiming(0.9, { duration: 1500 }),
-        withTiming(1, { duration: 1500 })
+        withTiming(1, { duration: 1500 }),
       ),
       -1,
-      true
+      true,
     );
 
     // Loading Dots Animation
     loadingDot1.value = withRepeat(
       withSequence(
         withTiming(-5, { duration: 500 }),
-        withTiming(0, { duration: 500 })
+        withTiming(0, { duration: 500 }),
       ),
       -1,
-      true
+      true,
     );
-    
+
     setTimeout(() => {
       loadingDot2.value = withRepeat(
         withSequence(
           withTiming(-5, { duration: 500 }),
-          withTiming(0, { duration: 500 })
+          withTiming(0, { duration: 500 }),
         ),
         -1,
-        true
+        true,
       );
     }, 150);
 
@@ -77,22 +80,23 @@ export const SplashScreen = () => {
       loadingDot3.value = withRepeat(
         withSequence(
           withTiming(-5, { duration: 500 }),
-          withTiming(0, { duration: 500 })
+          withTiming(0, { duration: 500 }),
         ),
         -1,
-        true
+        true,
       );
     }, 300);
 
     const checkOnboarding = async () => {
       // Minimum splash time of 2 seconds
       await new Promise(resolve => setTimeout(() => resolve(undefined), 2000));
-      
+
       const prefs = PreferencesService.getPreferences(realm);
-      
+
       // Android: Check battery optimization once onboarding is done or for returning users
       if (Platform.OS === 'android' && prefs?.onboardingCompleted) {
-        const ignoring = await PermissionsManager.isBatteryOptimizationEnabled();
+        const ignoring =
+          await PermissionsManager.isBatteryOptimizationEnabled();
         if (!ignoring) {
           // If not ignoring, and we haven't asked recently (optional logic here)
           // For now, let's just proceed to Home, but we might want a middle screen
@@ -100,16 +104,21 @@ export const SplashScreen = () => {
         }
       }
 
-      console.log('[SplashScreen] Preferences:', JSON.stringify({
-        onboardingCompleted: prefs?.onboardingCompleted,
-        databaseSeeded: prefs?.databaseSeeded,
-      }));
-      
+      console.log(
+        '[SplashScreen] Preferences:',
+        JSON.stringify({
+          onboardingCompleted: prefs?.onboardingCompleted,
+          databaseSeeded: prefs?.databaseSeeded,
+        }),
+      );
+
       if (prefs && prefs.onboardingCompleted) {
         console.log('[SplashScreen] Navigating to Home (onboarding completed)');
         navigation.replace('Home');
       } else {
-        console.log('[SplashScreen] Navigating to OnboardingWelcome (onboarding NOT completed)');
+        console.log(
+          '[SplashScreen] Navigating to OnboardingWelcome (onboarding NOT completed)',
+        );
         navigation.replace('OnboardingWelcome');
       }
     };
@@ -122,9 +131,15 @@ export const SplashScreen = () => {
     opacity: pulseOpacity.value,
   }));
 
-  const dot1Style = useAnimatedStyle(() => ({ transform: [{ translateY: loadingDot1.value }] }));
-  const dot2Style = useAnimatedStyle(() => ({ transform: [{ translateY: loadingDot2.value }] }));
-  const dot3Style = useAnimatedStyle(() => ({ transform: [{ translateY: loadingDot3.value }] }));
+  const dot1Style = useAnimatedStyle(() => ({
+    transform: [{ translateY: loadingDot1.value }],
+  }));
+  const dot2Style = useAnimatedStyle(() => ({
+    transform: [{ translateY: loadingDot2.value }],
+  }));
+  const dot3Style = useAnimatedStyle(() => ({
+    transform: [{ translateY: loadingDot3.value }],
+  }));
 
   return (
     <View style={styles.container}>
@@ -145,17 +160,27 @@ export const SplashScreen = () => {
         <Animated.View style={[styles.logoContainer, animatedLogoStyle]}>
           <View style={styles.glow} />
           <View style={styles.pinContainer}>
-            <MaterialIcon name="location-on" size={120} color={theme.colors.primary} />
+            <MaterialIcon
+              name="location-on"
+              size={120}
+              color={theme.colors.primary}
+            />
             <View style={styles.speakerContainer}>
-              <MaterialIcon name="volume-off" size={40} color={theme.colors.white} />
+              <MaterialIcon
+                name="volume-off"
+                size={40}
+                color={theme.colors.white}
+              />
             </View>
           </View>
         </Animated.View>
-        
+
         {/* Text Section */}
         <View style={styles.textContainer}>
           <Text style={styles.title}>Silent Zone</Text>
-          <Text style={styles.tagline}>Auto-silence your phone at important places</Text>
+          <Text style={styles.tagline}>
+            Auto-silence your phone at important places
+          </Text>
         </View>
 
         {/* Loading Indicator */}
@@ -166,9 +191,13 @@ export const SplashScreen = () => {
         </View>
       </View>
 
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-        <Text style={[styles.version, { marginBottom: 4, fontWeight: '600' }]}>Developed by Qybrix</Text>
-        <Text style={styles.version}>v1.1.9</Text>
+      <View
+        style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}
+      >
+        <Text style={[styles.version, { marginBottom: 4, fontWeight: '600' }]}>
+          Developed by Qybrix
+        </Text>
+        <Text style={styles.version}>v1.2.0</Text>
       </View>
     </View>
   );
