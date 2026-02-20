@@ -20,6 +20,7 @@ class MainApplication : Application(), ReactApplication {
           add(BatteryOptimizationPackage())
           add(ExactAlarmPackage())
           add(PersistentAlarmPackage())
+          add(SensorPackage())  // SFPE: sensor fusion proximity engine
         },
     )
   }

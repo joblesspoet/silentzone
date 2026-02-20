@@ -323,7 +323,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         </View>
         <Text
           style={styles.appTitle}
-          onLongPress={() => navigation.navigate('Logs')}
+          onLongPress={() => navigation.navigate('SensorTest')}
         >Silent Zone</Text>
       </View>
 

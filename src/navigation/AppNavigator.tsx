@@ -10,6 +10,7 @@ import { PlaceDetailScreen } from '../screens/PlaceDetailScreen';
 import { EditPlaceScreen } from '../screens/EditPlaceScreen';
 import { UnifiedPermissionScreen } from '../screens/UnifiedPermissionScreen';
 import { LogViewerScreen } from '../screens/LogViewerScreen';
+import SensorTestScreen from '../screens/SensorTestScreen';
 
 
 export type RootStackParamList = {
@@ -23,6 +24,7 @@ export type RootStackParamList = {
   PlaceDetail: { placeId: string };
   EditPlace: { placeId: string };
   Logs: undefined;
+  SensorTest: undefined;
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -52,6 +54,7 @@ export const AppNavigator = () => {
       <Stack.Screen name="PlaceDetail" component={PlaceDetailScreen} />
       <Stack.Screen name="EditPlace" component={EditPlaceScreen} />
       <Stack.Screen name="Logs" component={LogViewerScreen} />
+      <Stack.Screen name="SensorTest" component={SensorTestScreen} />
     </Stack.Navigator>
   );
 };
