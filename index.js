@@ -212,24 +212,32 @@ AppRegistry.registerHeadlessTask('AlarmHandler', () => async (taskData) => {
   }
 });
 
-// ============================================================================
-// HANDLER: Boot / Restart
-// ============================================================================
+let bootTaskRunning = false;
 
 AppRegistry.registerHeadlessTask('BootRescheduleTask', () => async () => {
+  if (bootTaskRunning) {
+    Logger.warn(
+      '[Dispatcher] BootRescheduleTask already running – skipping duplicate',
+    );
+    return;
+  }
+  bootTaskRunning = true;
+
   Logger.info('[Dispatcher] 🔄 System Rebooted. Restoring engine...');
-  
+
   try {
     const realm = await getRealm();
     const { notificationManager } = require('./src/services/NotificationManager');
-    
+
     await locationService.initializeLight(realm);
     await locationService.refreshAllWatchers();
-    
+
     await notificationManager.showResumedAlert();
     Logger.info('[Dispatcher] ✅ Engine Resumed');
   } catch (error) {
     Logger.error('[Dispatcher] Boot Restore Failed:', error);
+  } finally {
+    bootTaskRunning = false;
   }
 });
 

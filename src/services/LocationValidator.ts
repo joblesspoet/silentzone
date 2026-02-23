@@ -74,11 +74,16 @@ export class LocationValidator {
         p.latitude,
         p.longitude
       );
-      
-      // effectiveDistance = minimum possible distance (best case)
+
       const effectiveDistance = Math.max(0, distance - location.accuracy);
-      
-      if (effectiveDistance <= p.radius) {
+
+      const maxAccuracy = p.radius;
+
+      if (
+        location.accuracy <= maxAccuracy &&
+        distance <= p.radius &&
+        effectiveDistance <= p.radius
+      ) {
         Logger.info(
           `[Location] ✅ INSIDE ${p.name}: ` +
           `dist=${Math.round(distance)}m, acc=±${Math.round(location.accuracy)}m, ` +
@@ -88,6 +93,7 @@ export class LocationValidator {
       } else {
         Logger.info(
           `[Location] Outside ${p.name}: ` +
+          `dist=${Math.round(distance)}m, acc=±${Math.round(location.accuracy)}m, ` +
           `eff ${Math.round(effectiveDistance)}m > ${p.radius}m`
         );
       }
