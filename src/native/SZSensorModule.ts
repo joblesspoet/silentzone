@@ -35,23 +35,47 @@ export interface AccelerationResult {
   timestamp: number;
 }
 
-export type SensorType = 'step_counter' | 'magnetometer' | 'barometer' | 'accelerometer';
+export type SensorType = 'step_counter' | 'step_detector' | 'magnetometer' | 'barometer' | 'accelerometer';
 
 /**
  * Read the hardware step counter.
  * Returns total steps since last device reboot.
- * Store baseline on check-in; use delta for dead reckoning.
- *
- * Requires: ACTIVITY_RECOGNITION permission (Android 10+)
  */
 export function getStepCount(): Promise<StepCountResult> {
   return SZSensorModule.getStepCount();
 }
 
 /**
+ * Read the physical step detector.
+ * Returns { detected: 1.0 } when a single step occurs.
+ * Unlike counter, this is a real-time event.
+ */
+export function getStepDetector(): Promise<{ detected: number; timestamp: number }> {
+  return SZSensorModule.getStepDetector();
+}
+
+/**
+ * Get hardware-level metadata about a sensor (Name, Vendor, Power usage).
+ */
+export interface SensorInfo {
+  name: string;
+  vendor: string;
+  version: number;
+  power: number;
+}
+export function getSensorInfo(sensorType: SensorType): Promise<SensorInfo> {
+  return SZSensorModule.getSensorInfo(sensorType);
+}
+
+/**
+ * Check if the app HAS the native activity recognition permission granted.
+ */
+export function checkActivityPermission(): Promise<boolean> {
+  return SZSensorModule.checkActivityPermission();
+}
+
+/**
  * Read the compass heading once.
- * 0° = North, 90° = East, 180° = South, 270° = West.
- * Used for determining direction of travel in dead reckoning.
  */
 export function getMagneticHeading(): Promise<MagneticHeadingResult> {
   return SZSensorModule.getMagneticHeading();
@@ -59,8 +83,6 @@ export function getMagneticHeading(): Promise<MagneticHeadingResult> {
 
 /**
  * Read atmospheric pressure from barometer.
- * Use pressureHPa to fingerprint a floor level (saves ~1.2 hPa per 10m altitude change).
- * Use altitudeM for rough elevation.
  */
 export function getBarometricPressure(): Promise<BarometricPressureResult> {
   return SZSensorModule.getBarometricPressure();
@@ -68,9 +90,6 @@ export function getBarometricPressure(): Promise<BarometricPressureResult> {
 
 /**
  * Read accelerometer values once.
- * magnitude ≈ 9.8 = stationary (gravity only)
- * magnitude > 12  = user is moving
- * Used by MotionClassifier to detect walk/vehicle/stationary.
  */
 export function getAcceleration(): Promise<AccelerationResult> {
   return SZSensorModule.getAcceleration();
@@ -78,31 +97,50 @@ export function getAcceleration(): Promise<AccelerationResult> {
 
 /**
  * Check if a specific sensor is physically present on the device.
- * Always call this before relying on a sensor (cheap devices may lack some).
  */
 export function isSensorAvailable(sensorType: SensorType): Promise<boolean> {
   return SZSensorModule.isSensorAvailable(sensorType);
 }
 
 /**
- * Convenience: check all 4 SFPE sensors at once.
- * Returns an object showing which sensors are available on this device.
+ * Convenience: check all 5 SFPE sensors at once.
  */
 export async function checkAllSensors(): Promise<Record<SensorType, boolean>> {
-  const [stepCounter, magnetometer, barometer, accelerometer] = await Promise.all([
+  const [stepCounter, stepDetector, magnetometer, barometer, accelerometer] = await Promise.all([
     isSensorAvailable('step_counter'),
+    isSensorAvailable('step_detector'),
     isSensorAvailable('magnetometer'),
     isSensorAvailable('barometer'),
     isSensorAvailable('accelerometer'),
   ]);
-  return { step_counter: stepCounter, magnetometer, barometer, accelerometer };
+  return { step_counter: stepCounter, step_detector: stepDetector, magnetometer, barometer, accelerometer };
+}
+
+/**
+ * Start a persistent native listener for steps.
+ * Use with DeviceEventEmitter.addListener('onStepUpdate', ...)
+ */
+export function startStepWatching(): Promise<boolean> {
+  return SZSensorModule.startStepWatching();
+}
+
+/**
+ * Stop the persistent native step listener.
+ */
+export function stopStepWatching(): Promise<boolean> {
+  return SZSensorModule.stopStepWatching();
 }
 
 export default {
   getStepCount,
+  getStepDetector,
+  getSensorInfo,
+  checkActivityPermission,
   getMagneticHeading,
   getBarometricPressure,
   getAcceleration,
   isSensorAvailable,
   checkAllSensors,
+  startStepWatching,
+  stopStepWatching,
 };

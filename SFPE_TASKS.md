@@ -231,23 +231,25 @@ Wires all SFPE components into the existing check-in/checkout flow. Replaces GPS
 
 ## Sensor Library Installation
 
-### TASK-00: Install & Verify `react-native-sensors`
-**Status:** `PENDING`
+### TASK-00: Build & Verify Custom `SZSensorModule` Native Module
+**Status:** `DONE`
 
 **Pre-Conditions:**
-- [ ] Branch `feature/sfpe-gps-reduction` is active
-- [ ] Current app builds and runs without errors
+- [x] Branch `feature/sfpe-gps-reduction` is active
+- [x] Current app builds and runs without errors
 
 **Deliverables:**
-- `react-native-sensors` installed and linked
-- Barometer, Accelerometer, Magnetometer, StepCounter confirmed accessible on test device
-- Small test log showing live sensor readings
+- [x] `SensorModule.kt` (Native Android Implementation)
+- [x] `SensorPackage.kt` (React Package)
+- [x] `SZSensorModule.ts` (TypeScript Bridge)
+- [x] `SensorTestScreen.tsx` (Verification UI)
+- [x] Activity Recognition & Sensor permissions added to Manifest
 
 **Post-Conditions (Approval Checklist):**
-- [ ] `npm install react-native-sensors` succeeds
-- [ ] Android `build.gradle` permissions updated
-- [ ] Live readings confirmed from all 4 sensors on physical device
-- [ ] User has approved to proceed
+- [x] Live readings confirmed from all 4 sensors on Sony Xperia XZ3
+- [x] Step counter verified in "Watch Mode" (event-driven)
+- [x] Magnetometer, Barometer, and Accelerometer confirmed functional
+- [x] User has approved to proceed to TASK-01
 
 ---
 

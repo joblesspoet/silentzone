@@ -43,6 +43,10 @@ class SensorModule(reactContext: ReactApplicationContext) :
     // ─────────────────────────────────────────────
     @ReactMethod
     fun getStepCount(promise: Promise) {
+        if (!hasActivityPermission()) {
+            promise.reject("PERMISSION_DENIED", "ACTIVITY_RECOGNITION permission required for step counter")
+            return
+        }
         val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
         if (sensor == null) {
             promise.reject("SENSOR_UNAVAILABLE", "Step counter not available on this device")
@@ -60,10 +64,56 @@ class SensorModule(reactContext: ReactApplicationContext) :
     }
 
     // ─────────────────────────────────────────────
-    //  MAGNETIC HEADING (Compass)
-    //  Returns heading in degrees (0° = North, 90° = East).
-    //  Also returns raw x/y/z for sensor fusion if needed.
+    //  STEP DETECTOR
+    //  Fires once for every step taken. Returns 1.0.
+    //  Used to verify hardware is reactive even if cumulative counter is sluggish.
     // ─────────────────────────────────────────────
+    @ReactMethod
+    fun getStepDetector(promise: Promise) {
+        if (!hasActivityPermission()) {
+            promise.reject("PERMISSION_DENIED", "ACTIVITY_RECOGNITION permission required for step detector")
+            return
+        }
+        val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+        if (sensor == null) {
+            promise.reject("SENSOR_UNAVAILABLE", "Step detector not available on this device")
+            return
+        }
+        readOneSensorValue(sensor, timeoutSeconds = 5L) { event ->
+            val map = Arguments.createMap()
+            map.putDouble("detected", event.values[0].toDouble())
+            map.putDouble("timestamp", System.currentTimeMillis().toDouble())
+            map
+        }.let { (result, error) ->
+            if (error != null) promise.reject("READ_ERROR", error)
+            else promise.resolve(result)
+        }
+    }
+
+    // ─────────────────────────────────────────────
+    //  SENSOR METADATA
+    //  Returns name and vendor of the hardware sensor.
+    // ─────────────────────────────────────────────
+    @ReactMethod
+    fun getSensorInfo(sensorType: String, promise: Promise) {
+        val androidSensorType = getAndroidSensorType(sensorType)
+        if (androidSensorType == -1) {
+            promise.reject("UNKNOWN_SENSOR", "Unknown sensor type: $sensorType")
+            return
+        }
+        val sensor = sensorManager.getDefaultSensor(androidSensorType)
+        if (sensor == null) {
+            promise.reject("SENSOR_UNAVAILABLE", "Sensor $sensorType not available")
+            return
+        }
+        val map = Arguments.createMap()
+        map.putString("name", sensor.name)
+        map.putString("vendor", sensor.vendor)
+        map.putInt("version", sensor.version)
+        map.putDouble("power", sensor.power.toDouble())
+        promise.resolve(map)
+    }
+
     @ReactMethod
     fun getMagneticHeading(promise: Promise) {
         val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
@@ -91,12 +141,6 @@ class SensorModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    // ─────────────────────────────────────────────
-    //  BAROMETRIC PRESSURE
-    //  Returns pressure in hPa.
-    //  Use for floor detection: ~-1.2 hPa per 10m altitude gain.
-    //  Standard sea level = 1013.25 hPa.
-    // ─────────────────────────────────────────────
     @ReactMethod
     fun getBarometricPressure(promise: Promise) {
         val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE)
@@ -119,11 +163,6 @@ class SensorModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    // ─────────────────────────────────────────────
-    //  ACCELEROMETER
-    //  Returns x/y/z in m/s² and total magnitude.
-    //  Magnitude ≈ 9.8 when still (gravity). > 12 = movement detected.
-    // ─────────────────────────────────────────────
     @ReactMethod
     fun getAcceleration(promise: Promise) {
         val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -149,26 +188,102 @@ class SensorModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    // ─────────────────────────────────────────────
-    //  CHECK SENSOR AVAILABILITY
-    //  Call before relying on any sensor.
-    //  sensorType: "step_counter" | "magnetometer" | "barometer" | "accelerometer"
-    // ─────────────────────────────────────────────
     @ReactMethod
     fun isSensorAvailable(sensorType: String, promise: Promise) {
-        val androidSensorType = when (sensorType) {
+        val androidSensorType = getAndroidSensorType(sensorType)
+        val available = if (androidSensorType == -1) false else sensorManager.getDefaultSensor(androidSensorType) != null
+        promise.resolve(available)
+    }
+
+    @ReactMethod
+    fun checkActivityPermission(promise: Promise) {
+        promise.resolve(hasActivityPermission())
+    }
+
+    private fun getAndroidSensorType(type: String): Int {
+        return when (type) {
             "step_counter"  -> Sensor.TYPE_STEP_COUNTER
+            "step_detector" -> Sensor.TYPE_STEP_DETECTOR
             "magnetometer"  -> Sensor.TYPE_MAGNETIC_FIELD
             "barometer"     -> Sensor.TYPE_PRESSURE
             "accelerometer" -> Sensor.TYPE_ACCELEROMETER
-            else -> {
-                promise.reject("UNKNOWN_SENSOR", "Unknown sensor type: $sensorType")
-                return
-            }
+            else -> -1
         }
-        val available = sensorManager.getDefaultSensor(androidSensorType) != null
-        promise.resolve(available)
     }
+
+    private var stepListener: SensorEventListener? = null
+    private var lastEmittedStepCount: Float = -1f
+
+    @ReactMethod
+    fun startStepWatching(promise: Promise) {
+        if (!hasActivityPermission()) {
+            promise.reject("PERMISSION_DENIED", "ACTIVITY_RECOGNITION permission required")
+            return
+        }
+        val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER)
+        if (sensor == null) {
+            promise.reject("SENSOR_UNAVAILABLE", "Step counter not available")
+            return
+        }
+
+        if (stepListener != null) {
+            promise.resolve(true)
+            return
+        }
+
+        stepListener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                if (event.sensor.type == Sensor.TYPE_STEP_COUNTER) {
+                    val steps = event.values[0]
+                    if (steps != lastEmittedStepCount) {
+                        lastEmittedStepCount = steps
+                        emitStepEvent(steps)
+                    }
+                }
+            }
+            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+        }
+
+        val success = sensorManager.registerListener(stepListener, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+        if (success) {
+            android.util.Log.d("SZSensorModule", "Started persistent step watching")
+            promise.resolve(true)
+        } else {
+            stepListener = null
+            promise.reject("REGISTRATION_FAILED", "Could not register step listener")
+        }
+    }
+
+    @ReactMethod
+    fun stopStepWatching(promise: Promise) {
+        stepListener?.let {
+            sensorManager.unregisterListener(it)
+            stepListener = null
+            android.util.Log.d("SZSensorModule", "Stopped persistent step watching")
+        }
+        promise.resolve(true)
+    }
+
+    private fun emitStepEvent(steps: Float) {
+        val map = Arguments.createMap()
+        map.putDouble("steps", steps.toDouble())
+        map.putDouble("timestamp", System.currentTimeMillis().toDouble())
+        
+        reactApplicationContext
+            .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onStepUpdate", map)
+    }
+
+    private fun hasActivityPermission(): Boolean {
+        return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val permission = android.Manifest.permission.ACTIVITY_RECOGNITION
+            val res = reactApplicationContext.checkSelfPermission(permission)
+            res == android.content.pm.PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
 
     // ─────────────────────────────────────────────
     //  INTERNAL: One-shot sensor read helper
@@ -180,6 +295,9 @@ class SensorModule(reactContext: ReactApplicationContext) :
         timeoutSeconds: Long,
         transform: (SensorEvent) -> WritableMap
     ): Pair<WritableMap?, String?> {
+        val TAG = "SZSensorModule"
+        android.util.Log.d(TAG, "Registering one-shot for ${sensor.name} (Type: ${sensor.type})")
+        
         val latch = CountDownLatch(1)
         var resultMap: WritableMap? = null
         var errorMessage: String? = null
@@ -187,25 +305,48 @@ class SensorModule(reactContext: ReactApplicationContext) :
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent) {
                 if (event.sensor.type == sensor.type && resultMap == null) {
+                    android.util.Log.d(TAG, "Received event for ${sensor.name}: ${event.values[0]}")
                     try {
                         resultMap = transform(event)
                     } catch (e: Exception) {
                         errorMessage = "Failed to read sensor value: ${e.message}"
+                        android.util.Log.e(TAG, "Transform error: ${e.message}")
                     } finally {
                         latch.countDown()
                     }
                 }
             }
-            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {
+                android.util.Log.d(TAG, "Accuracy changed for ${sensor.name}: $accuracy")
+            }
         }
 
-        sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_FASTEST)
+        // Use NORMAL for steps to satisfy low-power batching sensors
+        val delay = if (sensor.type == Sensor.TYPE_STEP_COUNTER || sensor.type == Sensor.TYPE_STEP_DETECTOR) {
+            SensorManager.SENSOR_DELAY_NORMAL
+        } else {
+            SensorManager.SENSOR_DELAY_FASTEST
+        }
 
-        val completed = latch.await(timeoutSeconds, TimeUnit.SECONDS)
+        val success = sensorManager.registerListener(listener, sensor, delay)
+        if (!success) {
+            android.util.Log.e(TAG, "Failed to register listener for ${sensor.name}")
+            return Pair(null, "System failed to register sensor listener")
+        }
+
+        val completed = try {
+            latch.await(timeoutSeconds, TimeUnit.SECONDS)
+        } catch (e: InterruptedException) {
+            false
+        }
+        
         sensorManager.unregisterListener(listener)
 
         if (!completed && resultMap == null) {
-            errorMessage = "Sensor timed out after ${timeoutSeconds}s — sensor may be unavailable or warming up"
+            android.util.Log.w(TAG, "Timeout waiting for ${sensor.name}")
+            errorMessage = "Sensor timed out after ${timeoutSeconds}s — sensor may be asleep or blocked by OS"
+        } else if (resultMap != null) {
+            android.util.Log.d(TAG, "Successfully read ${sensor.name}")
         }
 
         return Pair(resultMap, errorMessage)
