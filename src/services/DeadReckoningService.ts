@@ -24,6 +24,9 @@ export const calculateNewPosition = (
   strideLengthMeters: number
 ): Coordinate => {
   const EARTH_RADIUS_METERS = 6371000;
+  // Reduce noise: If steps are very few (like 1-2 false positives), maybe ignore or dampen?
+  // But for now, trust the input.
+  
   const distanceMeters = steps * strideLengthMeters;
   
   // Convert inputs to radians
@@ -51,6 +54,30 @@ export const calculateNewPosition = (
     lat: toDegrees(lat2),
     lng: toDegrees(lng2)
   };
+};
+
+/**
+ * Smooths a sequence of headings to reduce jitter.
+ * Simple average of angles logic (handling 359 -> 1 crossover).
+ */
+export const smoothHeading = (headings: number[]): number => {
+  if (headings.length === 0) return 0;
+  
+  // Convert to vectors (sin, cos) to handle circular average
+  let sumSin = 0;
+  let sumCos = 0;
+  
+  headings.forEach(h => {
+    const rad = toRadians(h);
+    sumSin += Math.sin(rad);
+    sumCos += Math.cos(rad);
+  });
+  
+  const avgRad = Math.atan2(sumSin / headings.length, sumCos / headings.length);
+  let avgDeg = toDegrees(avgRad);
+  
+  if (avgDeg < 0) avgDeg += 360;
+  return avgDeg;
 };
 
 /**

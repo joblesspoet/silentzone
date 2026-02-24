@@ -170,7 +170,7 @@ When a user saves a new place, silently reads barometric pressure and altitude. 
 
 ### TASK-06: Create `TrailRecorder.ts`
 
-**Status:** `AWAITING APPROVAL`
+**Status:** `DONE`
 
 **What it does:**
 Records every movement update (relative X/Y position, heading, step count, timestamp) during an active session. Stores journey-to-mosque trail and inside-mosque trail separately. Persists to Realm.
@@ -201,7 +201,7 @@ Records every movement update (relative X/Y position, heading, step count, times
 
 ### TASK-07: Build Session Visualization UI
 
-**Status:** `PENDING`
+**Status:** `DONE`
 
 **What it does:**
 Displays the recorded trail as a visual 2D path on a custom grid (no map tiles needed). Shows: journey path to mosque, entry point, indoor movement, praying spot (stationary cluster), exit point, plus session stats.
@@ -235,7 +235,7 @@ Displays the recorded trail as a visual 2D path on a custom grid (no map tiles n
 
 ### TASK-08: Integrate SFPE into `CheckInService.ts`
 
-**Status:** `PENDING`
+**Status:** `IN PROGRESS`
 
 **What it does:**
 Wires all SFPE components into the existing check-in/checkout flow. Replaces GPS polling post-check-in with grid monitoring. Adds GPS as last-resort fallback only.

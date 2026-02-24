@@ -212,6 +212,7 @@ class SensorModule(reactContext: ReactApplicationContext) :
     }
 
     private var stepListener: SensorEventListener? = null
+    private var stepDetectorListener: SensorEventListener? = null
     private var lastEmittedStepCount: Float = -1f
 
     @ReactMethod
@@ -264,6 +265,54 @@ class SensorModule(reactContext: ReactApplicationContext) :
         promise.resolve(true)
     }
 
+    @ReactMethod
+    fun startStepDetection(promise: Promise) {
+        if (!hasActivityPermission()) {
+            promise.reject("PERMISSION_DENIED", "ACTIVITY_RECOGNITION permission required")
+            return
+        }
+        val sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR)
+        if (sensor == null) {
+            promise.reject("SENSOR_UNAVAILABLE", "Step detector not available")
+            return
+        }
+
+        if (stepDetectorListener != null) {
+            promise.resolve(true)
+            return
+        }
+
+        stepDetectorListener = object : SensorEventListener {
+            override fun onSensorChanged(event: SensorEvent) {
+                if (event.sensor.type == Sensor.TYPE_STEP_DETECTOR) {
+                    // event.values[0] is always 1.0 for each step detected
+                    emitStepDetectedEvent()
+                }
+            }
+            override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+        }
+
+        // SENSOR_DELAY_GAME or FASTEST for minimal latency on turns
+        val success = sensorManager.registerListener(stepDetectorListener, sensor, SensorManager.SENSOR_DELAY_GAME)
+        if (success) {
+            android.util.Log.d("SZSensorModule", "Started persistent step detection")
+            promise.resolve(true)
+        } else {
+            stepDetectorListener = null
+            promise.reject("REGISTRATION_FAILED", "Could not register step detector listener")
+        }
+    }
+
+    @ReactMethod
+    fun stopStepDetection(promise: Promise) {
+        stepDetectorListener?.let {
+            sensorManager.unregisterListener(it)
+            stepDetectorListener = null
+            android.util.Log.d("SZSensorModule", "Stopped persistent step detection")
+        }
+        promise.resolve(true)
+    }
+
     private fun emitStepEvent(steps: Float) {
         val map = Arguments.createMap()
         map.putDouble("steps", steps.toDouble())
@@ -272,6 +321,16 @@ class SensorModule(reactContext: ReactApplicationContext) :
         reactApplicationContext
             .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
             .emit("onStepUpdate", map)
+    }
+
+    private fun emitStepDetectedEvent() {
+        val map = Arguments.createMap()
+        map.putDouble("detected", 1.0)
+        map.putDouble("timestamp", System.currentTimeMillis().toDouble())
+        
+        reactApplicationContext
+            .getJSModule(com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+            .emit("onStepDetected", map)
     }
 
     private fun hasActivityPermission(): Boolean {

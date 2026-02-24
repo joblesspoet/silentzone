@@ -1,5 +1,8 @@
 import React from 'react';
-import { createStackNavigator, TransitionPresets } from '@react-navigation/stack';
+import {
+  createStackNavigator,
+  TransitionPresets,
+} from '@react-navigation/stack';
 import { SplashScreen } from '../screens/SplashScreen';
 import { OnboardingWelcomeScreen } from '../screens/OnboardingWelcomeScreen';
 import { OnboardingAddPlacesScreen } from '../screens/OnboardingAddPlacesScreen';
@@ -11,7 +14,7 @@ import { EditPlaceScreen } from '../screens/EditPlaceScreen';
 import { UnifiedPermissionScreen } from '../screens/UnifiedPermissionScreen';
 import { LogViewerScreen } from '../screens/LogViewerScreen';
 import SensorTestScreen from '../screens/SensorTestScreen';
-
+import SessionJourneyScreen from '../screens/SessionJourneyScreen';
 
 export type RootStackParamList = {
   Splash: undefined;
@@ -25,6 +28,7 @@ export type RootStackParamList = {
   EditPlace: { placeId: string };
   Logs: undefined;
   SensorTest: undefined;
+  SessionJourney: { sessionId: string };
 };
 
 const Stack = createStackNavigator<RootStackParamList>();
@@ -39,13 +43,25 @@ export const AppNavigator = () => {
       }}
     >
       <Stack.Screen name="Splash" component={SplashScreen} />
-      <Stack.Screen name="PermissionRequired" component={UnifiedPermissionScreen} />
-      <Stack.Screen name="OnboardingWelcome" component={OnboardingWelcomeScreen} />
-      <Stack.Screen name="OnboardingAddPlaces" component={OnboardingAddPlacesScreen} />
-      <Stack.Screen name="OnboardingAutoSilence" component={OnboardingAutoSilenceScreen} />
+      <Stack.Screen
+        name="PermissionRequired"
+        component={UnifiedPermissionScreen}
+      />
+      <Stack.Screen
+        name="OnboardingWelcome"
+        component={OnboardingWelcomeScreen}
+      />
+      <Stack.Screen
+        name="OnboardingAddPlaces"
+        component={OnboardingAddPlacesScreen}
+      />
+      <Stack.Screen
+        name="OnboardingAutoSilence"
+        component={OnboardingAutoSilenceScreen}
+      />
       <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen 
-        name="AddPlace" 
+      <Stack.Screen
+        name="AddPlace"
         component={AddPlaceScreen}
         options={{
           ...TransitionPresets.ModalSlideFromBottomIOS, // Modal feel for adding
@@ -55,6 +71,7 @@ export const AppNavigator = () => {
       <Stack.Screen name="EditPlace" component={EditPlaceScreen} />
       <Stack.Screen name="Logs" component={LogViewerScreen} />
       <Stack.Screen name="SensorTest" component={SensorTestScreen} />
+      <Stack.Screen name="SessionJourney" component={SessionJourneyScreen} />
     </Stack.Navigator>
   );
 };

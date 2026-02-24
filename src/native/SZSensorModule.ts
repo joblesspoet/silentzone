@@ -117,18 +117,34 @@ export async function checkAllSensors(): Promise<Record<SensorType, boolean>> {
 }
 
 /**
- * Start a persistent native listener for steps.
- * Use with DeviceEventEmitter.addListener('onStepUpdate', ...)
+ * Start persistent monitoring of the STEP COUNTER sensor.
+ * Emits 'onStepUpdate' events via DeviceEventEmitter.
  */
 export function startStepWatching(): Promise<boolean> {
   return SZSensorModule.startStepWatching();
 }
 
 /**
- * Stop the persistent native step listener.
+ * Stop persistent monitoring of the STEP COUNTER sensor.
  */
 export function stopStepWatching(): Promise<boolean> {
   return SZSensorModule.stopStepWatching();
+}
+
+/**
+ * Start persistent monitoring of the STEP DETECTOR sensor.
+ * Emits 'onStepDetected' events via DeviceEventEmitter for every single step.
+ * Preferred for real-time Dead Reckoning.
+ */
+export function startStepDetection(): Promise<boolean> {
+  return SZSensorModule.startStepDetection();
+}
+
+/**
+ * Stop persistent monitoring of the STEP DETECTOR sensor.
+ */
+export function stopStepDetection(): Promise<boolean> {
+  return SZSensorModule.stopStepDetection();
 }
 
 export default {
@@ -143,4 +159,6 @@ export default {
   checkAllSensors,
   startStepWatching,
   stopStepWatching,
+  startStepDetection,
+  stopStepDetection,
 };
