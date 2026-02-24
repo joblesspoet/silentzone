@@ -64,6 +64,35 @@ export const PreferencesSchema: Realm.ObjectSchema = {
   },
 };
 
+export const TrailPointSchema: Realm.ObjectSchema = {
+  name: 'TrailPoint',
+  embedded: true,
+  properties: {
+    latitude: 'double',
+    longitude: 'double',
+    heading: 'double',
+    isStationary: { type: 'bool', default: false },
+    stepCount: { type: 'int', default: 0 },
+    timestamp: 'date',
+  },
+};
+
+export const SessionTrailSchema: Realm.ObjectSchema = {
+  name: 'SessionTrail',
+  primaryKey: 'id',
+  properties: {
+    id: 'string', // UUID
+    placeId: 'string',
+    startTime: 'date',
+    endTime: 'date?',
+    anchorLatitude: 'double',
+    anchorLongitude: 'double',
+    points: { type: 'list', objectType: 'TrailPoint' },
+    isClosed: { type: 'bool', default: false },
+    checkoutReason: { type: 'string', optional: true },
+  },
+};
+
 import { SystemLogSchema } from './schemas/SystemLog';
 
 // Add to schema list
@@ -73,5 +102,7 @@ export const schemas = [
   CheckInLogSchema,
   PreferencesSchema,
   SystemLogSchema,
+  SessionTrailSchema,
+  TrailPointSchema,
 ];
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
