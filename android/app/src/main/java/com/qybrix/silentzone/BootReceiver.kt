@@ -27,6 +27,14 @@ class BootReceiver : BroadcastReceiver() {
                         action == "com.htc.intent.action.QUICKBOOT_POWERON"
         ) {
 
+            val now = System.currentTimeMillis()
+            val last = lastHandledAt
+            if (last != 0L && now - last < 10_000L) {
+                Log.i(TAG, "BootReceiver debounce: ignoring duplicate boot action: $action")
+                return
+            }
+            lastHandledAt = now
+
             Log.i(TAG, "Device rebooted - Starting alarm rescheduling service")
 
             // Re-arm the native guard on boot
@@ -40,6 +48,7 @@ class BootReceiver : BroadcastReceiver() {
 
     companion object {
         internal const val TAG = "SilentZone.BootReceiver"
+        @Volatile private var lastHandledAt: Long = 0L
     }
 }
 
@@ -49,15 +58,20 @@ class BootRescheduleService : HeadlessJsTaskService() {
     override fun getTaskConfig(intent: Intent?): HeadlessJsTaskConfig? {
         Log.d(TAG, "BootRescheduleService started")
 
-        return HeadlessJsTaskConfig(
-                "BootRescheduleTask",
-                Arguments.createMap().apply {
-                    putString("reason", "DEVICE_REBOOTED")
-                    putDouble("timestamp", System.currentTimeMillis().toDouble())
-                },
-                30000,
-                false
-        )
+        return try {
+            HeadlessJsTaskConfig(
+                    "BootRescheduleTask",
+                    Arguments.createMap().apply {
+                        putString("reason", "DEVICE_REBOOTED")
+                        putDouble("timestamp", System.currentTimeMillis().toDouble())
+                    },
+                    30000,
+                    true
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "BootRescheduleService getTaskConfig failed: ${e.message}", e)
+            null
+        }
     }
 
     companion object {

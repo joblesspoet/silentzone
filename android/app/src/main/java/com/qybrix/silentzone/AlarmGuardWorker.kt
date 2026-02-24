@@ -150,30 +150,33 @@ class AlarmGuardWorker(
         private const val TAG = "AlarmGuardWorker"
         private const val WORK_NAME = "AlarmGuardPeriodicWork"
 
-        /**
-         * Schedule this worker to run every 15 minutes.
-         */
         fun schedule(context: Context) {
-            val constraints = Constraints.Builder()
-                .build()
+            try {
+                val constraints = Constraints.Builder()
+                    .build()
 
-            val workRequest = PeriodicWorkRequestBuilder<AlarmGuardWorker>(
-                15, TimeUnit.MINUTES
-            )
-                .setConstraints(constraints)
-                .setBackoffCriteria(
-                    BackoffPolicy.LINEAR,
-                    10, TimeUnit.MINUTES
+                val workRequest = PeriodicWorkRequestBuilder<AlarmGuardWorker>(
+                    15, TimeUnit.MINUTES
                 )
-                .build()
+                    .setConstraints(constraints)
+                    .setBackoffCriteria(
+                        BackoffPolicy.LINEAR,
+                        10, TimeUnit.MINUTES
+                    )
+                    .build()
 
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-                WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
-                workRequest
-            )
+                WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+                    WORK_NAME,
+                    ExistingPeriodicWorkPolicy.KEEP,
+                    workRequest
+                )
 
-            Log.i(TAG, "🛡️ AlarmGuard scheduled (15min periodic)")
+                Log.i(TAG, "🛡️ AlarmGuard scheduled (15min periodic)")
+            } catch (e: IllegalStateException) {
+                Log.e(TAG, "AlarmGuardWorker.schedule() failed: ${e.message}", e)
+            } catch (e: Exception) {
+                Log.e(TAG, "AlarmGuardWorker.schedule() unexpected error: ${e.message}", e)
+            }
         }
 
         /**

@@ -197,7 +197,7 @@ export const SplashScreen = () => {
         <Text style={[styles.version, { marginBottom: 4, fontWeight: '600' }]}>
           Developed by Qybrix
         </Text>
-        <Text style={styles.version}>v1.2.0</Text>
+        <Text style={styles.version}>v1.2.1</Text>
       </View>
     </View>
   );
