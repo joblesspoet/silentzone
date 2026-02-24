@@ -31,6 +31,8 @@ export const PlaceSchema: Realm.ObjectSchema = {
     totalCheckIns: { type: 'int', default: 0 },
     isInside: { type: 'bool', default: false },
     schedules: 'Schedule[]', // Link to schedules
+    avgPressure: 'double?', // hPa
+    altitude: 'double?', // meters
   },
 };
 
@@ -72,4 +74,4 @@ export const schemas = [
   PreferencesSchema,
   SystemLogSchema,
 ];
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
