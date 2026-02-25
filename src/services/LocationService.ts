@@ -54,7 +54,7 @@ class LocationService {
    * Starts the SFPE (Sensor Fusion Proximity Engine).
    * Used when we are INSIDE a zone to track movement without GPS.
    */
-  private async startSFPE(initialAnchor: any) {
+  private async startSFPE(initialAnchor: any, targetPlaceId?: string) {
     if (this.isSFPEActive) {
       Logger.info('[SFPE] Already active, updating anchor.');
       this.currentAnchor = {
@@ -86,19 +86,23 @@ class LocationService {
 
     // 2. Start Trail Recording
     try {
-      // Find which place we are in (first active)
-      if (this.realm) {
+      let placeId = targetPlaceId;
+      // Find which place we are in (first active) if not provided
+      if (!placeId && this.realm) {
         const activeCheckIns = CheckInService.getActiveCheckIns(this.realm);
         if (activeCheckIns.length > 0) {
-          const placeId = activeCheckIns[0].placeId as string;
-          this.currentSessionId = await TrailRecorder.startSession(
-            this.realm,
-            placeId,
-            this.currentAnchor.lat,
-            this.currentAnchor.lng,
-          );
-          Logger.info(`[SFPE] Started Trail Session: ${this.currentSessionId}`);
+          placeId = activeCheckIns[0].placeId as string;
         }
+      }
+
+      if (placeId && this.realm) {
+        this.currentSessionId = await TrailRecorder.startSession(
+          this.realm,
+          placeId,
+          this.currentAnchor.lat,
+          this.currentAnchor.lng,
+        );
+        Logger.info(`[SFPE] Started Trail Session: ${this.currentSessionId}`);
       }
     } catch (e) {
       Logger.error('[SFPE] Failed to start trail session:', e);
@@ -183,6 +187,30 @@ class LocationService {
           heading = h.heading;
           altitude = p.altitudeM;
           pressure = p.pressureHPa;
+
+          // Verify Floor if checked in
+          const activeCheckIns = CheckInService.getActiveCheckIns(this.realm);
+          if (activeCheckIns.length > 0) {
+            const placeId = activeCheckIns[0].placeId as string;
+            const place = PlaceService.getPlaceById(this.realm, placeId) as any;
+            if (place && place.avgPressure) {
+              const score = await PlaceFingerprinter.matchFingerprint({
+                placeId: place.id,
+                avgPressure: place.avgPressure,
+                altitude: place.altitude,
+                timestamp: 0,
+              });
+              if (score < 0.5) {
+                Logger.warn(
+                  `[SFPE] Stationary Floor Mismatch: ${score.toFixed(
+                    2,
+                  )} (Current: ${pressure}hPa vs Saved: ${
+                    place.avgPressure
+                  }hPa)`,
+                );
+              }
+            }
+          }
         } catch {}
 
         await TrailRecorder.recordPoint(this.realm, this.currentSessionId, {
@@ -301,42 +329,20 @@ class LocationService {
         });
       }
 
-      // 7. Check for Exit (Geofence / Grid)
-      // Check against ALL active places
-      const activeCheckIns = CheckInService.getActiveCheckIns(this.realm);
-      let isInsideAny = false;
+      // 7. Check for Exit / Entry via ProcessLocationUpdate
+      // We feed the calculated Dead Reckoning position back into the main engine
+      // This allows the engine to detect if we've walked INTO or OUT OF a zone.
+      const virtualLocation = {
+        latitude: newPos.lat,
+        longitude: newPos.lng,
+        accuracy: this.currentAnchor.accuracy,
+        timestamp: Date.now(),
+        speed: strideLength, // approximate speed (m/s if 1 step/sec, but good enough proxy)
+        heading: smoothedHeading,
+        altitude: pressureData.altitudeM,
+      };
 
-      for (const log of activeCheckIns) {
-        const place = PlaceService.getPlaceById(
-          this.realm,
-          log.placeId as string,
-        );
-        if (place) {
-          // Simple Haversine Check for now (GridEngine is cleaner but requires grid generation)
-          // TODO: Use GridEngine.getCellForPosition() for better precision if grid is generated
-          const dist = DeadReckoningService.haversineDistance(
-            newPos.lat,
-            newPos.lng,
-            (place as any).latitude,
-            (place as any).longitude,
-          );
-
-          // Add hysteresis buffer to exit (e.g. radius + 20m)
-          if (dist <= (place as any).radius + CONFIG.EXIT_HYSTERESIS_METERS) {
-            isInsideAny = true;
-            break;
-          }
-        }
-      }
-
-      if (!isInsideAny) {
-        Logger.info('[SFPE] 🚪 Exit detected via Dead Reckoning!');
-        // Find the place we just exited (approximate)
-        if (activeCheckIns.length > 0) {
-          const lastPlaceId = activeCheckIns[0].placeId as string;
-          await this.handleGeofenceExit(lastPlaceId);
-        }
-      }
+      await this.processLocationUpdate(virtualLocation);
     } catch (e) {
       Logger.error('[SFPE] Step processing error:', e);
     }
@@ -984,6 +990,58 @@ class LocationService {
         }
       }
     }
+
+    // 4. Handle Approaching (Start SFPE if near target)
+    // Only if not already active and not inside any place
+    if (
+      insideIds.length === 0 &&
+      !this.isSFPEActive &&
+      this.realm &&
+      !this.isCurrentlyInitializing()
+    ) {
+      try {
+        const enabledPlaces = Array.from(
+          PlaceService.getEnabledPlaces(this.realm),
+        );
+        const { activePlaces, upcomingSchedules } =
+          ScheduleManager.categorizeBySchedule(enabledPlaces);
+
+        // Candidates: Active places OR Upcoming (approaching)
+        // We only care about upcoming schedules that are imminent (< 30 mins)
+        // or active places we might be walking towards
+        const upcomingPlaces = upcomingSchedules
+          .filter(s => s.minutesUntilStart <= 30)
+          .map(s => PlaceService.getPlaceById(this.realm!, s.placeId));
+
+        const candidates = [...activePlaces, ...upcomingPlaces].filter(
+          p => p !== null && p !== undefined,
+        );
+
+        for (const place of candidates) {
+          const p = place as any;
+          const dist = LocationValidator.calculateDistance(
+            location.latitude,
+            location.longitude,
+            p.latitude,
+            p.longitude,
+          );
+
+          // If within 1km (walking distance)
+          if (dist < 1000) {
+            Logger.info(
+              `[SFPE] Approaching ${p.name} (${Math.round(
+                dist,
+              )}m). Starting Engine.`,
+            );
+            // Pass the place ID so we can start recording the session immediately
+            await this.startSFPE(location, p.id);
+            break; // Start for the first valid candidate
+          }
+        }
+      } catch (e) {
+        Logger.error('[SFPE] Error checking approaching places:', e);
+      }
+    }
   }
 
   /**
@@ -1020,7 +1078,47 @@ class LocationService {
       Logger.info(
         `[LocationService] Window matched for ${place.name}. Activating silence.`,
       );
-      await silentZoneManager.activateSilentZone(place);
+
+      // Check Floor Fingerprint (Barometer)
+      const placeAny = place as any;
+      const sensorData: any = {};
+
+      if (placeAny.avgPressure) {
+        try {
+          // Capture current pressure for logging
+          const current = await SZSensorModule.getBarometricPressure().catch(
+            () => null,
+          );
+
+          if (current) {
+            sensorData.detectedPressure = current.pressureHPa;
+            sensorData.detectedAltitude = current.altitudeM;
+
+            const score = await PlaceFingerprinter.matchFingerprint({
+              placeId: placeAny.id,
+              avgPressure: placeAny.avgPressure,
+              altitude: placeAny.altitude,
+              timestamp: 0, // Not used for matching
+            });
+            sensorData.floorMatchScore = score;
+
+            Logger.info(
+              `[SFPE] Floor Match Score: ${score.toFixed(2)} (Pressure: ${
+                placeAny.avgPressure
+              }hPa)`,
+            );
+            if (score < 0.5) {
+              Logger.warn(
+                '[SFPE] Floor mismatch detected! User might be on different floor.',
+              );
+            }
+          }
+        } catch (err) {
+          Logger.warn('[SFPE] Failed to check floor fingerprint:', err);
+        }
+      }
+
+      await silentZoneManager.activateSilentZone(place, sensorData);
       await this.updateForegroundService();
 
       // START SFPE (Dead Reckoning)

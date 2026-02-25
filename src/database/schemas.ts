@@ -48,6 +48,9 @@ export const CheckInLogSchema: Realm.ObjectSchema = {
     savedVolumeLevel: 'int?',
     savedMediaVolume: 'int?',
     wasAutomatic: { type: 'bool', default: true },
+    floorMatchScore: 'double?', // 0.0 to 1.0
+    detectedPressure: 'double?', // hPa
+    detectedAltitude: 'double?', // meters
   },
 };
 

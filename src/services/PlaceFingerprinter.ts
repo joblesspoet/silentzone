@@ -22,30 +22,21 @@ export const captureFingerprint = async (
 ): Promise<PlaceFingerprint | null> => {
   try {
     // 1. Get Pressure / Altitude from Native Sensor Module
-    // Note: We need to verify if SZSensorModule supports pressure.
-    // Based on previous context, it has accelerometer/step counter.
-    // Let's assume we might need to add pressure support or use a placeholder
-    // until the native module is updated.
+    const isAvailable = await SZSensorModule.isSensorAvailable('barometer');
 
-    // For now, let's implement the structure and mock the data retrieval
-    // to allow the flow to proceed, as modifying native code might be out of scope
-    // for this specific task unless strictly required.
+    if (!isAvailable) {
+      console.warn('Barometer not available on this device');
+      return null;
+    }
 
-    // However, the task says "capturing barometric pressure/altitude".
-    // If the native module doesn't support it, we should probably return null for now
-    // or simulate it if we can't touch native code easily.
+    const data = await SZSensorModule.getBarometricPressure();
 
-    // Let's check if we can add it to native module easily.
-    // If not, we'll return a placeholder.
-
-    // Attempt to read from SensorModule (if we added getPressure there)
-    // const data = await SensorModule.getPressure();
-
-    // Since we haven't added getPressure to Native Module yet, let's return null
-    // but structure the service so it's ready.
-
-    console.warn('Barometer not yet implemented in native module');
-    return null;
+    return {
+      placeId,
+      avgPressure: data.pressureHPa,
+      altitude: data.altitudeM,
+      timestamp: data.timestamp,
+    };
   } catch (error) {
     console.warn('Failed to capture place fingerprint', error);
     return null;
@@ -60,7 +51,26 @@ export const captureFingerprint = async (
  */
 export const matchFingerprint = async (
   savedFingerprint: PlaceFingerprint,
+  toleranceHPa: number = 1.5,
 ): Promise<number> => {
-  // Placeholder logic
-  return 0.5;
+  try {
+    const isAvailable = await SZSensorModule.isSensorAvailable('barometer');
+    if (!isAvailable) return 0.5; // Neutral score if sensor missing
+
+    const current = await SZSensorModule.getBarometricPressure();
+
+    // Calculate difference
+    const diff = Math.abs(current.pressureHPa - savedFingerprint.avgPressure);
+
+    if (diff <= toleranceHPa) {
+      return 1.0; // Perfect match
+    } else if (diff <= toleranceHPa * 2) {
+      return 0.5; // Partial match
+    } else {
+      return 0.0; // Mismatch (different floor)
+    }
+  } catch (error) {
+    console.warn('Failed to match fingerprint', error);
+    return 0.0;
+  }
 };

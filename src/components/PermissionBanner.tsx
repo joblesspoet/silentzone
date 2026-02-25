@@ -19,6 +19,7 @@ export const PermissionBanner: React.FC<PermissionBannerProps> = ({ missingType,
       case 'DND': return 'Do Not Disturb';
       case 'BATTERY': return 'Battery Exemption';
       case 'ALARM': return 'Exact Alarms';
+      case 'ACTIVITY_RECOGNITION': return 'Activity Recognition';
       default: return 'Required Permission';
     }
   };

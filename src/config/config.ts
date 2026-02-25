@@ -11,7 +11,7 @@ export const CONFIG = {
   // Accuracy thresholds
   MIN_ACCURACY_THRESHOLD: 50, // Good for small radius (30m+)
   ACTIVE_MIN_ACCURACY: 80, // For already active places
-  MAX_ACCEPTABLE_ACCURACY: 200, // Loosened from 100m for background reliability
+  MAX_ACCEPTABLE_ACCURACY: 2000, // Loosened from 200m to allow initial network fix (indoors)
 
   // GPS settings
   GPS_TIMEOUT: 30000, // 30 seconds

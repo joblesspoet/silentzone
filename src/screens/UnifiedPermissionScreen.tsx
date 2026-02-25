@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, AppState, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Platform,
+  TouchableOpacity,
+  AppState,
+  ActivityIndicator,
+} from 'react-native';
 import MaterialIcon from 'react-native-vector-icons/MaterialIcons';
 import { theme } from '../theme';
 import { CustomButton } from '../components/CustomButton';
@@ -42,7 +51,9 @@ const PermissionItem: React.FC<PermissionItemProps> = ({
       />
     </View>
     <View style={styles.textContainer}>
-      <Text style={[styles.itemTitle, isGranted && styles.textGranted]}>{title}</Text>
+      <Text style={[styles.itemTitle, isGranted && styles.textGranted]}>
+        {title}
+      </Text>
       <Text style={styles.itemDescription}>{description}</Text>
     </View>
     <TouchableOpacity
@@ -51,9 +62,11 @@ const PermissionItem: React.FC<PermissionItemProps> = ({
         // FIX #3: When alwaysShowButton is true (battery), show a different
         // "Verify" style even when granted — so user can re-open settings to
         // confirm "Unrestricted" vs "Optimized" specifically.
-        isGranted && !alwaysShowButton ? styles.buttonGranted : 
-        isGranted && alwaysShowButton ? styles.buttonVerify :
-        styles.buttonPending,
+        isGranted && !alwaysShowButton
+          ? styles.buttonGranted
+          : isGranted && alwaysShowButton
+          ? styles.buttonVerify
+          : styles.buttonPending,
       ]}
       onPress={onPress}
       // FIX #3: Never fully disable the battery button. isIgnoringBatteryOptimizations()
@@ -74,7 +87,9 @@ const PermissionItem: React.FC<PermissionItemProps> = ({
   </View>
 );
 
-export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigation }) => {
+export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({
+  navigation,
+}) => {
   const insets = useSafeAreaInsets();
   const realm = useRealm();
   const {
@@ -90,6 +105,8 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
     requestDndFlow,
     requestBatteryExemption,
     requestExactAlarmFlow,
+    requestActivityRecognitionFlow,
+    activityRecognitionStatus,
     refreshPermissions,
     hasAllPermissions,
   } = usePermissions();
@@ -113,10 +130,16 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
   // "Allow" even though PermissionsContext.hasAllPermissions considered it granted.
   // This caused a state where the "Start Application" button was enabled but
   // the location row still showed a pending "Allow" button — confusing and wrong.
-  const isLocationGranted = locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED;
+  const isLocationGranted =
+    locationStatus === RESULTS.GRANTED || locationStatus === RESULTS.LIMITED;
 
   // FIX #2: Same fix for background location.
-  const isBgGranted = backgroundLocationStatus === RESULTS.GRANTED || backgroundLocationStatus === RESULTS.LIMITED;
+  const isBgGranted =
+    backgroundLocationStatus === RESULTS.GRANTED ||
+    backgroundLocationStatus === RESULTS.LIMITED;
+  const isActivityRecognitionGranted =
+    activityRecognitionStatus === RESULTS.GRANTED ||
+    activityRecognitionStatus === RESULTS.LIMITED;
 
   const isNotificationGranted = notificationStatus === RESULTS.GRANTED;
   const isDndGranted = dndStatus === RESULTS.GRANTED;
@@ -129,17 +152,26 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
       PreferencesService.setOnboardingComplete(realm);
       navigation.replace('Home');
     } catch (error) {
-      console.error('[UnifiedPermissionScreen] Error during setup finalization:', error);
+      console.error(
+        '[UnifiedPermissionScreen] Error during setup finalization:',
+        error,
+      );
       navigation.replace('Home');
     }
   };
 
   return (
     <View style={styles.container}>
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, theme.spacing.xl) }]}>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: Math.max(insets.top, theme.spacing.xl) },
+        ]}
+      >
         <Text style={styles.title}>All-in-One Setup</Text>
         <Text style={styles.subtitle}>
-          Grant these permissions to enable automatic silencing when you arrive at your favorite places.
+          Grant these permissions to enable automatic silencing when you arrive
+          at your favorite places.
         </Text>
       </View>
 
@@ -158,8 +190,22 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
           isGranted={isBgGranted}
           icon="my-location"
           isLoading={processingType === 'BACKGROUND'}
-          onPress={() => wrapAction('BACKGROUND', requestBackgroundLocationFlow)}
+          onPress={() =>
+            wrapAction('BACKGROUND', requestBackgroundLocationFlow)
+          }
         />
+        {Platform.OS === 'android' && Platform.Version >= 29 && (
+          <PermissionItem
+            title="Activity Recognition"
+            description="Used to detect when you are walking or driving."
+            isGranted={isActivityRecognitionGranted}
+            icon="directions-walk"
+            isLoading={processingType === 'ACTIVITY_RECOGNITION'}
+            onPress={() =>
+              wrapAction('ACTIVITY_RECOGNITION', requestActivityRecognitionFlow)
+            }
+          />
+        )}
         <PermissionItem
           title="Notifications"
           description="Know when your phone is being silenced or restored."
@@ -219,11 +265,22 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
         />
       </ScrollView>
 
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, theme.spacing.xl) }]}>
+      <View
+        style={[
+          styles.footer,
+          { paddingBottom: Math.max(insets.bottom, theme.spacing.xl) },
+        ]}
+      >
         {!hasAllPermissions && (
           <View style={styles.warningContainer}>
-            <MaterialIcon name="info-outline" size={16} color={theme.colors.error} />
-            <Text style={styles.warningText}>All permissions are required for full features.</Text>
+            <MaterialIcon
+              name="info-outline"
+              size={16}
+              color={theme.colors.error}
+            />
+            <Text style={styles.warningText}>
+              All permissions are required for full features.
+            </Text>
           </View>
         )}
         {/*
@@ -234,7 +291,8 @@ export const UnifiedPermissionScreen: React.FC<{ navigation: any }> = ({ navigat
           <View style={styles.advisoryContainer}>
             <MaterialIcon name="warning" size={16} color={theme.colors.error} />
             <Text style={styles.advisoryText}>
-              IMPORTANT: Tap "Verify" on Battery and confirm "Unrestricted" is selected before starting.
+              IMPORTANT: Tap "Verify" on Battery and confirm "Unrestricted" is
+              selected before starting.
             </Text>
           </View>
         )}

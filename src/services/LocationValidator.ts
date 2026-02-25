@@ -1,4 +1,3 @@
-
 import { PlaceService } from '../database/services/PlaceService';
 import { Logger } from './Logger';
 import { CONFIG } from '../config/config';
@@ -18,30 +17,33 @@ export class LocationValidator {
    */
   static validateLocationQuality(
     location: LocationState,
-    requiredAccuracy?: number
+    requiredAccuracy?: number,
   ): { valid: boolean; reason: string } {
-    
     // Check age (stale location)
     const age = Date.now() - location.timestamp;
     const maxAge = 180000; // 3 minutes (loosened from 1 minute for background reliability)
-    
+
     if (age > maxAge) {
       return {
         valid: false,
-        reason: `Location too old (${Math.round(age / 1000)}s > ${maxAge / 1000}s)`
+        reason: `Location too old (${Math.round(age / 1000)}s > ${
+          maxAge / 1000
+        }s)`,
       };
     }
-    
+
     // Check accuracy
     const maxAccuracy = requiredAccuracy || CONFIG.MAX_ACCEPTABLE_ACCURACY;
-    
+
     if (location.accuracy > maxAccuracy) {
       return {
         valid: false,
-        reason: `Accuracy too low (${Math.round(location.accuracy)}m > ${maxAccuracy}m)`
+        reason: `Accuracy too low (${Math.round(
+          location.accuracy,
+        )}m > ${maxAccuracy}m)`,
       };
     }
-    
+
     return { valid: true, reason: 'Location quality acceptable' };
   }
 
@@ -55,50 +57,62 @@ export class LocationValidator {
    * - Requires accuracy < 50% of zone radius
    * - Calculates "effective distance" accounting for uncertainty
    */
-  static determineInsidePlaces(location: LocationState, realm: Realm): string[] {
+  static determineInsidePlaces(
+    location: LocationState,
+    realm: Realm,
+  ): string[] {
     const enabledPlaces = realm ? PlaceService.getEnabledPlaces(realm) : [];
     const insidePlaces: string[] = [];
-    
+
     Logger.info(
       `[Location] Checking position: ` +
-      `lat=${location.latitude.toFixed(6)}, ` +
-      `lon=${location.longitude.toFixed(6)}, ` +
-      `accuracy=±${Math.round(location.accuracy)}m`
+        `lat=${location.latitude.toFixed(6)}, ` +
+        `lon=${location.longitude.toFixed(6)}, ` +
+        `accuracy=±${Math.round(location.accuracy)}m`,
     );
-    
+
     for (const place of enabledPlaces) {
       const p = place as any;
       const distance = this.calculateDistance(
         location.latitude,
         location.longitude,
         p.latitude,
-        p.longitude
+        p.longitude,
       );
 
       const effectiveDistance = Math.max(0, distance - location.accuracy);
 
-      const maxAccuracy = p.radius;
+      // Relaxed Check: If very close to center (< 20m), allow poorer accuracy
+      // This helps with initial detection when creating places indoors
+      const isVeryClose = distance < 20;
+      const isReasonablyAccurate =
+        location.accuracy <= Math.max(p.radius * 3, 200);
 
       if (
-        location.accuracy <= maxAccuracy &&
+        (location.accuracy <= p.radius ||
+          (isVeryClose && isReasonablyAccurate)) &&
         distance <= p.radius &&
         effectiveDistance <= p.radius
       ) {
         Logger.info(
           `[Location] ✅ INSIDE ${p.name}: ` +
-          `dist=${Math.round(distance)}m, acc=±${Math.round(location.accuracy)}m, ` +
-          `eff=${Math.round(effectiveDistance)}m <= ${p.radius}m`
+            `dist=${Math.round(distance)}m, acc=±${Math.round(
+              location.accuracy,
+            )}m, ` +
+            `eff=${Math.round(effectiveDistance)}m <= ${p.radius}m`,
         );
         insidePlaces.push(p.id);
       } else {
         Logger.info(
           `[Location] Outside ${p.name}: ` +
-          `dist=${Math.round(distance)}m, acc=±${Math.round(location.accuracy)}m, ` +
-          `eff ${Math.round(effectiveDistance)}m > ${p.radius}m`
+            `dist=${Math.round(distance)}m, acc=±${Math.round(
+              location.accuracy,
+            )}m, ` +
+            `eff ${Math.round(effectiveDistance)}m > ${p.radius}m`,
         );
       }
     }
-    
+
     return insidePlaces;
   }
 
@@ -106,13 +120,17 @@ export class LocationValidator {
    * Check if user is definitely outside a place
    * Uses effective distance with an optional hysteresis buffer
    */
-  static isOutsidePlace(location: LocationState, place: any, buffer: number = 0): boolean {
+  static isOutsidePlace(
+    location: LocationState,
+    place: any,
+    buffer: number = 0,
+  ): boolean {
     const p = place as any;
     const distance = this.calculateDistance(
       location.latitude,
       location.longitude,
       p.latitude,
-      p.longitude
+      p.longitude,
     );
 
     // effectiveDistance = minimum possible distance (best case)
@@ -121,15 +139,21 @@ export class LocationValidator {
     return effectiveDistance > p.radius + buffer;
   }
 
-  static calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  static calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
     const R = 6371e3;
     const φ1 = (lat1 * Math.PI) / 180;
     const φ2 = (lat2 * Math.PI) / 180;
     const Δφ = ((lat2 - lat1) * Math.PI) / 180;
     const Δλ = ((lon2 - lon1) * Math.PI) / 180;
 
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-              Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const a =
+      Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+      Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
     return R * c;

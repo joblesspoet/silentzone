@@ -32,7 +32,14 @@ export class SilentZoneManager {
    * Activate silent zone for a place
    * Handles both first entry and overlapping zones
    */
-  async activateSilentZone(place: any): Promise<boolean> {
+  async activateSilentZone(
+    place: any,
+    sensorData?: {
+      floorMatchScore?: number;
+      detectedPressure?: number;
+      detectedAltitude?: number;
+    },
+  ): Promise<boolean> {
     if (!this.realm) {
       Logger.error('[SilentZoneManager] Cannot activate: realm not available');
       return false;
@@ -46,16 +53,23 @@ export class SilentZoneManager {
     const isOverlapping = activeLogs.length > 0;
 
     if (isOverlapping) {
-      return await this.handleOverlappingEntry(place, activeLogs);
+      return await this.handleOverlappingEntry(place, activeLogs, sensorData);
     } else {
-      return await this.handleFirstEntry(place);
+      return await this.handleFirstEntry(place, sensorData);
     }
   }
 
   /**
    * Handle first entry into a silent zone
    */
-  private async handleFirstEntry(place: any): Promise<boolean> {
+  private async handleFirstEntry(
+    place: any,
+    sensorData?: {
+      floorMatchScore?: number;
+      detectedPressure?: number;
+      detectedAltitude?: number;
+    },
+  ): Promise<boolean> {
     const placeId = place.id;
     const placeName = place.name;
 
@@ -63,20 +77,31 @@ export class SilentZoneManager {
 
     try {
       if (Platform.OS === 'android') {
-        await this.saveAndSilencePhone(placeId);
+        await this.saveAndSilencePhone(placeId, sensorData);
       } else {
         // Non-Android: just log check-in
-        CheckInService.logCheckIn(this.realm!, placeId);
+        CheckInService.logCheckIn(
+          this.realm!,
+          placeId,
+          undefined,
+          undefined,
+          sensorData?.floorMatchScore,
+          sensorData?.detectedPressure,
+          sensorData?.detectedAltitude,
+        );
       }
 
-      const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm!));
-      const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
-      
+      const enabledPlaces = Array.from(
+        PlaceService.getEnabledPlaces(this.realm!),
+      );
+      const { upcomingSchedules } =
+        ScheduleManager.categorizeBySchedule(enabledPlaces);
+
       await notificationManager.startForegroundService(
         enabledPlaces.length,
         upcomingSchedules,
         placeName,
-        true
+        true,
       );
 
       // ✅ Emit check-in notification
@@ -85,13 +110,16 @@ export class SilentZoneManager {
         placeId: placeId,
         placeName: placeName,
         timestamp: Date.now(),
-        source: 'geofence'
+        source: 'geofence',
       });
 
       Logger.info(`[SilentZoneManager] Phone silenced for ${placeName}`);
       return true;
     } catch (error) {
-      Logger.error(`[SilentZoneManager] Failed to silence phone for ${placeName}:`, error);
+      Logger.error(
+        `[SilentZoneManager] Failed to silence phone for ${placeName}:`,
+        error,
+      );
       return false;
     }
   }
@@ -99,25 +127,39 @@ export class SilentZoneManager {
   /**
    * Handle entry when already in another silent zone
    */
-  private async handleOverlappingEntry(place: any, activeLogs: any[]): Promise<boolean> {
+  private async handleOverlappingEntry(
+    place: any,
+    activeLogs: any[],
+    sensorData?: {
+      floorMatchScore?: number;
+      detectedPressure?: number;
+      detectedAltitude?: number;
+    },
+  ): Promise<boolean> {
     const placeId = place.id;
     const placeName = place.name;
 
-    Logger.info(`[SilentZoneManager] Entering ${placeName} (already in ${activeLogs.length} zone(s))`);
+    Logger.info(
+      `[SilentZoneManager] Entering ${placeName} (already in ${activeLogs.length} zone(s))`,
+    );
 
     // List which zones we're already in
     activeLogs.forEach((log: any, index: number) => {
       const existingPlace = PlaceService.getPlaceById(this.realm!, log.placeId);
-      const existingName = existingPlace ? (existingPlace as any).name : 'Unknown';
+      const existingName = existingPlace
+        ? (existingPlace as any).name
+        : 'Unknown';
       Logger.info(`  └─ Zone ${index + 1}: ${existingName}`);
     });
 
     try {
       if (Platform.OS === 'android') {
         const currentMode = await RingerMode.getRingerMode();
-        const currentVolume = await RingerMode.getStreamVolume(RingerMode.STREAM_TYPES.MUSIC);
+        const currentVolume = await RingerMode.getStreamVolume(
+          RingerMode.STREAM_TYPES.MUSIC,
+        );
 
-        // ✅ OVERLAPPING LOGIC: Inherit the ORIGINAL sound state from the 
+        // ✅ OVERLAPPING LOGIC: Inherit the ORIGINAL sound state from the
         // oldest active zone. This ensures that when we exit this new zone,
         // we don't accidentally "restore" a silent state.
         let restoreMode = currentMode;
@@ -125,12 +167,20 @@ export class SilentZoneManager {
 
         if (activeLogs.length > 0) {
           const oldestLog = activeLogs[0];
-          if (oldestLog.savedVolumeLevel !== null && oldestLog.savedVolumeLevel !== undefined) {
-             restoreMode = oldestLog.savedVolumeLevel;
-             Logger.info(`[SilentZoneManager] Overlapping: Inheriting restore mode ${restoreMode} from ${oldestLog.placeId}`);
+          if (
+            oldestLog.savedVolumeLevel !== null &&
+            oldestLog.savedVolumeLevel !== undefined
+          ) {
+            restoreMode = oldestLog.savedVolumeLevel;
+            Logger.info(
+              `[SilentZoneManager] Overlapping: Inheriting restore mode ${restoreMode} from ${oldestLog.placeId}`,
+            );
           }
-          if (oldestLog.savedMediaVolume !== null && oldestLog.savedMediaVolume !== undefined) {
-             restoreVolume = oldestLog.savedMediaVolume;
+          if (
+            oldestLog.savedMediaVolume !== null &&
+            oldestLog.savedMediaVolume !== undefined
+          ) {
+            restoreVolume = oldestLog.savedMediaVolume;
           }
         }
 
@@ -138,25 +188,41 @@ export class SilentZoneManager {
           this.realm!,
           placeId,
           restoreMode,
-          restoreVolume
+          restoreVolume,
+          sensorData?.floorMatchScore,
+          sensorData?.detectedPressure,
+          sensorData?.detectedAltitude,
         );
 
         if (!log) {
-          Logger.error(`[SilentZoneManager] Failed to log overlapping check-in for ${placeName}`);
+          Logger.error(
+            `[SilentZoneManager] Failed to log overlapping check-in for ${placeName}`,
+          );
           return false;
         }
       } else {
-        CheckInService.logCheckIn(this.realm!, placeId);
+        CheckInService.logCheckIn(
+          this.realm!,
+          placeId,
+          undefined,
+          undefined,
+          sensorData?.floorMatchScore,
+          sensorData?.detectedPressure,
+          sensorData?.detectedAltitude,
+        );
       }
 
-      const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm!));
-      const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
+      const enabledPlaces = Array.from(
+        PlaceService.getEnabledPlaces(this.realm!),
+      );
+      const { upcomingSchedules } =
+        ScheduleManager.categorizeBySchedule(enabledPlaces);
 
       await notificationManager.startForegroundService(
         enabledPlaces.length,
         upcomingSchedules,
         placeName,
-        true
+        true,
       );
 
       // After startForegroundService call, add:
@@ -165,13 +231,18 @@ export class SilentZoneManager {
         placeId: placeId,
         placeName: placeName,
         timestamp: Date.now(),
-        source: 'geofence'
+        source: 'geofence',
       });
 
-      Logger.info(`[SilentZoneManager] Overlapping check-in logged for ${placeName}`);
+      Logger.info(
+        `[SilentZoneManager] Overlapping check-in logged for ${placeName}`,
+      );
       return true;
     } catch (error) {
-      Logger.error('[SilentZoneManager] Failed to save overlapping state:', error);
+      Logger.error(
+        '[SilentZoneManager] Failed to save overlapping state:',
+        error,
+      );
       CheckInService.logCheckIn(this.realm!, placeId);
       return false;
     }
@@ -179,13 +250,18 @@ export class SilentZoneManager {
 
   /**
    * Handle exit from a silent zone.
-   * 
+   *
    * @param placeId ID of the place exited
    * @param isScheduledEnd True if this is a natural end of a schedule (from Alarm)
    */
-  async handleExit(placeId: string, isScheduledEnd: boolean = false): Promise<boolean> {
+  async handleExit(
+    placeId: string,
+    isScheduledEnd: boolean = false,
+  ): Promise<boolean> {
     if (!this.realm) {
-      Logger.error('[SilentZoneManager] Cannot handle exit: realm not available');
+      Logger.error(
+        '[SilentZoneManager] Cannot handle exit: realm not available',
+      );
       return false;
     }
 
@@ -194,7 +270,9 @@ export class SilentZoneManager {
 
     // Check if this place has an active check-in
     if (!CheckInService.isPlaceActive(this.realm, placeId)) {
-      Logger.info(`[SilentZoneManager] No active check-in for ${placeName}, ignoring exit`);
+      Logger.info(
+        `[SilentZoneManager] No active check-in for ${placeName}, ignoring exit`,
+      );
       return false;
     }
 
@@ -203,19 +281,33 @@ export class SilentZoneManager {
     const thisLog = activeLogs.find(l => l.placeId === placeId);
 
     if (!thisLog) {
-      Logger.warn(`[SilentZoneManager] Active check-in for ${placeName} not found`);
+      Logger.warn(
+        `[SilentZoneManager] Active check-in for ${placeName} not found`,
+      );
       return false;
     }
 
     const totalActive = activeLogs.length;
-    Logger.info(`[SilentZoneManager] Exiting ${placeName} (${totalActive} total active zones, scheduledEnd=${isScheduledEnd})`);
+    Logger.info(
+      `[SilentZoneManager] Exiting ${placeName} (${totalActive} total active zones, scheduledEnd=${isScheduledEnd})`,
+    );
 
     if (totalActive === 1) {
       // LAST ZONE: Restore sound
-      return await this.handleLastZoneExit(thisLog.id as string, placeId, placeName, isScheduledEnd);
+      return await this.handleLastZoneExit(
+        thisLog.id as string,
+        placeId,
+        placeName,
+        isScheduledEnd,
+      );
     } else {
       // OVERLAPPING: Still in other zones, stay silent
-      return await this.handlePartialExit(thisLog.id as string, placeName, activeLogs, placeId);
+      return await this.handlePartialExit(
+        thisLog.id as string,
+        placeName,
+        activeLogs,
+        placeId,
+      );
     }
   }
 
@@ -223,10 +315,10 @@ export class SilentZoneManager {
    * Handle exit from the last active zone
    */
   private async handleLastZoneExit(
-    logId: string, 
-    placeId: string, 
-    placeName: string, 
-    isScheduledEnd: boolean
+    logId: string,
+    placeId: string,
+    placeName: string,
+    isScheduledEnd: boolean,
   ): Promise<boolean> {
     Logger.info(`[SilentZoneManager] Last zone exit - restoring sound`);
 
@@ -239,29 +331,31 @@ export class SilentZoneManager {
       // Notify for both manual exit (delayed) AND scheduled end (immediate)
       const now = Date.now();
       const lastRestored = this.lastSoundRestoredTime[placeId] || 0;
-      
+
       if (isScheduledEnd) {
-         // Immediate notification for schedule end
-         notificationBus.emit({
-            type: 'SCHEDULE_END',
-            placeId: placeId,
-            placeName,
-            timestamp: now,
-            source: 'alarm'
-         });
+        // Immediate notification for schedule end
+        notificationBus.emit({
+          type: 'SCHEDULE_END',
+          placeId: placeId,
+          placeName,
+          timestamp: now,
+          source: 'alarm',
+        });
       } else if (now - lastRestored > 60000) {
-         // Debounced notification for manual exit
-         this.lastSoundRestoredTime[placeId] = now;
-         notificationBus.emit({
-            type: 'SOUND_RESTORED',
-            placeId: placeId,
-            placeName,
-            timestamp: now,
-            source: 'manual'
-         });
+        // Debounced notification for manual exit
+        this.lastSoundRestoredTime[placeId] = now;
+        notificationBus.emit({
+          type: 'SOUND_RESTORED',
+          placeId: placeId,
+          placeName,
+          timestamp: now,
+          source: 'manual',
+        });
       }
 
-      Logger.info(`[SilentZoneManager] Sound restored after exiting ${placeName}`);
+      Logger.info(
+        `[SilentZoneManager] Sound restored after exiting ${placeName}`,
+      );
       return true;
     } catch (error) {
       Logger.error('[SilentZoneManager] Failed to restore sound:', error);
@@ -276,10 +370,12 @@ export class SilentZoneManager {
     logId: string,
     placeName: string,
     activeLogs: any[],
-    exitingPlaceId: string
+    exitingPlaceId: string,
   ): Promise<boolean> {
     Logger.info(
-      `[SilentZoneManager] Still in ${activeLogs.length - 1} other zone(s), staying silent`
+      `[SilentZoneManager] Still in ${
+        activeLogs.length - 1
+      } other zone(s), staying silent`,
     );
 
     // Log which zones we're still in
@@ -294,20 +390,29 @@ export class SilentZoneManager {
     // Close this check-in but DON'T restore sound
     CheckInService.logCheckOut(this.realm!, logId);
 
-    const enabledPlaces = Array.from(PlaceService.getEnabledPlaces(this.realm!));
-    const { upcomingSchedules } = ScheduleManager.categorizeBySchedule(enabledPlaces);
+    const enabledPlaces = Array.from(
+      PlaceService.getEnabledPlaces(this.realm!),
+    );
+    const { upcomingSchedules } =
+      ScheduleManager.categorizeBySchedule(enabledPlaces);
 
     // Update persistent notification to show we are still in OTHER zones
-    const activeLogsRemaining = Array.from(CheckInService.getActiveCheckIns(this.realm!));
-    const nextPlaceName = activeLogsRemaining.length > 0 
-      ? (PlaceService.getPlaceById(this.realm!, activeLogsRemaining[0].placeId as string)?.name as string || 'Another Zone')
-      : null;
+    const activeLogsRemaining = Array.from(
+      CheckInService.getActiveCheckIns(this.realm!),
+    );
+    const nextPlaceName =
+      activeLogsRemaining.length > 0
+        ? (PlaceService.getPlaceById(
+            this.realm!,
+            activeLogsRemaining[0].placeId as string,
+          )?.name as string) || 'Another Zone'
+        : null;
 
     await notificationManager.startForegroundService(
       enabledPlaces.length,
       upcomingSchedules,
       nextPlaceName,
-      activeLogsRemaining.length > 0
+      activeLogsRemaining.length > 0,
     );
 
     Logger.info(`[SilentZoneManager] Partial exit from ${placeName}`);
@@ -317,7 +422,14 @@ export class SilentZoneManager {
   /**
    * Save current ringer mode and silence phone
    */
-  private async saveAndSilencePhone(placeId: string): Promise<void> {
+  private async saveAndSilencePhone(
+    placeId: string,
+    sensorData?: {
+      floorMatchScore?: number;
+      detectedPressure?: number;
+      detectedAltitude?: number;
+    },
+  ): Promise<void> {
     try {
       const hasPermission = await RingerMode.checkDndPermission();
 
@@ -326,26 +438,43 @@ export class SilentZoneManager {
         await notificationManager.showNotification(
           'Permission Required',
           'Grant "Do Not Disturb" access in settings for automatic silencing',
-          'dnd-required'
+          'dnd-required',
         );
-        CheckInService.logCheckIn(this.realm!, placeId);
+        CheckInService.logCheckIn(
+          this.realm!,
+          placeId,
+          undefined,
+          undefined,
+          sensorData?.floorMatchScore,
+          sensorData?.detectedPressure,
+          sensorData?.detectedAltitude,
+        );
         return;
       }
 
       const currentMode = await RingerMode.getRingerMode();
-      const currentMediaVolume = await RingerMode.getStreamVolume(RingerMode.STREAM_TYPES.MUSIC);
+      const currentMediaVolume = await RingerMode.getStreamVolume(
+        RingerMode.STREAM_TYPES.MUSIC,
+      );
 
-      Logger.info(`[SilentZoneManager] Saving: mode=${currentMode}, volume=${currentMediaVolume}`);
+      Logger.info(
+        `[SilentZoneManager] Saving: mode=${currentMode}, volume=${currentMediaVolume}`,
+      );
 
       const log = CheckInService.logCheckIn(
         this.realm!,
         placeId,
         currentMode,
-        currentMediaVolume
+        currentMediaVolume,
+        sensorData?.floorMatchScore,
+        sensorData?.detectedPressure,
+        sensorData?.detectedAltitude,
       );
 
       if (!log) {
-        Logger.error(`[SilentZoneManager] Failed to persist check-in for ${placeId}`);
+        Logger.error(
+          `[SilentZoneManager] Failed to persist check-in for ${placeId}`,
+        );
         return;
       }
 
@@ -363,7 +492,15 @@ export class SilentZoneManager {
       }
     } catch (error) {
       Logger.error('[SilentZoneManager] Save and silence failed:', error);
-      CheckInService.logCheckIn(this.realm!, placeId);
+      CheckInService.logCheckIn(
+        this.realm!,
+        placeId,
+        undefined,
+        undefined,
+        sensorData?.floorMatchScore,
+        sensorData?.detectedPressure,
+        sensorData?.detectedAltitude,
+      );
     }
   }
 
@@ -372,7 +509,10 @@ export class SilentZoneManager {
    */
   private async restoreRingerMode(checkInLogId: string): Promise<void> {
     try {
-      const log = this.realm!.objectForPrimaryKey('CheckInLog', checkInLogId) as any;
+      const log = this.realm!.objectForPrimaryKey(
+        'CheckInLog',
+        checkInLogId,
+      ) as any;
       if (!log) return;
 
       const savedMode = log.savedVolumeLevel;
@@ -386,8 +526,13 @@ export class SilentZoneManager {
       }
 
       if (savedMediaVolume !== null && savedMediaVolume !== undefined) {
-        Logger.info(`[SilentZoneManager] Restoring volume: ${savedMediaVolume}`);
-        await RingerMode.setStreamVolume(RingerMode.STREAM_TYPES.MUSIC, savedMediaVolume);
+        Logger.info(
+          `[SilentZoneManager] Restoring volume: ${savedMediaVolume}`,
+        );
+        await RingerMode.setStreamVolume(
+          RingerMode.STREAM_TYPES.MUSIC,
+          savedMediaVolume,
+        );
       }
 
       Logger.info('[SilentZoneManager] Sound restored');

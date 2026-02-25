@@ -1,5 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Dimensions } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  Dimensions,
+} from 'react-native';
 import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
 import { theme } from '../theme';
 import { MaterialIcon } from '../components/MaterialIcon';
@@ -8,6 +16,7 @@ import { CheckInService } from '../database/services/CheckInService';
 import { useRealm } from '../database/RealmProvider';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { locationService } from '../services/LocationService';
+import * as PlaceFingerprinter from '../services/PlaceFingerprinter';
 
 interface Props {
   navigation: any;
@@ -36,21 +45,21 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
     // 1. Listener for updates (e.g. from Edit screen)
     const placeObj = PlaceService.getPlaceById(realm, placeId);
     if (placeObj) {
-        placeObj.addListener(() => {
-             loadPlaceData();
-        });
+      placeObj.addListener(() => {
+        loadPlaceData();
+      });
     }
 
     // 2. Listener for check-in status (to show/hide edit buttons in real-time)
     const checkInLogs = realm.objects('CheckInLog');
     const checkInListener = () => {
-        loadPlaceData();
+      loadPlaceData();
     };
     checkInLogs.addListener(checkInListener);
 
     return () => {
-        if (placeObj) placeObj.removeAllListeners();
-        checkInLogs.removeListener(checkInListener);
+      if (placeObj) placeObj.removeAllListeners();
+      checkInLogs.removeListener(checkInListener);
     };
   }, [placeId]);
 
@@ -59,58 +68,92 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
 
     const p = PlaceService.getPlaceById(realm, placeId) as any;
     if (!p) {
-        // Handle deletion case (e.g. from outside)
-        navigation.goBack();
-        return;
+      // Handle deletion case (e.g. from outside)
+      navigation.goBack();
+      return;
     }
     setPlace({
-        id: p.id,
-        name: p.name,
-        latitude: p.latitude,
-        longitude: p.longitude,
-        radius: p.radius,
-        category: p.category,
-        icon: p.icon,
-        isEnabled: p.isEnabled,
-        lastCheckInAt: p.lastCheckInAt,
-        totalCheckIns: p.totalCheckIns,
-        isInside: !!p.isInside,
-        // Explicitly map schedules to plain objects to ensure 'endTime' is captured
-        schedules: p.schedules ? (p.schedules as any[]).map((s: any) => ({
+      id: p.id,
+      name: p.name,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      radius: p.radius,
+      category: p.category,
+      icon: p.icon,
+      isEnabled: p.isEnabled,
+      lastCheckInAt: p.lastCheckInAt,
+      totalCheckIns: p.totalCheckIns,
+      isInside: !!p.isInside,
+      // Explicitly map schedules to plain objects to ensure 'endTime' is captured
+      schedules: p.schedules
+        ? (p.schedules as any[]).map((s: any) => ({
             id: s.id,
             startTime: s.startTime,
             endTime: s.endTime,
             days: s.days ? Array.from(s.days) : [],
-            label: s.label
-        })) : []
+            label: s.label,
+          }))
+        : [],
     });
-    
+
     // Fetch History
     const history = CheckInService.getCheckInsForPlace(realm, placeId);
     setCheckIns(history.slice(0, 10));
 
     // isInside is now a reactive property on the place object itself!
     setIsCurrentlyActive(!!p.isInside);
-    
+
     setLoading(false);
   };
 
   const handleToggle = async (val: boolean) => {
-    const success = PlaceService.updatePlace(realm, placeId, { isEnabled: val });
+    const success = PlaceService.updatePlace(realm, placeId, {
+      isEnabled: val,
+    });
     if (success) {
       await locationService.onPlaceToggled(placeId, val);
     }
   };
 
+  const handleCalibrate = () => {
+    Alert.alert(
+      'Calibrate Floor',
+      'Are you currently at the prayer area (correct floor)? This will save the current barometric pressure as the reference level.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Calibrate',
+          onPress: async () => {
+            const fingerprint = await PlaceFingerprinter.captureFingerprint(
+              placeId,
+            );
+            if (fingerprint) {
+              PlaceService.updatePlace(realm, placeId, {
+                avgPressure: fingerprint.avgPressure,
+                altitude: fingerprint.altitude,
+              } as any);
+              Alert.alert('Success', 'Floor reference updated!');
+            } else {
+              Alert.alert(
+                'Error',
+                'Could not capture sensor data. Is your device supported?',
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+
   const handleDelete = () => {
     Alert.alert(
       `Delete ${place?.name}?`,
-      "This will remove the place and all check-in history. This action cannot be undone.",
+      'This will remove the place and all check-in history. This action cannot be undone.',
       [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive",
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
           onPress: async () => {
             isDeleting.current = true; // Flag to suppress listeners
             const success = await PlaceService.deletePlace(realm, placeId);
@@ -118,195 +161,295 @@ export const PlaceDetailScreen: React.FC<Props> = ({ navigation, route }) => {
               await locationService.onPlaceDeleted(placeId);
             }
             navigation.goBack();
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
   if (loading || !place) {
     return (
-        <View style={styles.loadingContainer}>
-            <Text>Loading place...</Text>
-        </View>
+      <View style={styles.loadingContainer}>
+        <Text>Loading place...</Text>
+      </View>
     );
   }
 
   // Derived state
-  const lastCheckIn = place.lastCheckInAt 
-     ? new Date(place.lastCheckInAt).toLocaleDateString() + ' ' + new Date(place.lastCheckInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-     : 'Never';
+  const lastCheckIn = place.lastCheckInAt
+    ? new Date(place.lastCheckInAt).toLocaleDateString() +
+      ' ' +
+      new Date(place.lastCheckInAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'Never';
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-           <MaterialIcon name="arrow-back-ios" size={20} color={theme.colors.text.primary.light} />
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.iconBtn}
+        >
+          <MaterialIcon
+            name="arrow-back-ios"
+            size={20}
+            color={theme.colors.text.primary.light}
+          />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{place.name}</Text>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {place.name}
+        </Text>
         <View style={styles.iconBtn}>
           {!isCurrentlyActive ? (
             <TouchableOpacity onPress={handleDelete}>
-              <MaterialIcon name="delete-outline" size={24} color={theme.colors.error} />
+              <MaterialIcon
+                name="delete-outline"
+                size={24}
+                color={theme.colors.error}
+              />
             </TouchableOpacity>
           ) : (
-            <MaterialIcon name="lock" size={20} color={theme.colors.text.disabled} />
+            <MaterialIcon
+              name="lock"
+              size={20}
+              color={theme.colors.text.disabled}
+            />
           )}
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: Math.max(insets.bottom, 20) + 40 }]}>
-        
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom, 20) + 40 },
+        ]}
+      >
         {/* Status Badge */}
         <View style={styles.statusSection}>
-            <View style={[styles.badge, place.isEnabled ? styles.badgeActive : styles.badgeInactive]}>
-                <View style={[styles.dot, { backgroundColor: place.isEnabled ? theme.colors.success : theme.colors.text.disabled }]} />
-                <Text style={styles.badgeText}>
-                    {place.isEnabled ? "Monitoring Active" : "Monitoring Paused"}
-                </Text>
-            </View>
-            <ToggleSwitch
-                value={place.isEnabled}
-                onValueChange={handleToggle}
+          <View
+            style={[
+              styles.badge,
+              place.isEnabled ? styles.badgeActive : styles.badgeInactive,
+            ]}
+          >
+            <View
+              style={[
+                styles.dot,
+                {
+                  backgroundColor: place.isEnabled
+                    ? theme.colors.success
+                    : theme.colors.text.disabled,
+                },
+              ]}
             />
+            <Text style={styles.badgeText}>
+              {place.isEnabled ? 'Monitoring Active' : 'Monitoring Paused'}
+            </Text>
+          </View>
+          <ToggleSwitch value={place.isEnabled} onValueChange={handleToggle} />
         </View>
-        
+
         <View style={styles.mapContainer}>
-             <MapView
-              provider={PROVIDER_GOOGLE}
-              style={styles.map}
-              initialRegion={{
+          <MapView
+            provider={PROVIDER_GOOGLE}
+            style={styles.map}
+            initialRegion={{
+              latitude: place.latitude as number,
+              longitude: place.longitude as number,
+              latitudeDelta: Math.max(0.002, (place.radius * 2 * 2.2) / 111320),
+              longitudeDelta: Math.max(
+                0.002,
+                (place.radius * 2 * 2.2) /
+                  (111320 * Math.cos(place.latitude * (Math.PI / 180))),
+              ),
+            }}
+            scrollEnabled={false}
+            zoomEnabled={false}
+            pitchEnabled={false}
+            rotateEnabled={false}
+          >
+            <Marker
+              coordinate={{
                 latitude: place.latitude as number,
                 longitude: place.longitude as number,
-                latitudeDelta: Math.max(0.002, (place.radius * 2 * 2.2) / 111320),
-                longitudeDelta: Math.max(0.002, (place.radius * 2 * 2.2) / (111320 * Math.cos(place.latitude * (Math.PI / 180)))),
               }}
-              scrollEnabled={false}
-              zoomEnabled={false}
-              pitchEnabled={false}
-              rotateEnabled={false}
             >
-              <Marker
-                coordinate={{
-                  latitude: place.latitude as number,
-                  longitude: place.longitude as number,
-                }}
-              >
-                  <MaterialIcon name={place.icon || "location-on"} size={32} color={theme.colors.primary} />
-              </Marker>
-              <Circle
-                center={{
-                  latitude: place.latitude as number,
-                  longitude: place.longitude as number,
-                }}
-                radius={place.radius as number}
-                fillColor="rgba(59, 130, 246, 0.2)"
-                strokeColor="rgba(59, 130, 246, 0.5)"
-                strokeWidth={2}
+              <MaterialIcon
+                name={place.icon || 'location-on'}
+                size={32}
+                color={theme.colors.primary}
               />
-            </MapView>
+            </Marker>
+            <Circle
+              center={{
+                latitude: place.latitude as number,
+                longitude: place.longitude as number,
+              }}
+              radius={place.radius as number}
+              fillColor="rgba(59, 130, 246, 0.2)"
+              strokeColor="rgba(59, 130, 246, 0.5)"
+              strokeWidth={2}
+            />
+          </MapView>
         </View>
 
         {/* Info Card */}
         <View style={styles.infoCard}>
-             <View style={styles.infoRow}>
-                 <View style={styles.infoItem}>
-                     <Text style={styles.label}>RADIUS</Text>
-                     <Text style={styles.value}>{place.radius}m</Text>
-                 </View>
-                 <View style={styles.divider} />
-                 <View style={styles.infoItem}>
-                     <Text style={styles.label}>TOTAL VISITS</Text>
-                     <Text style={styles.value}>{place.totalCheckIns}</Text>
-                 </View>
-             </View>
-             
-             <View style={styles.separator} />
-             
-             <View style={styles.detailsRow}>
-                 <MaterialIcon name="access-time" size={16} color={theme.colors.text.secondary.light} />
-                 <Text style={styles.detailText}>Last visited: {lastCheckIn}</Text>
-             </View>
-             <View style={styles.detailsRow}>
-                 <MaterialIcon name="public" size={16} color={theme.colors.text.secondary.light} />
-                 <Text style={styles.detailText}>{place.latitude.toFixed(6)}, {place.longitude.toFixed(6)}</Text>
-             </View>
+          <View style={styles.infoRow}>
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>RADIUS</Text>
+              <Text style={styles.value}>{place.radius}m</Text>
+            </View>
+            <View style={styles.divider} />
+            <View style={styles.infoItem}>
+              <Text style={styles.label}>TOTAL VISITS</Text>
+              <Text style={styles.value}>{place.totalCheckIns}</Text>
+            </View>
+          </View>
+
+          <View style={styles.separator} />
+
+          <View style={styles.detailsRow}>
+            <MaterialIcon
+              name="access-time"
+              size={16}
+              color={theme.colors.text.secondary.light}
+            />
+            <Text style={styles.detailText}>Last visited: {lastCheckIn}</Text>
+          </View>
+          <View style={styles.detailsRow}>
+            <MaterialIcon
+              name="public"
+              size={16}
+              color={theme.colors.text.secondary.light}
+            />
+            <Text style={styles.detailText}>
+              {place.latitude.toFixed(6)}, {place.longitude.toFixed(6)}
+            </Text>
+          </View>
         </View>
 
         {/* Schedule Display */}
         <View style={styles.historySection}>
-            <Text style={styles.sectionTitle}>Schedules</Text>
-            {(!place.schedules || place.schedules.length === 0) ? (
-                <View style={styles.scheduleRow}>
-                    <MaterialIcon name="schedule" size={20} color={theme.colors.success} />
-                    <Text style={styles.scheduleText}>Always Active - 24/7 Monitoring</Text>
+          <Text style={styles.sectionTitle}>Schedules</Text>
+          {!place.schedules || place.schedules.length === 0 ? (
+            <View style={styles.scheduleRow}>
+              <MaterialIcon
+                name="schedule"
+                size={20}
+                color={theme.colors.success}
+              />
+              <Text style={styles.scheduleText}>
+                Always Active - 24/7 Monitoring
+              </Text>
+            </View>
+          ) : (
+            place.schedules.map((s: any, idx: number) => (
+              <View key={s.id || idx} style={styles.scheduleCard}>
+                <View style={styles.scheduleInfo}>
+                  <Text style={styles.scheduleLabel}>
+                    {s.label || 'Interval'}
+                  </Text>
+                  <Text style={styles.scheduleTime}>
+                    {s.startTime} — {s.endTime}
+                  </Text>
                 </View>
-            ) : (
-                place.schedules.map((s: any, idx: number) => (
-                    <View key={s.id || idx} style={styles.scheduleCard}>
-                        <View style={styles.scheduleInfo}>
-                            <Text style={styles.scheduleLabel}>{s.label || 'Interval'}</Text>
-                            <Text style={styles.scheduleTime}>{s.startTime} — {s.endTime}</Text>
-                        </View>
-                        <MaterialIcon name="access-time" size={20} color={theme.colors.primary} />
-                    </View>
-                ))
-            )}
+                <MaterialIcon
+                  name="access-time"
+                  size={20}
+                  color={theme.colors.primary}
+                />
+              </View>
+            ))
+          )}
         </View>
 
         {/* Action Button */}
-        {!isCurrentlyActive && (
-          <TouchableOpacity 
+        <View style={styles.buttonContainer}>
+          {!isCurrentlyActive && (
+            <TouchableOpacity
               style={styles.editButton}
-              onPress={() => navigation.navigate('EditPlace', { placeId: place.id })}
-          >
+              onPress={() =>
+                navigation.navigate('EditPlace', { placeId: place.id })
+              }
+            >
               <Text style={styles.editButtonText}>Edit Place Config</Text>
               <MaterialIcon name="edit" size={16} color={theme.colors.white} />
+            </TouchableOpacity>
+          )}
+
+          <TouchableOpacity
+            style={[styles.editButton, styles.secondaryButton]}
+            onPress={handleCalibrate}
+          >
+            <Text style={[styles.editButtonText, styles.secondaryButtonText]}>
+              Calibrate Floor Level
+            </Text>
+            <MaterialIcon
+              name="swap-vert"
+              size={16}
+              color={theme.colors.primary}
+            />
           </TouchableOpacity>
-        )}
+        </View>
 
         {/* History Section */}
         <View style={styles.historySection}>
-            <Text style={styles.sectionTitle}>Recent Check-ins</Text>
-            
-            {checkIns.length === 0 ? (
-                <View style={styles.emptyHistory}>
-                    <Text style={styles.emptyText}>No check-ins recorded yet.</Text>
+          <Text style={styles.sectionTitle}>Recent Check-ins</Text>
+
+          {checkIns.length === 0 ? (
+            <View style={styles.emptyHistory}>
+              <Text style={styles.emptyText}>No check-ins recorded yet.</Text>
+            </View>
+          ) : (
+            checkIns.map((log: any) => {
+              const checkIn = new Date(log.checkInTime);
+              const checkOut = log.checkOutTime
+                ? new Date(log.checkOutTime)
+                : null;
+
+              const timeFormat: Intl.DateTimeFormatOptions = {
+                hour: '2-digit',
+                minute: '2-digit',
+              };
+              const checkInTimeStr = checkIn.toLocaleTimeString([], timeFormat);
+              const checkOutTimeStr = checkOut
+                ? checkOut.toLocaleTimeString([], timeFormat)
+                : '—';
+
+              return (
+                <View key={log.id} style={styles.historyItem}>
+                  <View style={styles.historyLeft}>
+                    <View style={styles.historyIcon}>
+                      <MaterialIcon
+                        name="history"
+                        size={16}
+                        color={theme.colors.primary}
+                      />
+                    </View>
+                    <View>
+                      <Text style={styles.historyDate}>
+                        {checkIn.toLocaleDateString()}
+                      </Text>
+                      <Text style={styles.historyTime}>
+                        {checkInTimeStr}
+                        {checkOut ? ` — ${checkOutTimeStr}` : ''}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.duration}>
+                    {log.durationMinutes
+                      ? `${log.durationMinutes} min`
+                      : 'Ongoing'}
+                  </Text>
                 </View>
-            ) : (
-                checkIns.map((log: any) => {
-                    const checkIn = new Date(log.checkInTime);
-                    const checkOut = log.checkOutTime ? new Date(log.checkOutTime) : null;
-                    
-                    const timeFormat: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-                    const checkInTimeStr = checkIn.toLocaleTimeString([], timeFormat);
-                    const checkOutTimeStr = checkOut ? checkOut.toLocaleTimeString([], timeFormat) : '—';
-
-                    return (
-                        <View key={log.id} style={styles.historyItem}>
-                            <View style={styles.historyLeft}>
-                                 <View style={styles.historyIcon}>
-                                     <MaterialIcon name="history" size={16} color={theme.colors.primary} />
-                                 </View>
-                                 <View>
-                                     <Text style={styles.historyDate}>
-                                         {checkIn.toLocaleDateString()}
-                                     </Text>
-                                     <Text style={styles.historyTime}>
-                                         {checkInTimeStr}{checkOut ? ` — ${checkOutTimeStr}` : ''}
-                                     </Text>
-                                 </View>
-                            </View>
-                            <Text style={styles.duration}>
-                                {log.durationMinutes ? `${log.durationMinutes} min` : 'Ongoing'}
-                            </Text>
-                        </View>
-                    );
-                })
-            )}
+              );
+            })
+          )}
         </View>
-
       </ScrollView>
     </View>
   );
@@ -443,7 +586,6 @@ const styles = StyleSheet.create({
     color: theme.colors.text.secondary.light,
   },
   editButton: {
-    marginHorizontal: theme.spacing.lg,
     backgroundColor: theme.colors.primary,
     borderRadius: theme.layout.borderRadius.md,
     paddingVertical: 12,
@@ -451,11 +593,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginBottom: theme.spacing.xl,
+    flex: 1,
   },
   editButtonText: {
     color: theme.colors.white,
     fontWeight: theme.typography.weights.semibold,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: theme.spacing.lg,
+    gap: 12,
+    marginBottom: theme.spacing.xl,
+  },
+  secondaryButton: {
+    backgroundColor: theme.colors.surface.light,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  secondaryButtonText: {
+    color: theme.colors.primary,
   },
   editButtonDisabled: {
     backgroundColor: theme.colors.text.disabled,

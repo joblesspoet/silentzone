@@ -1,14 +1,20 @@
-import { Platform, Linking, Alert, NativeModules, PermissionsAndroid } from 'react-native';
+import {
+  Platform,
+  Linking,
+  Alert,
+  NativeModules,
+  PermissionsAndroid,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import RingerMode from '../modules/RingerMode';
-import { 
-  check, 
-  request, 
-  PERMISSIONS, 
-  RESULTS, 
+import {
+  check,
+  request,
+  PERMISSIONS,
+  RESULTS,
   PermissionStatus,
   checkNotifications,
-  requestNotifications
+  requestNotifications,
 } from 'react-native-permissions';
 import Geolocation from 'react-native-geolocation-service';
 
@@ -20,7 +26,6 @@ const EXACT_ALARM_OVERRIDE_KEY = 'EXACT_ALARM_OVERRIDE';
 const APP_PACKAGE = 'com.qybrix.silentzone';
 
 export const PermissionsManager = {
-
   // ============================================================================
   // BATTERY — Fixed for Android 14/15 "Unrestricted" mode
   // ============================================================================
@@ -47,7 +52,8 @@ export const PermissionsManager = {
     if (Platform.OS !== 'android') return true;
     try {
       // Short-circuit: already granted
-      const alreadyGranted = await BatteryOptimization.isIgnoringBatteryOptimizations();
+      const alreadyGranted =
+        await BatteryOptimization.isIgnoringBatteryOptimizations();
       if (alreadyGranted) {
         console.log('[PermissionsManager] Battery: already unrestricted');
         return true;
@@ -62,15 +68,47 @@ export const PermissionsManager = {
       await new Promise<void>(resolve => setTimeout(resolve, 800));
 
       // Re-check the ACTUAL result — don't assume the user tapped Allow
-      const granted = await BatteryOptimization.isIgnoringBatteryOptimizations();
+      const granted =
+        await BatteryOptimization.isIgnoringBatteryOptimizations();
       console.log('[PermissionsManager] Battery after dialog:', granted);
       return granted;
-
     } catch (error) {
       // Native module failed (missing AndroidManifest declaration, OEM block, etc.)
       // Return false — context will open App Info Battery page as fallback.
-      console.error('[PermissionsManager] Battery dialog failed, will open App Info:', error);
+      console.error(
+        '[PermissionsManager] Battery dialog failed, will open App Info:',
+        error,
+      );
       return false;
+    }
+  },
+
+  // ============================================================================
+  // ACTIVITY RECOGNITION (Android 10+)
+  // ============================================================================
+
+  getActivityRecognitionStatus: async (): Promise<PermissionStatus> => {
+    if (Platform.OS === 'ios') return RESULTS.GRANTED;
+    if (typeof Platform.Version === 'number' && Platform.Version < 29)
+      return RESULTS.GRANTED;
+
+    return await check(PERMISSIONS.ANDROID.ACTIVITY_RECOGNITION);
+  },
+
+  requestActivityRecognition: async (): Promise<PermissionStatus> => {
+    if (Platform.OS === 'ios') return RESULTS.GRANTED;
+    if (typeof Platform.Version === 'number' && Platform.Version < 29)
+      return RESULTS.GRANTED;
+
+    try {
+      const status = await request(PERMISSIONS.ANDROID.ACTIVITY_RECOGNITION);
+      return status;
+    } catch (error) {
+      console.error(
+        '[PermissionsManager] Activity Recognition request failed:',
+        error,
+      );
+      return RESULTS.DENIED;
     }
   },
 
@@ -87,13 +125,22 @@ export const PermissionsManager = {
 
         if (rnpStatus !== RESULTS.GRANTED && rnpStatus !== RESULTS.LIMITED) {
           try {
-            const coreStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+            const coreStatus = await PermissionsAndroid.check(
+              PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+            );
             if (coreStatus) {
-              console.log('[PermissionsManager] RNP reported', rnpStatus, 'but Core reported GRANTED for FINE_LOCATION');
+              console.log(
+                '[PermissionsManager] RNP reported',
+                rnpStatus,
+                'but Core reported GRANTED for FINE_LOCATION',
+              );
               return RESULTS.GRANTED;
             }
           } catch (coreError) {
-            console.error('[PermissionsManager] Core check failed for FINE_LOCATION:', coreError);
+            console.error(
+              '[PermissionsManager] Core check failed for FINE_LOCATION:',
+              coreError,
+            );
           }
         }
         return rnpStatus;
@@ -109,17 +156,28 @@ export const PermissionsManager = {
       if (Platform.OS === 'ios') {
         return await check(PERMISSIONS.IOS.LOCATION_ALWAYS);
       } else {
-        const rnpStatus = await check(PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION);
+        const rnpStatus = await check(
+          PERMISSIONS.ANDROID.ACCESS_BACKGROUND_LOCATION,
+        );
 
         if (rnpStatus !== RESULTS.GRANTED && rnpStatus !== RESULTS.LIMITED) {
           try {
-            const coreStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
+            const coreStatus = await PermissionsAndroid.check(
+              PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+            );
             if (coreStatus) {
-              console.log('[PermissionsManager] RNP reported', rnpStatus, 'but Core reported GRANTED for BACKGROUND_LOCATION');
+              console.log(
+                '[PermissionsManager] RNP reported',
+                rnpStatus,
+                'but Core reported GRANTED for BACKGROUND_LOCATION',
+              );
               return RESULTS.GRANTED;
             }
           } catch (coreError) {
-            console.error('[PermissionsManager] Core check failed for BACKGROUND_LOCATION:', coreError);
+            console.error(
+              '[PermissionsManager] Core check failed for BACKGROUND_LOCATION:',
+              coreError,
+            );
           }
         }
 
@@ -173,9 +231,13 @@ export const PermissionsManager = {
 
   requestNotifications: async (): Promise<PermissionStatus> => {
     try {
-      const { status } = await requestNotifications(['alert', 'sound', 'badge']);
+      const { status } = await requestNotifications([
+        'alert',
+        'sound',
+        'badge',
+      ]);
       if (Platform.OS === 'android' && status === RESULTS.BLOCKED) {
-         PermissionsManager.openPermissionSettings('NOTIFICATION');
+        PermissionsManager.openPermissionSettings('NOTIFICATION');
       }
       return status;
     } catch (error) {
@@ -217,10 +279,10 @@ export const PermissionsManager = {
   },
 
   isGpsEnabled: async (): Promise<boolean> => {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       Geolocation.getCurrentPosition(
         () => resolve(true),
-        (error) => {
+        error => {
           console.log('[PermissionsManager] GPS Check Error:', error);
           if (error.code === 2) {
             resolve(false);
@@ -228,7 +290,7 @@ export const PermissionsManager = {
             resolve(true);
           }
         },
-        { enableHighAccuracy: false, timeout: 5000, maximumAge: 10000 }
+        { enableHighAccuracy: false, timeout: 5000, maximumAge: 10000 },
       );
     });
   },
@@ -244,8 +306,8 @@ export const PermissionsManager = {
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
-      (dnd === RESULTS.GRANTED) &&
-      (notif === RESULTS.GRANTED) &&
+      dnd === RESULTS.GRANTED &&
+      notif === RESULTS.GRANTED &&
       exactAlarm &&
       battery
     );
@@ -258,12 +320,14 @@ export const PermissionsManager = {
     const exactAlarm = await PermissionsManager.checkExactAlarmPermission();
     const battery = await PermissionsManager.isBatteryOptimizationEnabled();
 
-    console.log(`[PermissionsManager] Check - Loc: ${loc}, Bg: ${bg}, Notif: ${notif}, Alarm: ${exactAlarm}, Battery: ${battery}`);
+    console.log(
+      `[PermissionsManager] Check - Loc: ${loc}, Bg: ${bg}, Notif: ${notif}, Alarm: ${exactAlarm}, Battery: ${battery}`,
+    );
 
     return (
       (loc === RESULTS.GRANTED || loc === RESULTS.LIMITED) &&
       (bg === RESULTS.GRANTED || bg === RESULTS.LIMITED) &&
-      (notif === RESULTS.GRANTED) &&
+      notif === RESULTS.GRANTED &&
       exactAlarm &&
       battery
     );
@@ -277,7 +341,10 @@ export const PermissionsManager = {
     if (ExactAlarmModule?.canScheduleExactAlarms) {
       try {
         hasPermission = await ExactAlarmModule.canScheduleExactAlarms();
-        console.log('[PermissionsManager] Native checkExactAlarm:', hasPermission);
+        console.log(
+          '[PermissionsManager] Native checkExactAlarm:',
+          hasPermission,
+        );
       } catch (error) {
         console.error('Error using ExactAlarmModule:', error);
       }
@@ -287,13 +354,19 @@ export const PermissionsManager = {
       try {
         const override = await AsyncStorage.getItem(EXACT_ALARM_OVERRIDE_KEY);
         if (override === 'true') {
-          console.log('[PermissionsManager] ExactAlarmModule unavailable, using stored override: granted');
+          console.log(
+            '[PermissionsManager] ExactAlarmModule unavailable, using stored override: granted',
+          );
           hasPermission = true;
         } else if (override === 'false') {
-          console.log('[PermissionsManager] ExactAlarmModule unavailable, using stored override: denied');
+          console.log(
+            '[PermissionsManager] ExactAlarmModule unavailable, using stored override: denied',
+          );
           hasPermission = false;
         } else {
-          console.warn('[PermissionsManager] ExactAlarmModule null and no override set — defaulting to true');
+          console.warn(
+            '[PermissionsManager] ExactAlarmModule null and no override set — defaulting to true',
+          );
           hasPermission = true;
         }
       } catch (e) {
@@ -307,7 +380,10 @@ export const PermissionsManager = {
         const notifee = require('@notifee/react-native').default;
         const settings = await notifee.getNotificationSettings();
         const notifeeAgrees = settings.android.alarm === 1;
-        console.log('[PermissionsManager] Notifee agrees on ExactAlarm:', notifeeAgrees);
+        console.log(
+          '[PermissionsManager] Notifee agrees on ExactAlarm:',
+          notifeeAgrees,
+        );
         return notifeeAgrees;
       } catch (error) {
         console.warn('[PermissionsManager] Notifee check failed:', error);
@@ -318,7 +394,8 @@ export const PermissionsManager = {
   },
 
   requestExactAlarmPermission: async (): Promise<PermissionStatus> => {
-    if (Platform.OS !== 'android' || Platform.Version < 31) return RESULTS.GRANTED;
+    if (Platform.OS !== 'android' || Platform.Version < 31)
+      return RESULTS.GRANTED;
 
     try {
       if (ExactAlarmModule?.openExactAlarmSettings) {
@@ -336,7 +413,10 @@ export const PermissionsManager = {
 
   setExactAlarmManuallyGranted: async (granted: boolean): Promise<void> => {
     try {
-      await AsyncStorage.setItem(EXACT_ALARM_OVERRIDE_KEY, granted ? 'true' : 'false');
+      await AsyncStorage.setItem(
+        EXACT_ALARM_OVERRIDE_KEY,
+        granted ? 'true' : 'false',
+      );
     } catch (e) {
       console.error('Failed to set alarm override', e);
     }
@@ -344,10 +424,12 @@ export const PermissionsManager = {
 
   /**
    * Opens the specific settings page for a given permission type.
-   * 
+   *
    * ANDROID 15 FIX: Simplified to always use the native module or reliable fallbacks.
    */
-  openPermissionSettings: async (type: 'NOTIFICATION' | 'ALARM' | 'BATTERY' | 'LOCATION' | 'DND') => {
+  openPermissionSettings: async (
+    type: 'NOTIFICATION' | 'ALARM' | 'BATTERY' | 'LOCATION' | 'DND',
+  ) => {
     if (Platform.OS !== 'android') {
       Linking.openSettings();
       return;
@@ -373,11 +455,15 @@ export const PermissionsManager = {
         case 'BATTERY':
           // CRITICAL FIX for Android 15: Always use the native module
           if (BatteryOptimization?.openBatterySettings) {
-            console.log('[PermissionsManager] Calling native openBatterySettings()');
+            console.log(
+              '[PermissionsManager] Calling native openBatterySettings()',
+            );
             await BatteryOptimization.openBatterySettings();
           } else {
             // Fallback: Direct to App Info using package: URI
-            console.log('[PermissionsManager] Native module unavailable, using package: URI');
+            console.log(
+              '[PermissionsManager] Native module unavailable, using package: URI',
+            );
             await Linking.openURL(`package:${APP_PACKAGE}`).catch(async () => {
               // If package: doesn't work, use standard settings
               await Linking.openSettings();
@@ -402,11 +488,17 @@ export const PermissionsManager = {
           return;
       }
     } catch (error) {
-      console.error(`[PermissionsManager] Error opening settings for ${type}:`, error);
+      console.error(
+        `[PermissionsManager] Error opening settings for ${type}:`,
+        error,
+      );
       // Final fallback
       Linking.openSettings().catch(err => {
-        console.error('[PermissionsManager] Fatal: Cannot open any settings', err);
+        console.error(
+          '[PermissionsManager] Fatal: Cannot open any settings',
+          err,
+        );
       });
     }
-  }
+  },
 };

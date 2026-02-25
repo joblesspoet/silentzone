@@ -13,7 +13,10 @@ export const CheckInService = {
     realm: Realm,
     placeId: string,
     volumeLevel?: number,
-    mediaVolume?: number
+    mediaVolume?: number,
+    floorMatchScore?: number,
+    detectedPressure?: number,
+    detectedAltitude?: number,
   ) => {
     return RealmWriteHelper.safeWrite(
       realm,
@@ -22,9 +25,11 @@ export const CheckInService = {
         const existingActive = realm
           .objects('CheckInLog')
           .filtered('placeId == $0 AND checkOutTime == null', placeId);
-        
+
         if (existingActive.length > 0) {
-          console.log(`[CheckInService] 🛑 Idempotent check: Place ${placeId} is already active. Ignoring.`);
+          console.log(
+            `[CheckInService] 🛑 Idempotent check: Place ${placeId} is already active. Ignoring.`,
+          );
           return existingActive[0];
         }
 
@@ -35,6 +40,9 @@ export const CheckInService = {
           savedVolumeLevel: volumeLevel,
           savedMediaVolume: mediaVolume,
           wasAutomatic: true,
+          floorMatchScore,
+          detectedPressure,
+          detectedAltitude,
         });
 
         // Update place stats
