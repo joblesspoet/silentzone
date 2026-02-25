@@ -1,6 +1,12 @@
-
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, ScrollView, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Dimensions,
+  ScrollView,
+  ActivityIndicator,
+} from 'react-native';
 import { useRoute, RouteProp } from '@react-navigation/native';
 import Realm from 'realm';
 import { schemas, SCHEMA_VERSION } from '../database/schemas';
@@ -20,6 +26,7 @@ interface SessionStats {
   stationaryPoints: number;
   startTime: string;
   endTime: string;
+  stationaryDuration: string;
 }
 
 const SessionJourneyScreen: React.FC = () => {
@@ -40,8 +47,11 @@ const SessionJourneyScreen: React.FC = () => {
           schemaVersion: SCHEMA_VERSION,
         });
 
-        const sessionData = realm.objectForPrimaryKey('SessionTrail', sessionId);
-        
+        const sessionData = realm.objectForPrimaryKey(
+          'SessionTrail',
+          sessionId,
+        );
+
         if (sessionData) {
           // Convert Realm List to JS Array to avoid access issues
           const pointsList = (sessionData as any).points.map((p: any) => ({
@@ -58,17 +68,45 @@ const SessionJourneyScreen: React.FC = () => {
 
           // Calculate stats
           const start = new Date((sessionData as any).startTime);
-          const end = (sessionData as any).endTime ? new Date((sessionData as any).endTime) : new Date();
+          const end = (sessionData as any).endTime
+            ? new Date((sessionData as any).endTime)
+            : new Date();
           const durationMs = end.getTime() - start.getTime();
           const durationMin = Math.floor(durationMs / 60000);
           const durationSec = Math.floor((durationMs % 60000) / 1000);
 
+          // Calculate stationary duration
+          let stationaryDurationMs = 0;
+          const sortedPoints = pointsList.sort(
+            (a: any, b: any) => a.timestamp.getTime() - b.timestamp.getTime(),
+          );
+
+          for (let i = 0; i < sortedPoints.length - 1; i++) {
+            const current = sortedPoints[i];
+            const next = sortedPoints[i + 1];
+            // If current is stationary, add time until next point
+            if (current.isStationary) {
+              const diff =
+                next.timestamp.getTime() - current.timestamp.getTime();
+              // Sanity check: ignore gaps > 5 mins (app killed/backgrounded)
+              if (diff < 5 * 60 * 1000) {
+                stationaryDurationMs += diff;
+              }
+            }
+          }
+          const statMin = Math.floor(stationaryDurationMs / 60000);
+          const statSec = Math.floor((stationaryDurationMs % 60000) / 1000);
+
           setStats({
             duration: `${durationMin}m ${durationSec}s`,
             totalPoints: pointsList.length,
-            stationaryPoints: pointsList.filter((p: any) => p.isStationary).length,
+            stationaryPoints: pointsList.filter((p: any) => p.isStationary)
+              .length,
             startTime: format(start, 'HH:mm:ss'),
-            endTime: (sessionData as any).endTime ? format(end, 'HH:mm:ss') : 'Ongoing',
+            endTime: (sessionData as any).endTime
+              ? format(end, 'HH:mm:ss')
+              : 'Ongoing',
+            stationaryDuration: `${statMin}m ${statSec}s`,
           });
         }
       } catch (error) {
@@ -112,24 +150,24 @@ const SessionJourneyScreen: React.FC = () => {
   return (
     <ScrollView style={styles.container}>
       <Text style={styles.title}>Session Journey</Text>
-      
+
       <View style={styles.canvasContainer}>
-        <TrailCanvas 
-          points={points} 
-          width={screenWidth - 32} 
-          height={canvasHeight} 
+        <TrailCanvas
+          points={points}
+          width={screenWidth - 32}
+          height={canvasHeight}
         />
       </View>
 
       {stats && (
         <View style={styles.statsCard}>
           <Text style={styles.statsTitle}>Session Statistics</Text>
-          
+
           <View style={styles.statRow}>
             <Text style={styles.statLabel}>Duration:</Text>
             <Text style={styles.statValue}>{stats.duration}</Text>
           </View>
-          
+
           <View style={styles.statRow}>
             <Text style={styles.statLabel}>Points Recorded:</Text>
             <Text style={styles.statValue}>{stats.totalPoints}</Text>
@@ -137,19 +175,28 @@ const SessionJourneyScreen: React.FC = () => {
 
           <View style={styles.statRow}>
             <Text style={styles.statLabel}>Stationary Events:</Text>
-            <Text style={styles.statValue}>{stats.stationaryPoints}</Text>
+            <Text style={styles.statValue}>
+              {stats.stationaryPoints} ({stats.stationaryDuration})
+            </Text>
           </View>
 
           <View style={styles.statRow}>
             <Text style={styles.statLabel}>Time:</Text>
-            <Text style={styles.statValue}>{stats.startTime} - {stats.endTime}</Text>
+            <Text style={styles.statValue}>
+              {stats.startTime} - {stats.endTime}
+            </Text>
           </View>
 
           <View style={styles.statRow}>
-             <Text style={styles.statLabel}>Status:</Text>
-             <Text style={[styles.statValue, { color: (session as any).isClosed ? '#4CAF50' : '#FF9800' }]}>
-               {(session as any).isClosed ? 'Completed' : 'Active'}
-             </Text>
+            <Text style={styles.statLabel}>Status:</Text>
+            <Text
+              style={[
+                styles.statValue,
+                { color: (session as any).isClosed ? '#4CAF50' : '#FF9800' },
+              ]}
+            >
+              {(session as any).isClosed ? 'Completed' : 'Active'}
+            </Text>
           </View>
         </View>
       )}

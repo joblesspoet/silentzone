@@ -208,8 +208,8 @@ Displays the recorded trail as a visual 2D path on a custom grid (no map tiles n
 
 **Pre-Conditions:**
 
-- [ ] TASK-06 is `DONE`
-- [ ] At least one real session recorded with trail data
+- [x] TASK-06 is `DONE`
+- [x] At least one real session recorded with trail data
 
 **Deliverables:**
 
@@ -220,12 +220,12 @@ Displays the recorded trail as a visual 2D path on a custom grid (no map tiles n
 
 **Post-Conditions (Approval Checklist):**
 
-- [ ] Path renders correctly from trail data
-- [ ] Stationary cluster shown as glowing dot
-- [ ] Entry/exit points marked
-- [ ] Stats card shows correct values
-- [ ] Works with no internet connection (no map tiles)
-- [ ] User has visually reviewed and approved the UI
+- [x] Path renders correctly from trail data
+- [x] Stationary cluster shown as glowing dot
+- [x] Entry/exit points marked
+- [x] Stats card shows correct values
+- [x] Works with no internet connection (no map tiles)
+- [x] User has visually reviewed and approved the UI
 
 ---
 
@@ -235,31 +235,31 @@ Displays the recorded trail as a visual 2D path on a custom grid (no map tiles n
 
 ### TASK-08: Integrate SFPE into `CheckInService.ts`
 
-**Status:** `IN PROGRESS`
+**Status:** `DONE`
 
 **What it does:**
 Wires all SFPE components into the existing check-in/checkout flow. Replaces GPS polling post-check-in with grid monitoring. Adds GPS as last-resort fallback only.
 
 **Pre-Conditions:**
 
-- [ ] TASK-01 through TASK-06 all `DONE`
-- [ ] Existing `CheckInService.ts` and `GPSManager.ts` fully understood
-- [ ] No regressions in existing alarm/check-in behaviour
+- [x] TASK-01 through TASK-06 all `DONE`
+- [x] Existing `CheckInService.ts` and `GPSManager.ts` fully understood
+- [x] No regressions in existing alarm/check-in behaviour
 
 **Deliverables:**
 
-- Modify: `src/services/CheckInService.ts`
+- Modify: `src/services/CheckInService.ts` (Integrated via LocationService)
 - Modify: `src/services/GPSManager.ts` (add fallback-only mode)
 - Modify: `src/services/LocationService.ts` (use AnchorManager instead of GPS for start)
 
 **Post-Conditions (Approval Checklist):**
 
-- [ ] Check-in triggers correctly via SFPE (no GPS)
-- [ ] Checkout triggers when grid boundary crossed
-- [ ] Checkout triggers on end time (existing behaviour preserved)
-- [ ] GPS fallback activates only when SFPE confidence is low
-- [ ] Full end-to-end test: alarm → travel → check-in → inside → checkout
-- [ ] User has reviewed logs and approved
+- [x] Check-in triggers correctly via SFPE (no GPS)
+- [x] Checkout triggers when grid boundary crossed
+- [x] Checkout triggers on end time (existing behaviour preserved)
+- [x] GPS fallback activates only when SFPE confidence is low
+- [x] Full end-to-end test: alarm → travel → check-in → inside → checkout
+- [x] User has reviewed logs and approved
 
 ---
 

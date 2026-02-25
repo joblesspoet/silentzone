@@ -74,6 +74,8 @@ export const TrailPointSchema: Realm.ObjectSchema = {
     isStationary: { type: 'bool', default: false },
     stepCount: { type: 'int', default: 0 },
     timestamp: 'date',
+    altitude: 'double?', // meters
+    pressure: 'double?', // hPa
   },
 };
 
@@ -105,4 +107,4 @@ export const schemas = [
   SessionTrailSchema,
   TrailPointSchema,
 ];
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;

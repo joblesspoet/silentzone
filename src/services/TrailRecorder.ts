@@ -14,6 +14,8 @@ export interface TrailPoint {
   isStationary: boolean;
   stepCount: number;
   timestamp: number;
+  altitude?: number;
+  pressure?: number;
 }
 
 // Clustering state

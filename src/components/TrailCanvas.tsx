@@ -92,15 +92,12 @@ const TrailCanvas: React.FC<TrailCanvasProps> = ({
   const endPoint = points[points.length - 1];
   const stationaryPoints = points.filter(p => p.isStationary);
 
-  // Group stationary points into clusters visually?
-  // For now, just render them as slightly larger dots.
-
   return (
-    <View style={[styles.container, { width, height }]}>
+    <View style={styles.container}>
       <Svg width={width} height={height}>
         <Defs>
           <RadialGradient
-            id="grad"
+            id="glow"
             cx="50%"
             cy="50%"
             r="50%"
@@ -108,10 +105,21 @@ const TrailCanvas: React.FC<TrailCanvasProps> = ({
             fy="50%"
             gradientUnits="userSpaceOnUse"
           >
-            <Stop offset="0%" stopColor="#ff0" stopOpacity="0.8" />
-            <Stop offset="100%" stopColor="#f00" stopOpacity="0" />
+            <Stop offset="0%" stopColor="#FF9500" stopOpacity="0.6" />
+            <Stop offset="100%" stopColor="#FF9500" stopOpacity="0" />
           </RadialGradient>
         </Defs>
+
+        {/* Stationary Clusters (Glowing Effect) */}
+        {stationaryPoints.map((p, i) => (
+          <Circle
+            key={`stat-glow-${i}`}
+            cx={getX(p.longitude)}
+            cy={getY(p.latitude)}
+            r="8" // Larger radius for glow
+            fill="url(#glow)"
+          />
+        ))}
 
         {/* The Path */}
         <Path
@@ -122,6 +130,18 @@ const TrailCanvas: React.FC<TrailCanvasProps> = ({
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+
+        {/* Stationary Clusters (Core Dot) */}
+        {stationaryPoints.map((p, i) => (
+          <Circle
+            key={`stat-core-${i}`}
+            cx={getX(p.longitude)}
+            cy={getY(p.latitude)}
+            r="2" // Small core dot
+            fill="#FF9500"
+            opacity={0.8}
+          />
+        ))}
 
         {/* Start Point (Green) */}
         <Circle
@@ -142,18 +162,6 @@ const TrailCanvas: React.FC<TrailCanvasProps> = ({
           stroke="#fff"
           strokeWidth="2"
         />
-
-        {/* Stationary Clusters (Glowing Yellow/Orange) */}
-        {stationaryPoints.map((p, i) => (
-          <Circle
-            key={`stat-${i}`}
-            cx={getX(p.longitude)}
-            cy={getY(p.latitude)}
-            r="4" // Small dot
-            fill="#FF9500"
-            opacity={0.6}
-          />
-        ))}
       </Svg>
     </View>
   );

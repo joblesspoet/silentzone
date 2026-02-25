@@ -17,6 +17,14 @@ import { notificationManager } from './NotificationManager';
 import { CONFIG } from '../config/config';
 import { GPSManager, gpsManager } from './GPSManager';
 import { SilentZoneManager, silentZoneManager } from './SilentZoneManager';
+import { DeviceEventEmitter } from 'react-native';
+import * as SZSensorModule from '../native/SZSensorModule';
+import * as DeadReckoningService from './DeadReckoningService';
+import * as GridEngine from './GridEngine';
+import * as MotionClassifier from './MotionClassifier';
+import * as AnchorManager from './AnchorManager';
+import * as PlaceFingerprinter from './PlaceFingerprinter';
+import * as TrailRecorder from './TrailRecorder';
 
 /**
  * LocationService - The "Brain" of Silent Zone.
@@ -30,6 +38,309 @@ class LocationService {
   private isInitializing = false;
   private geofencesActive = false;
   private lastTriggerTime: { [key: string]: number } = {};
+
+  // SFPE State
+  private isSFPEActive = false;
+  private currentAnchor: AnchorManager.AnchorPosition | null = null;
+  private sfpeSubscription: any = null;
+  private headingBuffer: number[] = [];
+  private currentSessionId: string | null = null;
+  private lastKnownMotion: MotionClassifier.MotionState = 'STATIONARY';
+  private lastStepTime: number = 0;
+  private stationaryCheckInterval: any = null;
+  private distanceSinceLastAnchor: number = 0;
+
+  /**
+   * Starts the SFPE (Sensor Fusion Proximity Engine).
+   * Used when we are INSIDE a zone to track movement without GPS.
+   */
+  private async startSFPE(initialAnchor: any) {
+    if (this.isSFPEActive) {
+      Logger.info('[SFPE] Already active, updating anchor.');
+      this.currentAnchor = {
+        lat: initialAnchor.latitude,
+        lng: initialAnchor.longitude,
+        accuracy: initialAnchor.accuracy || 10,
+        timestamp: Date.now(),
+        source: 'GPS',
+      };
+      this.distanceSinceLastAnchor = 0;
+      return;
+    }
+
+    Logger.info('[SFPE] 🚀 Starting Engine (Dead Reckoning Mode)...');
+    this.isSFPEActive = true;
+    this.distanceSinceLastAnchor = 0;
+
+    // Stop high-power GPS watching while SFPE is active
+    gpsManager.stopWatching();
+
+    // 1. Set Initial Anchor
+    this.currentAnchor = {
+      lat: initialAnchor.latitude,
+      lng: initialAnchor.longitude,
+      accuracy: initialAnchor.accuracy || 10,
+      timestamp: Date.now(),
+      source: 'GPS',
+    };
+
+    // 2. Start Trail Recording
+    try {
+      // Find which place we are in (first active)
+      if (this.realm) {
+        const activeCheckIns = CheckInService.getActiveCheckIns(this.realm);
+        if (activeCheckIns.length > 0) {
+          const placeId = activeCheckIns[0].placeId as string;
+          this.currentSessionId = await TrailRecorder.startSession(
+            this.realm,
+            placeId,
+            this.currentAnchor.lat,
+            this.currentAnchor.lng,
+          );
+          Logger.info(`[SFPE] Started Trail Session: ${this.currentSessionId}`);
+        }
+      }
+    } catch (e) {
+      Logger.error('[SFPE] Failed to start trail session:', e);
+    }
+
+    // 3. Subscribe to Step Events
+    this.sfpeSubscription = DeviceEventEmitter.addListener(
+      'onStepDetected',
+      this.handleStepEvent.bind(this),
+    );
+    await SZSensorModule.startStepDetection();
+
+    // 4. Start Stationary Monitoring Loop (since step detector only fires on movement)
+    this.lastStepTime = Date.now();
+    this.stationaryCheckInterval = setInterval(
+      () => this.checkStationaryStatus(),
+      10000,
+    );
+  }
+
+  /**
+   * Stops the SFPE.
+   */
+  private async stopSFPE() {
+    if (!this.isSFPEActive) return;
+
+    Logger.info('[SFPE] 🛑 Stopping Engine...');
+    this.isSFPEActive = false;
+
+    // 1. Unsubscribe
+    if (this.sfpeSubscription) {
+      this.sfpeSubscription.remove();
+      this.sfpeSubscription = null;
+    }
+    await SZSensorModule.stopStepDetection();
+
+    // 2. Stop Stationary Loop
+    if (this.stationaryCheckInterval) {
+      clearInterval(this.stationaryCheckInterval);
+      this.stationaryCheckInterval = null;
+    }
+
+    // 3. End Trail Session
+    if (this.currentSessionId && this.realm) {
+      await TrailRecorder.endSession(
+        this.realm,
+        this.currentSessionId,
+        'checkout',
+      );
+      this.currentSessionId = null;
+    }
+  }
+
+  /**
+   * Periodic check to detect if user is stationary.
+   * Updates TrailRecorder if no steps detected for a while.
+   */
+  private async checkStationaryStatus() {
+    const now = Date.now();
+    const timeSinceLastStep = now - this.lastStepTime;
+
+    if (timeSinceLastStep > 5000) {
+      // 5 seconds without steps = stationary
+      this.lastKnownMotion = 'STATIONARY';
+
+      // Update TrailRecorder (it handles clustering logic internally)
+      if (this.currentSessionId && this.realm && this.currentAnchor) {
+        // We record a point at the SAME location to indicate time passing
+        // Get current heading if possible, or use 0
+        let heading = 0;
+        let altitude = 0;
+        let pressure = 0;
+
+        try {
+          const [h, p] = await Promise.all([
+            SZSensorModule.getMagneticHeading(),
+            SZSensorModule.getBarometricPressure().catch(() => ({
+              pressureHPa: 0,
+              altitudeM: 0,
+            })),
+          ]);
+          heading = h.heading;
+          altitude = p.altitudeM;
+          pressure = p.pressureHPa;
+        } catch {}
+
+        await TrailRecorder.recordPoint(this.realm, this.currentSessionId, {
+          latitude: this.currentAnchor.lat,
+          longitude: this.currentAnchor.lng,
+          heading: heading,
+          isStationary: true,
+          stepCount: 0,
+          timestamp: now,
+          altitude: altitude,
+          pressure: pressure,
+        });
+      }
+    }
+  }
+
+  /**
+   * Handles a single step event from the native module.
+   * This is the "Heartbeat" of the SFPE system.
+   */
+  private async handleStepEvent(event: any) {
+    if (!this.isSFPEActive || !this.currentAnchor || !this.realm) return;
+
+    this.lastStepTime = Date.now();
+
+    try {
+      // 1. Gather Sensor Data
+      const [headingData, accelData, pressureData] = await Promise.all([
+        SZSensorModule.getMagneticHeading().catch(() => ({ heading: 0 })),
+        SZSensorModule.getAcceleration().catch(() => ({ magnitude: 9.8 })),
+        SZSensorModule.getBarometricPressure().catch(() => ({
+          pressureHPa: 0,
+          altitudeM: 0,
+        })),
+      ]);
+
+      // 2. Classify Motion & Get Stride
+      const motionState = MotionClassifier.classifyMotion(
+        1,
+        accelData.magnitude,
+      ); // 1 step delta
+      this.lastKnownMotion = motionState;
+      const strideLength = MotionClassifier.getStrideLength(motionState);
+      this.distanceSinceLastAnchor += strideLength;
+
+      // 3. Smooth Heading
+      this.headingBuffer.push(headingData.heading);
+      if (this.headingBuffer.length > 5) this.headingBuffer.shift();
+      const smoothedHeading = DeadReckoningService.smoothHeading(
+        this.headingBuffer,
+      );
+
+      // 3.5 Check Re-Anchor
+      if (AnchorManager.shouldReAnchor(this.distanceSinceLastAnchor)) {
+        Logger.info('[SFPE] Re-anchoring triggered...');
+        try {
+          // Try Network first (fast, low power)
+          const netAnchor = await AnchorManager.requestNetworkAnchor();
+          this.currentAnchor = {
+            ...this.currentAnchor,
+            lat: netAnchor.lat,
+            lng: netAnchor.lng,
+            accuracy: netAnchor.accuracy,
+            timestamp: Date.now(),
+            source: 'NETWORK',
+          };
+          this.distanceSinceLastAnchor = 0;
+          Logger.info('[SFPE] Re-anchored via Network');
+        } catch (e) {
+          // Fallback to GPS Single Fix
+          try {
+            const gpsLoc = await gpsManager.getSingleFix(10000, true);
+            this.currentAnchor = {
+              ...this.currentAnchor,
+              lat: gpsLoc.latitude,
+              lng: gpsLoc.longitude,
+              accuracy: gpsLoc.accuracy,
+              timestamp: Date.now(),
+              source: 'GPS',
+            };
+            this.distanceSinceLastAnchor = 0;
+            Logger.info('[SFPE] Re-anchored via GPS');
+          } catch (err) {
+            Logger.warn('[SFPE] Re-anchor failed, continuing with DR');
+          }
+        }
+      }
+
+      // 4. Calculate New Position (Dead Reckoning)
+      const newPos = DeadReckoningService.calculateNewPosition(
+        this.currentAnchor,
+        1, // 1 step
+        smoothedHeading,
+        strideLength,
+      );
+
+      // 5. Update Anchor
+      this.currentAnchor = {
+        ...this.currentAnchor,
+        lat: newPos.lat,
+        lng: newPos.lng,
+        timestamp: Date.now(),
+      };
+
+      // 6. Record Point
+      if (this.currentSessionId) {
+        await TrailRecorder.recordPoint(this.realm, this.currentSessionId, {
+          latitude: newPos.lat,
+          longitude: newPos.lng,
+          heading: smoothedHeading,
+          isStationary: false,
+          stepCount: 1,
+          timestamp: Date.now(),
+          altitude: pressureData.altitudeM,
+          pressure: pressureData.pressureHPa,
+        });
+      }
+
+      // 7. Check for Exit (Geofence / Grid)
+      // Check against ALL active places
+      const activeCheckIns = CheckInService.getActiveCheckIns(this.realm);
+      let isInsideAny = false;
+
+      for (const log of activeCheckIns) {
+        const place = PlaceService.getPlaceById(
+          this.realm,
+          log.placeId as string,
+        );
+        if (place) {
+          // Simple Haversine Check for now (GridEngine is cleaner but requires grid generation)
+          // TODO: Use GridEngine.getCellForPosition() for better precision if grid is generated
+          const dist = DeadReckoningService.haversineDistance(
+            newPos.lat,
+            newPos.lng,
+            (place as any).latitude,
+            (place as any).longitude,
+          );
+
+          // Add hysteresis buffer to exit (e.g. radius + 20m)
+          if (dist <= (place as any).radius + CONFIG.EXIT_HYSTERESIS_METERS) {
+            isInsideAny = true;
+            break;
+          }
+        }
+      }
+
+      if (!isInsideAny) {
+        Logger.info('[SFPE] 🚪 Exit detected via Dead Reckoning!');
+        // Find the place we just exited (approximate)
+        if (activeCheckIns.length > 0) {
+          const lastPlaceId = activeCheckIns[0].placeId as string;
+          await this.handleGeofenceExit(lastPlaceId);
+        }
+      }
+    } catch (e) {
+      Logger.error('[SFPE] Step processing error:', e);
+    }
+  }
 
   /**
    * Initialize the service with the active database instance.
@@ -337,7 +648,6 @@ class LocationService {
         // This acts as a final high-priority wake-up if we arrived after warm-ups.
         finalTrigger = startTime;
       }
-
 
       if (finalTrigger) {
         await PersistentAlarmService.scheduleAlarm(
@@ -648,7 +958,7 @@ class LocationService {
     // 2. Handle Entries
     for (const id of insideIds) {
       if (!CheckInService.isPlaceActive(this.realm, id)) {
-        await this.handleGeofenceEntry(id);
+        await this.handleGeofenceEntry(id, location);
       }
     }
 
@@ -680,7 +990,7 @@ class LocationService {
    * Handles a geofence entry event (either from GPS manager or native geofence).
    * Verifies if the entry is within a valid schedule window before activating silence.
    */
-  async handleGeofenceEntry(placeId: string) {
+  async handleGeofenceEntry(placeId: string, location?: any) {
     if (!this.realm) return;
     const place = PlaceService.getPlaceById(this.realm, placeId);
     if (!place || !place.isEnabled) return;
@@ -712,6 +1022,28 @@ class LocationService {
       );
       await silentZoneManager.activateSilentZone(place);
       await this.updateForegroundService();
+
+      // START SFPE (Dead Reckoning)
+      // If we don't have location (e.g. from native trigger), try to get one quickly
+      let startLocation = location;
+      if (!startLocation) {
+        try {
+          startLocation = await gpsManager.getSingleFix(5000, true);
+        } catch (e) {
+          Logger.warn(
+            '[SFPE] Could not get fix for start. Using place center.',
+          );
+          startLocation = {
+            latitude: (place as any).latitude,
+            longitude: (place as any).longitude,
+            accuracy: (place as any).radius, // High uncertainty
+          };
+        }
+      }
+
+      if (startLocation) {
+        await this.startSFPE(startLocation);
+      }
     } else {
       if (schedule) {
         Logger.info(
@@ -733,6 +1065,10 @@ class LocationService {
    */
   async handleGeofenceExit(placeId: string) {
     await silentZoneManager.handleExit(placeId);
+
+    // STOP SFPE
+    await this.stopSFPE();
+
     await this.refreshMonitoringState();
     await this.updateForegroundService();
   }
