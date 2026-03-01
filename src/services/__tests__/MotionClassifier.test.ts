@@ -1,5 +1,5 @@
 
-import { classifyMotion, getStrideLength, detectCurrentMotion } from '../MotionClassifier';
+import { classifyMotion, getStrideLength, getEstimatedSpeed, detectCurrentMotion } from '../MotionClassifier';
 import { NativeModules } from 'react-native';
 
 // Mock NativeModules
@@ -53,6 +53,21 @@ describe('MotionClassifier', () => {
     it('should return 0 for VEHICLE types', () => {
       expect(getStrideLength('VEHICLE_CAR')).toBe(0);
       expect(getStrideLength('VEHICLE_BIKE')).toBe(0);
+    });
+  });
+
+  describe('getEstimatedSpeed', () => {
+    it('should return correct speed for VEHICLE_BIKE (~15 km/h)', () => {
+      expect(getEstimatedSpeed('VEHICLE_BIKE')).toBeCloseTo(4.0);
+    });
+
+    it('should return correct speed for VEHICLE_CAR (~40 km/h)', () => {
+      expect(getEstimatedSpeed('VEHICLE_CAR')).toBeCloseTo(11.0);
+    });
+
+    it('should return 0 for non-vehicle states', () => {
+      expect(getEstimatedSpeed('WALKING')).toBe(0);
+      expect(getEstimatedSpeed('STATIONARY')).toBe(0);
     });
   });
 

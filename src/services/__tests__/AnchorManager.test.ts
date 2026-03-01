@@ -77,6 +77,47 @@ describe('AnchorManager', () => {
       expect(result?.source).toBe('NETWORK');
     });
 
+    it('should snap to saved place when within 100m of network fix', async () => {
+      // Mock network returning a position close to a saved place
+      const mockPosition = {
+        coords: { latitude: 10.0005, longitude: 20.0005, accuracy: 50 },
+        timestamp: 12345,
+      };
+      (Geolocation.getCurrentPosition as jest.Mock).mockImplementation((success) => success(mockPosition));
+
+      // Place is at (10, 20) — about 78m from (10.0005, 20.0005)
+      const places: Place[] = [
+        { id: '1', name: 'Home Mosque', latitude: 10.0, longitude: 20.0, radius: 50 },
+      ];
+
+      const result = await getInitialAnchor(places);
+
+      expect(result).not.toBeNull();
+      expect(result?.lat).toBe(10.0);
+      expect(result?.lng).toBe(20.0);
+      expect(result?.source).toBe('HOME');
+      expect(result?.accuracy).toBe(5); // High precision from saved coords
+    });
+
+    it('should NOT snap when saved place is far from network fix', async () => {
+      // Mock network returning position far from any saved place  
+      const mockPosition = {
+        coords: { latitude: 11.0, longitude: 21.0, accuracy: 50 },
+        timestamp: 12345,
+      };
+      (Geolocation.getCurrentPosition as jest.Mock).mockImplementation((success) => success(mockPosition));
+
+      const places: Place[] = [
+        { id: '1', name: 'Far Mosque', latitude: 10.0, longitude: 20.0, radius: 50 },
+      ];
+
+      const result = await getInitialAnchor(places);
+
+      expect(result).not.toBeNull();
+      expect(result?.lat).toBe(11.0); // Returns network position, not place
+      expect(result?.source).toBe('NETWORK');
+    });
+
     it('should return null when network anchor fails (and no fallback implemented yet)', async () => {
        (Geolocation.getCurrentPosition as jest.Mock).mockImplementation((s, error) => error(new Error('Fail')));
        

@@ -24,14 +24,14 @@ describe('PlaceFingerprinter', () => {
   });
 
   describe('matchFingerprint', () => {
-    it('should return default score for placeholder implementation', async () => {
+    it('should return 0.0 when sensor module methods are not available (error fallback)', async () => {
       const mockFingerprint = {
         placeId: '123',
         avgPressure: 1013,
         timestamp: Date.now(),
       };
       const score = await matchFingerprint(mockFingerprint);
-      expect(score).toBe(0.5);
+      expect(score).toBe(0.0); // catch block returns 0.0 when native module throws
     });
   });
 });

@@ -1,8 +1,11 @@
 import Geolocation from 'react-native-geolocation-service';
-import { Coordinate } from './DeadReckoningService';
+import { Coordinate, haversineDistance } from './DeadReckoningService';
 
 // Re-anchor threshold: 300 meters of dead-reckoned travel
 const RE_ANCHOR_DISTANCE_THRESHOLD_METERS = 300;
+
+// If network fix is within this distance of a saved place, snap to the place's exact coordinates
+const PLACE_SNAP_DISTANCE_METERS = 100;
 
 export interface AnchorPosition {
   lat: number;
@@ -54,7 +57,7 @@ export const requestNetworkAnchor = (): Promise<AnchorPosition> => {
 /**
  * Determines the initial anchor position.
  * Priority:
- * 1. Home/Saved Place (if current time is close to prayer time for that place) - Logic simplified for now to "nearest place"
+ * 1. Home/Saved Place — if network fix is within 100m of a saved place, snap to its exact coords
  * 2. Network/WiFi Location (fast, low power)
  * 3. GPS (last resort, high power)
  *
@@ -64,30 +67,45 @@ export const requestNetworkAnchor = (): Promise<AnchorPosition> => {
 export const getInitialAnchor = async (
   places: Place[] = [],
 ): Promise<AnchorPosition | null> => {
-  // 1. Check if we are obviously at a saved place (e.g. Home)
-  // For now, without complex logic, we can't blindly assume Home unless we have some trigger.
-  // But the spec says: "uses home place or saved place nearest to alarm time"
-  // Let's implement a placeholder for "nearest place logic" or rely on Network first.
-
-  // Real implementation strategy:
-  // Try to get a quick Network fix.
-  // If Network fix is close to a Saved Place, SNAP to that Saved Place center as the perfect anchor.
-
   try {
     const networkPos = await requestNetworkAnchor();
 
-    // Check if close to any saved place (e.g. within 100m)
-    // If so, use the Place's exact coordinates as they are likely more precise than the Network fix
-    // and represent the "semantic" location user intends.
-    /* 
-    // This logic would require importing haversineDistance and iterating places
-    // For now, let's return the network position directly.
-    */
+    // Place-snapping: If close to a saved place, use that place's exact coordinates
+    // as anchor instead of the noisy network fix (20-50m accuracy → near-perfect)
+    if (places.length > 0) {
+      let closestPlace: Place | null = null;
+      let closestDistance = Infinity;
+
+      for (const place of places) {
+        const dist = haversineDistance(
+          networkPos.lat,
+          networkPos.lng,
+          place.latitude,
+          place.longitude,
+        );
+        if (dist < closestDistance) {
+          closestDistance = dist;
+          closestPlace = place;
+        }
+      }
+
+      if (closestPlace && closestDistance <= PLACE_SNAP_DISTANCE_METERS) {
+        console.log(
+          `[AnchorManager] Snapping to saved place "${closestPlace.name}" (${Math.round(closestDistance)}m from network fix)`,
+        );
+        return {
+          lat: closestPlace.latitude,
+          lng: closestPlace.longitude,
+          accuracy: 5, // Near-perfect accuracy since we're using exact saved coordinates
+          timestamp: networkPos.timestamp,
+          source: 'HOME',
+        };
+      }
+    }
 
     return networkPos;
   } catch (error) {
     console.warn('Failed to get network anchor, falling back to GPS', error);
-    // Fallback?
     return null;
   }
 };

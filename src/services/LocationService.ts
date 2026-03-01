@@ -49,6 +49,9 @@ class LocationService {
   private lastStepTime: number = 0;
   private stationaryCheckInterval: any = null;
   private distanceSinceLastAnchor: number = 0;
+  private activeGrid: GridEngine.GridCell[][] | null = null;
+  private sfpeTargetPlaceId: string | null = null;
+  private lastVehicleCheckTime: number = 0;
 
   /**
    * Starts the SFPE (Sensor Fusion Proximity Engine).
@@ -102,7 +105,22 @@ class LocationService {
           this.currentAnchor.lat,
           this.currentAnchor.lng,
         );
+        this.sfpeTargetPlaceId = placeId;
         Logger.info(`[SFPE] Started Trail Session: ${this.currentSessionId}`);
+
+        // Generate grid around the target place for exit detection
+        const place = PlaceService.getPlaceById(this.realm, placeId) as any;
+        if (place) {
+          this.activeGrid = GridEngine.generateGrid(
+            place.latitude,
+            place.longitude,
+            place.radius,
+            5, // 5m cell size per design
+          );
+          Logger.info(
+            `[SFPE] Grid generated: ${this.activeGrid.length}x${this.activeGrid[0]?.length} cells for radius ${place.radius}m`,
+          );
+        }
       }
     } catch (e) {
       Logger.error('[SFPE] Failed to start trail session:', e);
@@ -115,8 +133,9 @@ class LocationService {
     );
     await SZSensorModule.startStepDetection();
 
-    // 4. Start Stationary Monitoring Loop (since step detector only fires on movement)
+    // 4. Start Stationary/Vehicle Monitoring Loop (since step detector only fires on movement)
     this.lastStepTime = Date.now();
+    this.lastVehicleCheckTime = Date.now();
     this.stationaryCheckInterval = setInterval(
       () => this.checkStationaryStatus(),
       10000,
@@ -154,41 +173,136 @@ class LocationService {
       );
       this.currentSessionId = null;
     }
+
+    // 4. Clear Grid
+    this.activeGrid = null;
+    this.sfpeTargetPlaceId = null;
   }
 
   /**
-   * Periodic check to detect if user is stationary.
-   * Updates TrailRecorder if no steps detected for a while.
+   * Periodic check to detect if user is stationary or in a vehicle.
+   * If stationary: records a point at the current position.
+   * If in a vehicle: estimates position via time × speed dead reckoning.
    */
   private async checkStationaryStatus() {
     const now = Date.now();
     const timeSinceLastStep = now - this.lastStepTime;
 
     if (timeSinceLastStep > 5000) {
-      // 5 seconds without steps = stationary
-      this.lastKnownMotion = 'STATIONARY';
+      // No steps for >5 seconds. Could be stationary OR in a vehicle.
 
-      // Update TrailRecorder (it handles clustering logic internally)
       if (this.currentSessionId && this.realm && this.currentAnchor) {
-        // We record a point at the SAME location to indicate time passing
-        // Get current heading if possible, or use 0
         let heading = 0;
         let altitude = 0;
         let pressure = 0;
+        let accelMagnitude = 9.8;
 
         try {
-          const [h, p] = await Promise.all([
+          const [h, p, a] = await Promise.all([
             SZSensorModule.getMagneticHeading(),
             SZSensorModule.getBarometricPressure().catch(() => ({
               pressureHPa: 0,
               altitudeM: 0,
             })),
+            SZSensorModule.getAcceleration().catch(() => ({ magnitude: 9.8 })),
           ]);
           heading = h.heading;
           altitude = p.altitudeM;
           pressure = p.pressureHPa;
+          accelMagnitude = a.magnitude;
+        } catch {}
 
-          // Verify Floor if checked in
+        // Classify motion without steps
+        const motionState = MotionClassifier.classifyMotion(0, accelMagnitude);
+        this.lastKnownMotion = motionState;
+
+        // VEHICLE MODE: Estimate position via time × speed
+        if (
+          motionState === 'VEHICLE_BIKE' ||
+          motionState === 'VEHICLE_CAR'
+        ) {
+          const elapsedSec = (now - this.lastVehicleCheckTime) / 1000;
+          this.lastVehicleCheckTime = now;
+
+          const speed = MotionClassifier.getEstimatedSpeed(motionState);
+          const estimatedDistanceM = speed * elapsedSec;
+          this.distanceSinceLastAnchor += estimatedDistanceM;
+
+          // Smooth heading
+          this.headingBuffer.push(heading);
+          if (this.headingBuffer.length > 5) this.headingBuffer.shift();
+          const smoothedHeading = DeadReckoningService.smoothHeading(
+            this.headingBuffer,
+          );
+
+          // Calculate new position
+          const newPos = DeadReckoningService.calculateNewPosition(
+            this.currentAnchor,
+            1, // Using steps=1 with stride=estimatedDistanceM
+            smoothedHeading,
+            estimatedDistanceM,
+          );
+
+          // Update anchor
+          this.currentAnchor = {
+            ...this.currentAnchor,
+            lat: newPos.lat,
+            lng: newPos.lng,
+            timestamp: now,
+          };
+
+          Logger.info(
+            `[SFPE] Vehicle DR: ${motionState} ~${Math.round(estimatedDistanceM)}m in ${Math.round(elapsedSec)}s`,
+          );
+
+          // Check re-anchor
+          if (AnchorManager.shouldReAnchor(this.distanceSinceLastAnchor)) {
+            Logger.info('[SFPE] Vehicle re-anchor triggered');
+            try {
+              const netAnchor = await AnchorManager.requestNetworkAnchor();
+              this.currentAnchor = {
+                ...this.currentAnchor,
+                lat: netAnchor.lat,
+                lng: netAnchor.lng,
+                accuracy: netAnchor.accuracy,
+                timestamp: now,
+                source: 'NETWORK',
+              };
+              this.distanceSinceLastAnchor = 0;
+            } catch {
+              Logger.warn('[SFPE] Vehicle re-anchor failed');
+            }
+          }
+
+          // Record point and feed into main engine
+          await TrailRecorder.recordPoint(this.realm, this.currentSessionId, {
+            latitude: newPos.lat,
+            longitude: newPos.lng,
+            heading: smoothedHeading,
+            isStationary: false,
+            stepCount: 0,
+            timestamp: now,
+            altitude,
+            pressure,
+          });
+
+          await this.processLocationUpdate({
+            latitude: newPos.lat,
+            longitude: newPos.lng,
+            accuracy: this.currentAnchor.accuracy,
+            timestamp: now,
+            heading: smoothedHeading,
+            altitude,
+          });
+
+          return; // Skip stationary logic
+        }
+
+        // STATIONARY MODE: Record point at same location
+        this.lastVehicleCheckTime = now; // Reset vehicle timer
+
+        // Verify Floor if checked in
+        try {
           const activeCheckIns = CheckInService.getActiveCheckIns(this.realm);
           if (activeCheckIns.length > 0) {
             const placeId = activeCheckIns[0].placeId as string;
@@ -216,14 +330,16 @@ class LocationService {
         await TrailRecorder.recordPoint(this.realm, this.currentSessionId, {
           latitude: this.currentAnchor.lat,
           longitude: this.currentAnchor.lng,
-          heading: heading,
+          heading,
           isStationary: true,
           stepCount: 0,
           timestamp: now,
-          altitude: altitude,
-          pressure: pressure,
+          altitude,
+          pressure,
         });
       }
+    } else {
+      this.lastVehicleCheckTime = now; // Reset vehicle timer when walking
     }
   }
 
@@ -329,15 +445,33 @@ class LocationService {
         });
       }
 
-      // 7. Check for Exit / Entry via ProcessLocationUpdate
-      // We feed the calculated Dead Reckoning position back into the main engine
-      // This allows the engine to detect if we've walked INTO or OUT OF a zone.
+      // 7. Grid-Based Exit Detection (SFPE Design: "Grid monitors movement → EXIT grid → CHECKOUT")
+      if (this.activeGrid && this.sfpeTargetPlaceId) {
+        const cell = GridEngine.getCellForPosition(
+          this.activeGrid,
+          newPos.lat,
+          newPos.lng,
+        );
+
+        if (!cell || !GridEngine.isInsideRadius(cell)) {
+          Logger.info(
+            `[SFPE] 🚪 Grid exit detected! Cell=${cell ? `[${cell.row},${cell.col}] outside` : 'null (beyond grid)'}`,
+          );
+          // Trigger checkout via the normal exit flow
+          await silentZoneManager.handleExit(this.sfpeTargetPlaceId);
+          await this.stopSFPE();
+          await this.refreshMonitoringState();
+          return; // Exit early — session is done
+        }
+      }
+
+      // 8. Fallback: Feed DR position into the main engine for zones without a grid
       const virtualLocation = {
         latitude: newPos.lat,
         longitude: newPos.lng,
         accuracy: this.currentAnchor.accuracy,
         timestamp: Date.now(),
-        speed: strideLength, // approximate speed (m/s if 1 step/sec, but good enough proxy)
+        speed: strideLength,
         heading: smoothedHeading,
         altitude: pressureData.altitudeM,
       };
@@ -1109,8 +1243,11 @@ class LocationService {
             );
             if (score < 0.5) {
               Logger.warn(
-                '[SFPE] Floor mismatch detected! User might be on different floor.',
+                `[SFPE] ❌ Floor mismatch! Score=${score.toFixed(2)}. Blocking check-in. ` +
+                  `(Live: ${current.pressureHPa}hPa vs Saved: ${placeAny.avgPressure}hPa)`,
               );
+              // Block check-in — user is likely on the wrong floor
+              return;
             }
           }
         } catch (err) {

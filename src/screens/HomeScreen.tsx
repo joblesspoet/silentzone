@@ -1,5 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  Share,
+} from 'react-native';
 
 import { useRealm } from '../database/RealmProvider';
 import { PlaceService } from '../database/services/PlaceService';
@@ -35,16 +43,31 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     requestNotificationFlow,
     requestDndFlow,
     requestBatteryExemption,
-    getFirstMissingPermission
+    getFirstMissingPermission,
   } = usePermissions();
 
   const [places, setPlaces] = useState<any[]>([]);
   const [trackingEnabled, setTrackingEnabled] = useState(true);
   const [activeCount, setActiveCount] = useState(0);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [userLocation, setUserLocation] = useState<{latitude: number; longitude: number} | null>(null);
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   const hasFullPermissions = hasAllPermissions;
+
+  const onShare = async () => {
+    try {
+      await Share.share({
+        title: 'Silent Zone',
+        message:
+          'Check out Silent Zone! It automatically silences your phone in mosques and meeting places. Get it now to automate your prayer times and meetings!',
+      });
+    } catch (error: any) {
+      Alert.alert(error.message);
+    }
+  };
 
   // FIX #4: `isInsidePlace()` was calling CheckInService.getActiveCheckIns(realm)
   // inside .map() during render — a fresh Realm query on EVERY render, for EVERY place.
@@ -60,16 +83,19 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       if (!activeCheckIns || typeof activeCheckIns.map !== 'function') {
         return new Set<string>();
       }
-      
+
       // Use map safely and filter out any invalid/missing placeIds
       const ids = Array.from(activeCheckIns)
         .filter((c: any) => c && c.isValid && c.isValid())
         .map((c: any) => c.placeId as string)
         .filter(id => !!id);
-        
+
       return new Set(ids);
     } catch (e) {
-      console.warn('[HomeScreen] Safe-guard: Failed to get active check-ins:', e);
+      console.warn(
+        '[HomeScreen] Safe-guard: Failed to get active check-ins:',
+        e,
+      );
       return new Set<string>();
     }
   }, [places, realm]); // recomputes when places list changes (Realm write → listener fires → setPlaces → re-render)
@@ -84,7 +110,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         placesResult = PlaceService.getAllPlaces(realm);
         if (placesResult) {
           setPlaces([...placesResult]);
-          const initialActive = placesResult.filter((p: any) => p.isEnabled).length;
+          const initialActive = placesResult.filter(
+            (p: any) => p.isEnabled,
+          ).length;
           setActiveCount(initialActive);
         }
       }
@@ -114,9 +142,13 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         // Double check collection validity
         if (collection && !realm.isClosed) {
           // Verify objects are still valid before spreading
-          const validPlaces = Array.from(collection).filter((p: any) => p && p.isValid && p.isValid());
+          const validPlaces = Array.from(collection).filter(
+            (p: any) => p && p.isValid && p.isValid(),
+          );
           setPlaces([...validPlaces]);
-          const currentActive = validPlaces.filter((p: any) => p.isEnabled).length;
+          const currentActive = validPlaces.filter(
+            (p: any) => p.isEnabled,
+          ).length;
           setActiveCount(currentActive);
         }
       } catch (e) {
@@ -128,7 +160,7 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     const prefsListener = (p: any) => {
       try {
         if (p && p.isValid && p.isValid()) {
-           setTrackingEnabled(!!p.trackingEnabled);
+          setTrackingEnabled(!!p.trackingEnabled);
         }
       } catch (e) {
         console.error('[HomeScreen] Prefs listener error:', e);
@@ -162,8 +194,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         setUserLocation({ latitude: loc.latitude, longitude: loc.longitude });
       } else if (hasFullPermissions) {
         gpsManager.getImmediateLocation(
-          (newLoc) => setUserLocation({ latitude: newLoc.latitude, longitude: newLoc.longitude }),
-          () => {}
+          newLoc =>
+            setUserLocation({
+              latitude: newLoc.latitude,
+              longitude: newLoc.longitude,
+            }),
+          () => {},
         );
       }
     };
@@ -173,11 +209,14 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
     const interval = setInterval(updateLocationFromManager, 5000);
 
     const { AppState } = require('react-native');
-    const subscription = AppState.addEventListener('change', (nextState: string) => {
-      if (nextState === 'active') {
-        updateLocationFromManager();
-      }
-    });
+    const subscription = AppState.addEventListener(
+      'change',
+      (nextState: string) => {
+        if (nextState === 'active') {
+          updateLocationFromManager();
+        }
+      },
+    );
 
     return () => {
       clearInterval(interval);
@@ -187,7 +226,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   // Separate effect for auto-pause logic (avoids listener conflicts)
   useEffect(() => {
-    if (activeCount === 0 && trackingEnabled && !isInitialLoad && places.length > 0) {
+    if (
+      activeCount === 0 &&
+      trackingEnabled &&
+      !isInitialLoad &&
+      places.length > 0
+    ) {
       console.log('[HomeScreen] No active places, auto-pausing tracking');
       PreferencesService.deferredUpdatePreferences(realm, {
         trackingEnabled: false,
@@ -222,26 +266,26 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
 
   const handleDelete = (id: string, name: string) => {
     const isCurrentlyActive = activeCheckInIds.has(id);
-    
+
     Alert.alert(
       `Delete ${name}?`,
-      isCurrentlyActive 
-        ? "⚠️ This place is currently ACTIVE. Deleting it will immediately restore your ringer volume. Are you sure?"
-        : "This will stop monitoring this location and remove it from your list.",
+      isCurrentlyActive
+        ? '⚠️ This place is currently ACTIVE. Deleting it will immediately restore your ringer volume. Are you sure?'
+        : 'This will stop monitoring this location and remove it from your list.',
       [
-        { text: "Cancel", style: "cancel" },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: "Delete",
-          style: "destructive",
+          text: 'Delete',
+          style: 'destructive',
           onPress: async () => {
             const success = await PlaceService.deletePlace(realm, id);
             if (success) {
               // ✅ Event-Driven: Notify place deletion
               await locationService.onPlaceDeleted(id);
             }
-          }
-        }
-      ]
+          },
+        },
+      ],
     );
   };
 
@@ -253,12 +297,16 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       userLocation.latitude,
       userLocation.longitude,
       place.latitude,
-      place.longitude
+      place.longitude,
     );
     return formatDistance(dist);
   };
 
-  const currentDate = new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'short' });
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'short',
+  });
   const maxPlaces = 3;
   const canAddPlace = places.length < maxPlaces;
 
@@ -269,7 +317,8 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
       </View>
       <Text style={styles.emptyTitle}>No places added yet</Text>
       <Text style={styles.emptySubtitle}>
-        Add your favorite locations to automatically silence your phone when you arrive.
+        Add your favorite locations to automatically silence your phone when you
+        arrive.
       </Text>
       <TouchableOpacity
         style={styles.emptyButton}
@@ -282,14 +331,18 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
+      <View
+        style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 10 }]}
+      >
         <View style={styles.headerTop}>
           <Text style={styles.dateText}>{currentDate}</Text>
           <TouchableOpacity
             style={[
               styles.pauseButton,
-              (!trackingEnabled || !hasAllPermissions) && styles.pauseButtonActive,
-              (activeCount === 0 || !hasAllPermissions) && styles.pauseButtonDisabled
+              (!trackingEnabled || !hasAllPermissions) &&
+                styles.pauseButtonActive,
+              (activeCount === 0 || !hasAllPermissions) &&
+                styles.pauseButtonDisabled,
             ]}
             onPress={() => {
               if (!hasAllPermissions) {
@@ -303,36 +356,66 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                 // ✅ Event-Driven: Notify global change
                 locationService.onGlobalTrackingChanged(newState);
               } else {
-                Alert.alert("No Active Places", "Please enable at least one place to start tracking.");
+                Alert.alert(
+                  'No Active Places',
+                  'Please enable at least one place to start tracking.',
+                );
               }
             }}
             disabled={activeCount === 0 || !hasAllPermissions}
           >
             <MaterialIcon
-              name={(!trackingEnabled || !hasAllPermissions) ? "play-circle-outline" : "pause-circle-outline"}
+              name={
+                !trackingEnabled || !hasAllPermissions
+                  ? 'play-circle-outline'
+                  : 'pause-circle-outline'
+              }
               size={18}
-              color={(activeCount === 0 || !hasAllPermissions) ? theme.colors.text.disabled : theme.colors.primary}
+              color={
+                activeCount === 0 || !hasAllPermissions
+                  ? theme.colors.text.disabled
+                  : theme.colors.primary
+              }
             />
-            <Text style={[
-              styles.pauseButtonText,
-              (activeCount === 0 || !hasAllPermissions) && styles.pauseButtonTextDisabled
-            ]}>
-              {(!trackingEnabled || !hasAllPermissions) ? "Resume Tracking" : "Pause Tracking"}
+            <Text
+              style={[
+                styles.pauseButtonText,
+                (activeCount === 0 || !hasAllPermissions) &&
+                  styles.pauseButtonTextDisabled,
+              ]}
+            >
+              {!trackingEnabled || !hasAllPermissions
+                ? 'Resume Tracking'
+                : 'Pause Tracking'}
             </Text>
           </TouchableOpacity>
         </View>
-        <Text
-          style={styles.appTitle}
-          onLongPress={() => navigation.navigate('SensorTest')}
-        >Silent Zone</Text>
+        <View style={styles.titleRow}>
+          <Text
+            style={styles.appTitle}
+            onLongPress={() => navigation.navigate('SensorTest')}
+          >
+            Silent Zone
+          </Text>
+          <TouchableOpacity
+            style={styles.shareButton}
+            onPress={onShare}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <MaterialIcon name="share" size={24} color={theme.colors.primary} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {!hasAllPermissions && (
           <View style={styles.section}>
-            <PermissionBanner 
-              missingType={getFirstMissingPermission()} 
-              onPress={() => navigation.navigate('PermissionRequired')} 
+            <PermissionBanner
+              missingType={getFirstMissingPermission()}
+              onPress={() => navigation.navigate('PermissionRequired')}
             />
           </View>
         )}
@@ -348,7 +431,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
         <View style={styles.placesContainer}>
           <View style={styles.placesHeader}>
             <Text style={styles.placesTitle}>Your Places</Text>
-            <Text style={[styles.placesCount, places.length >= maxPlaces && styles.placesCountMax]}>
+            <Text
+              style={[
+                styles.placesCount,
+                places.length >= maxPlaces && styles.placesCountMax,
+              ]}
+            >
               {places.length} / {maxPlaces}
             </Text>
           </View>
@@ -372,7 +460,12 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                     radius={`${place.radius}m`}
                     distance={distanceText}
                     isActive={place.isEnabled}
-                    isCurrentLocation={isInside && place.isEnabled && trackingEnabled && hasFullPermissions}
+                    isCurrentLocation={
+                      isInside &&
+                      place.isEnabled &&
+                      trackingEnabled &&
+                      hasFullPermissions
+                    }
                     onToggle={() => {
                       if (hasAllPermissions) handleToggle(place.id);
                       else navigation.navigate('PermissionRequired');
@@ -383,7 +476,9 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
                     }}
                     onPress={() => {
                       if (hasAllPermissions) {
-                        navigation.navigate('PlaceDetail', { placeId: place.id });
+                        navigation.navigate('PlaceDetail', {
+                          placeId: place.id,
+                        });
                       } else {
                         navigation.navigate('PermissionRequired');
                       }
@@ -401,7 +496,11 @@ export const HomeScreen: React.FC<Props> = ({ navigation }) => {
               onPress={() => navigation.navigate('AddPlace')}
               activeOpacity={0.7}
             >
-              <MaterialIcon name="add-circle-outline" size={24} color={theme.colors.primary} />
+              <MaterialIcon
+                name="add-circle-outline"
+                size={24}
+                color={theme.colors.primary}
+              />
               <Text style={styles.addPlaceText}>Add New Place</Text>
             </TouchableOpacity>
           )}
@@ -469,6 +568,15 @@ const styles = StyleSheet.create({
     fontWeight: theme.typography.weights.extrabold,
     color: theme.colors.text.primary.light,
     letterSpacing: -1,
+    flex: 1,
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  shareButton: {
+    padding: 8,
   },
   scrollContent: {
     paddingBottom: theme.spacing.xl,

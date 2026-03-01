@@ -78,6 +78,24 @@ export const getStrideLength = (motionState: MotionState): number => {
 };
 
 /**
+ * Returns the estimated travel speed for vehicle motion states.
+ * Used for time-based dead reckoning when step counter is inactive.
+ *
+ * @param motionState The current motion state
+ * @returns Estimated speed in meters per second
+ */
+export const getEstimatedSpeed = (motionState: MotionState): number => {
+  switch (motionState) {
+    case 'VEHICLE_BIKE':
+      return 4.0;   // ~15 km/h
+    case 'VEHICLE_CAR':
+      return 11.0;  // ~40 km/h
+    default:
+      return 0;
+  }
+};
+
+/**
  * Helper to fetch sensor data from native module and classify motion.
  * 
  * @param lastStepCount The previous total step count (to calculate delta)
